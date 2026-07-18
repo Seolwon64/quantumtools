@@ -322,55 +322,58 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Probability list */
-.prob-list {
+/* Probability chart (세로 막대그래프) */
+.prob-chart {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 4px 4px 2px;
+}
+
+.prob-bar-col {
+  flex: none;
+  width: 40px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding-right: 4px;
-}
-
-.prob-row {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  flex: none;
+  gap: 6px;
 }
 
-.prob-label {
+.prob-bar-value {
   flex: none;
-  width: 68px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
+  color: var(--text-body);
   font-variant-numeric: tabular-nums;
-  color: var(--text-title);
 }
 
-.prob-bar-track {
+.prob-bar-track-v {
   flex: 1;
-  height: 8px;
-  border-radius: 999px;
+  width: 22px;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
   background: var(--bg);
+  border-radius: 8px;
   overflow: hidden;
 }
 
-.prob-bar-fill {
-  height: 100%;
-  border-radius: 999px;
+.prob-bar-fill-v {
+  width: 100%;
+  border-radius: 8px;
   background: var(--primary);
-  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.prob-value {
+.prob-bar-label {
   flex: none;
-  width: 46px;
-  text-align: right;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--text-body);
+  color: var(--text-title);
   font-variant-numeric: tabular-nums;
 }
 

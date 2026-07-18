@@ -65,6 +65,7 @@ angleCancelBtn.addEventListener("click", closeAnglePopover);
 angleConfirmBtn.addEventListener("click", () => {
   if (!pendingPlacement) return;
   const thetaRad = (Number(angleSlider.value) * Math.PI) / 180;
+  scene.clearTrail();
   circuit.placeGate(pendingPlacement.column, pendingPlacement.qubit, pendingPlacement.gateName, thetaRad);
   closeAnglePopover();
 });
@@ -152,6 +153,7 @@ circuitGrid.addEventListener("drop", (e) => {
   if (info.kind === "param") {
     openAnglePopover(column, qubit, gateName, e.clientX, e.clientY);
   } else {
+    scene.clearTrail();
     circuit.placeGate(column, qubit, gateName);
   }
 });
@@ -161,6 +163,7 @@ circuitGrid.addEventListener("click", (e) => {
   if (!cell) return;
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
+  scene.clearTrail();
   circuit.removeGate(column, qubit);
 });
 
@@ -170,7 +173,10 @@ function buildQubitTabs(snapshot) {
     const tab = document.createElement("button");
     tab.className = "qubit-tab" + (q === snapshot.selectedQubit ? " active" : "");
     tab.textContent = `q[${q}]`;
-    tab.addEventListener("click", () => circuit.selectQubit(q));
+    tab.addEventListener("click", () => {
+      scene.clearTrail();
+      circuit.selectQubit(q);
+    });
     qubitTabs.appendChild(tab);
   }
 }
@@ -178,26 +184,26 @@ function buildQubitTabs(snapshot) {
 function renderProbabilities(snapshot) {
   probList.innerHTML = "";
   for (const entry of snapshot.probabilities) {
-    const row = document.createElement("div");
-    row.className = "prob-row";
-
-    const label = document.createElement("span");
-    label.className = "prob-label";
-    label.textContent = `|${entry.label}⟩`;
-
-    const track = document.createElement("div");
-    track.className = "prob-bar-track";
-    const fill = document.createElement("div");
-    fill.className = "prob-bar-fill";
-    fill.style.width = `${entry.probability}%`;
-    track.appendChild(fill);
+    const col = document.createElement("div");
+    col.className = "prob-bar-col";
 
     const value = document.createElement("span");
-    value.className = "prob-value";
+    value.className = "prob-bar-value";
     value.textContent = `${Math.round(entry.probability)}%`;
 
-    row.append(label, track, value);
-    probList.appendChild(row);
+    const track = document.createElement("div");
+    track.className = "prob-bar-track-v";
+    const fill = document.createElement("div");
+    fill.className = "prob-bar-fill-v";
+    fill.style.height = `${entry.probability}%`;
+    track.appendChild(fill);
+
+    const label = document.createElement("span");
+    label.className = "prob-bar-label";
+    label.textContent = `|${entry.label}⟩`;
+
+    col.append(value, track, label);
+    probList.appendChild(col);
   }
 }
 
@@ -236,13 +242,21 @@ const circuit = createCircuitController({
 buildPalette();
 
 qubitMinusBtn.addEventListener("click", () => {
+  scene.clearTrail();
   circuit.setQubitCount(circuit.getSnapshot().qubitCount - 1);
 });
 qubitPlusBtn.addEventListener("click", () => {
+  scene.clearTrail();
   circuit.setQubitCount(circuit.getSnapshot().qubitCount + 1);
 });
-clearBtn.addEventListener("click", () => circuit.clear());
-resetBtn.addEventListener("click", () => circuit.reset());
+clearBtn.addEventListener("click", () => {
+  scene.clearTrail();
+  circuit.clear();
+});
+resetBtn.addEventListener("click", () => {
+  scene.clearTrail();
+  circuit.reset();
+});
 stepBackBtn.addEventListener("click", () => circuit.stepBackward());
 stepFwdBtn.addEventListener("click", () => circuit.stepForward());
 
@@ -250,6 +264,7 @@ playBtn.addEventListener("click", () => {
   if (circuit.getSnapshot().isPlaying) {
     circuit.pause();
   } else {
+    scene.clearTrail();
     circuit.play();
   }
 });
