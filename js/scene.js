@@ -3,8 +3,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const SPHERE_RADIUS = 1;
-const AXIS_COLOR = 0xc7cdd4;
-const LABEL_COLOR = "#8b95a1";
+const WIREFRAME_COLOR = 0xb0b8c1;
+const AXIS_COLOR = 0x98a2ad;
+const LABEL_COLOR = "#4e5968";
 const VECTOR_COLOR = 0x3182f6;
 
 // 초기/리셋 시점: 왼쪽 X축, 오른쪽 Y축, 위쪽 Z축이 보이는 구도.
@@ -18,6 +19,21 @@ function blochToThree(v, out = new THREE.Vector3()) {
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
+}
+
+// WebGL은 대부분의 브라우저/GPU에서 Line의 linewidth를 무시하고 항상 1px로 그리므로,
+// 두께가 실제로 보이는 축을 그리려면 얇은 원기둥 메쉬를 써야 한다.
+function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
+  const geo = new THREE.CylinderGeometry(radius, radius, length, 8);
+  const mat = new THREE.MeshBasicMaterial({
+    color: AXIS_COLOR,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  if (direction === "x") mesh.rotation.z = Math.PI / 2;
+  if (direction === "z") mesh.rotation.x = Math.PI / 2;
+  return mesh;
 }
 
 function makeLabelSprite(text) {
@@ -62,31 +78,18 @@ export function createBlochScene(container) {
     controls.update();
   }
 
-  // 은은한 와이어프레임 구
+  // 와이어프레임 구
   const sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 28, 18);
   const sphereMat = new THREE.MeshBasicMaterial({
-    color: AXIS_COLOR,
+    color: WIREFRAME_COLOR,
     wireframe: true,
     transparent: true,
-    opacity: 0.16,
+    opacity: 0.35,
   });
   scene.add(new THREE.Mesh(sphereGeo, sphereMat));
 
-  // 얇고 은은한 X, Y, Z 축
-  const axisMat = new THREE.LineBasicMaterial({
-    color: AXIS_COLOR,
-    transparent: true,
-    opacity: 0.55,
-  });
-  const axisEnds = [
-    [new THREE.Vector3(-1.2, 0, 0), new THREE.Vector3(1.2, 0, 0)], // bloch X
-    [new THREE.Vector3(0, 0, -1.2), new THREE.Vector3(0, 0, 1.2)], // bloch Y
-    [new THREE.Vector3(0, -1.2, 0), new THREE.Vector3(0, 1.2, 0)], // bloch Z
-  ];
-  for (const [from, to] of axisEnds) {
-    const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-    scene.add(new THREE.Line(geo, axisMat));
-  }
+  // X, Y, Z 축 (bloch X -> three X, bloch Y -> three Z, bloch Z -> three Y)
+  scene.add(makeAxisMesh("x"), makeAxisMesh("y"), makeAxisMesh("z"));
 
   // 은은한 회색 라벨: 극(|0>, |1>)과 X, Y 축 양의 방향
   const zeroLabel = makeLabelSprite("|0⟩");
