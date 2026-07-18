@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bloch Sphere</title>
+<link rel="stylesheet" href="style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Bloch Sphere</h1>
+      <p class="subtitle">게이트를 배치하면 큐비트 상태가 구 위에서 움직여요</p>
+    </header>
+
+    <div class="layout">
+      <section class="card sphere-panel">
+        <div id="sphere-container"></div>
+        <button class="view-reset-btn" id="reset-view-btn" title="시점 초기화">⟲</button>
+      </section>
+
+      <aside class="sidebar">
+        <section class="card state-card">
+          <div class="prob-row">
+            <span class="prob-label">|0⟩</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" id="prob-bar-0" style="width: 100%"></div>
+            </div>
+            <span class="prob-value" id="prob-value-0">100%</span>
+          </div>
+          <div class="prob-row">
+            <span class="prob-label">|1⟩</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill prob-bar-fill-dim" id="prob-bar-1" style="width: 0%"></div>
+            </div>
+            <span class="prob-value" id="prob-value-1">0%</span>
+          </div>
+        </section>
+
+        <section class="card gate-card">
+          <h2 class="card-title">게이트</h2>
+          <div class="gate-grid" id="gate-palette">
+            <button class="gate-btn" data-gate="H">H</button>
+            <button class="gate-btn" data-gate="X">X</button>
+            <button class="gate-btn" data-gate="Y">Y</button>
+            <button class="gate-btn" data-gate="Z">Z</button>
+            <button class="gate-btn" data-gate="S">S</button>
+            <button class="gate-btn" data-gate="T">T</button>
+          </div>
+        </section>
+
+        <section class="card circuit-card">
+          <div class="circuit-header">
+            <h2 class="card-title">회로</h2>
+            <div class="circuit-actions">
+              <button class="icon-btn" id="undo-btn" title="마지막 게이트 삭제">되돌리기</button>
+              <button class="icon-btn" id="clear-btn" title="회로 초기화">전체 삭제</button>
+            </div>
+          </div>
+          <div class="circuit-track" id="circuit-track">
+            <span class="circuit-empty" id="circuit-empty">|0⟩ 상태에서 시작</span>
+          </div>
+        </section>
+
+        <section class="card playback-card">
+          <div class="playback-controls">
+            <button class="round-btn" id="reset-btn" title="처음으로">⏮</button>
+            <button class="round-btn" id="step-back-btn" title="한 단계 뒤로">◀</button>
+            <button class="round-btn round-btn-primary" id="play-btn" title="재생">▶</button>
+            <button class="round-btn" id="step-fwd-btn" title="한 단계 앞으로">▶|</button>
+          </div>
+          <div class="playback-status" id="playback-status">0 / 0 단계</div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
