@@ -7,8 +7,8 @@ const WIREFRAME_COLOR = 0xb0b8c1;
 const AXIS_COLOR = 0x98a2ad;
 const LABEL_COLOR = "#4e5968";
 const VECTOR_COLOR = 0x3182f6;
-const TRAIL_COLOR = 0xff3b30;
-const TRAIL_RADIUS = 0.024;
+const TRAIL_COLOR = 0x3182f6; // 확률 막대그래프와 동일한 토스 블루
+const TRAIL_RADIUS = 0.012;
 
 // 초기/리셋 시점: 오른쪽 X축, 왼쪽 Y축, 위쪽 Z축이 보이는 구도.
 const INITIAL_CAMERA_POS = new THREE.Vector3(2.6, 1.9, 2.6);
@@ -118,7 +118,7 @@ export function createBlochScene(container) {
 
   resetView();
 
-  // 재생 중 벡터가 지나간 궤적 (빨강, 90% 불투명도). 재생을 다시 누르면 초기화된다.
+  // 재생 중 벡터가 지나간 궤적 (토스 블루, 50% 불투명도). 재생을 다시 누르면 초기화된다.
   // Line은 대부분의 WebGL 환경에서 linewidth를 무시하므로(축과 동일한 문제),
   // 실제로 두껍게 보이도록 매 프레임 Tube 메쉬로 재생성한다.
   let trailPoints = [];
@@ -126,7 +126,7 @@ export function createBlochScene(container) {
   const trailMaterial = new THREE.MeshBasicMaterial({
     color: TRAIL_COLOR,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.5,
   });
 
   function rebuildTrailMesh() {
