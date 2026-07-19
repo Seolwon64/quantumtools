@@ -2,6 +2,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+// index.html의 html,body font-family와 일치시켜 캔버스 텍스트가 DOM과 다른 폰트로
+// 그려지지 않게 한다.
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Segoe UI", Roboto, sans-serif';
+
 const POS_COLOR = 0x3182f6; // 토스 블루 (양수)
 const NEG_COLOR = 0xe5484d; // 레드 (음수)
 const BASE_COLOR = 0xd8dde3;
@@ -15,7 +19,7 @@ function makeLabelSprite(text, color = "#4e5968") {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
-  ctx.font = "700 48px -apple-system, sans-serif";
+  ctx.font = `700 48px ${FONT_STACK}`;
   ctx.fillStyle = color;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";

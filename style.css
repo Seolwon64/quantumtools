@@ -846,12 +846,14 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 32px;
   border: none;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
   border-radius: 999px;
   padding: 6px 12px 6px 6px;
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .mode-toggle-track {
@@ -885,11 +887,14 @@ html, body {
 }
 
 .mode-toggle-label {
+  display: inline-block;
   font-size: 12px;
   font-weight: 700;
   color: var(--text-body);
-  min-width: 38px;
+  width: 58px;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .entangle-warning {
@@ -915,50 +920,13 @@ html, body {
   gap: 10px;
 }
 
-.qsphere-options {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(4px);
-  padding: 8px 12px;
-  border-radius: 12px;
-}
-
-.qsphere-options.hidden {
-  display: none;
-}
-
-.check-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-body);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.check-label input {
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
-/* Q-sphere 위상 색상 범례 (오른쪽 위) */
+/* Q-sphere 위상 색상 범례. 체크박스 대신 이 자리(구 패널 오른쪽 아래)에 배치한다. */
 .qsphere-legend {
-  position: absolute;
-  top: 58px;
-  right: 14px;
-  z-index: 2;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(4px);
-  padding: 10px;
-  border-radius: 14px;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
 }
 
 .qsphere-legend.hidden {
@@ -967,33 +935,28 @@ html, body {
 
 .phase-wheel {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: conic-gradient(from 90deg, #ff0000, #ff00c8, #6a00ff, #00c8ff, #00ff6a, #c8ff00, #ff0000);
-  box-shadow: inset 0 0 0 1px rgba(25, 31, 40, 0.08);
+  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
 }
 
 .phase-tick {
   position: absolute;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   color: var(--text-body);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 4px;
+  padding: 0 2px;
   transform: translate(-50%, -50%);
 }
 
-.tick-right { top: 50%; left: 100%; margin-left: 10px; }
-.tick-top { top: 0; left: 50%; margin-top: -10px; }
-.tick-left { top: 50%; left: 0; margin-left: -10px; }
-.tick-bottom { top: 100%; left: 50%; margin-top: 10px; }
-
-.phase-wheel-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+.tick-right { top: 50%; left: 100%; margin-left: 8px; }
+.tick-top { top: 0; left: 50%; margin-top: -8px; }
+.tick-left { top: 50%; left: 0; margin-left: -8px; }
+.tick-bottom { top: 100%; left: 50%; margin-top: 8px; }
 
 /* Placement popover (각도/컨트롤/파트너 선택) */
 .place-popover {

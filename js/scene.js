@@ -2,6 +2,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+// index.html의 html,body font-family와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가
+// DOM 폰트와 다른 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Segoe UI", Roboto, sans-serif';
+
 const SPHERE_RADIUS = 1;
 const WIREFRAME_COLOR = 0xb0b8c1;
 const AXIS_COLOR = 0x98a2ad;
@@ -50,7 +54,7 @@ function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
 function drawLabelCanvas(ctx, size, text) {
   ctx.clearRect(0, 0, size, size);
   const fontSize = text.length > 3 ? 34 : 56;
-  ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
+  ctx.font = `600 ${fontSize}px ${FONT_STACK}`;
   ctx.fillStyle = LABEL_COLOR;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -86,6 +90,28 @@ function updateLabelSprite(sprite, text) {
   texture.needsUpdate = true;
 }
 
+// Q-sphere 마커 라벨("|0000⟩ π" 등)처럼 가로로 긴 문자열 전용. 정사각 캔버스를
+// 비균일 스케일로 늘리면 글자가 찌그러져 "깨진" 것처럼 보이므로, 캔버스 자체를
+// 실제 필요한 가로세로 비율로 만들고 스프라이트는 그 비율 그대로 균일하게 스케일한다.
+const WIDE_LABEL_W = 320;
+const WIDE_LABEL_H = 120;
+function makeWideLabelSprite(text, worldWidth = 0.6) {
+  const canvas = document.createElement("canvas");
+  canvas.width = WIDE_LABEL_W;
+  canvas.height = WIDE_LABEL_H;
+  const ctx = canvas.getContext("2d");
+  ctx.font = `600 44px ${FONT_STACK}`;
+  ctx.fillStyle = LABEL_COLOR;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, WIDE_LABEL_W / 2, WIDE_LABEL_H / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(worldWidth, worldWidth * (WIDE_LABEL_H / WIDE_LABEL_W), 1);
+  return sprite;
+}
+
 export function createBlochScene(container) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
@@ -99,6 +125,13 @@ export function createBlochScene(container) {
   controls.enablePan = false;
   controls.minDistance = 2.2;
   controls.maxDistance = 6;
+
+  // Q-sphere 채움 구를 은은하게 음영지게(입체감) 보이려면 조명이 필요하다.
+  // MeshBasicMaterial(와이어프레임/축/화살표/트레일)은 조명 영향을 받지 않으므로 안전하다.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
+  keyLight.position.set(2, 3, 2);
+  scene.add(keyLight);
 
   function resetView() {
     camera.position.copy(INITIAL_CAMERA_POS);
@@ -271,13 +304,17 @@ export function createBlochScene(container) {
   qsphereBgGroup.visible = false;
   scene.add(qsphereBgGroup);
 
-  const qsphereFillMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+  // 조명을 받는 재질을 써서 IBM Q-sphere처럼 은은한 입체 음영이 보이게 한다
+  // (MeshBasicMaterial은 항상 평평하게 렌더링되어 구가 잘 보이지 않았다).
+  const qsphereFillMat = new THREE.MeshStandardMaterial({
+    color: 0xe4e7eb,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.35,
+    roughness: 1,
+    metalness: 0,
     depthWrite: false,
   });
-  const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 32, 24), qsphereFillMat);
+  const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 48, 36), qsphereFillMat);
   qsphereBgGroup.add(qsphereFillMesh);
 
   let qsphereRingQubitCount = -1;
@@ -309,8 +346,6 @@ export function createBlochScene(container) {
   const qspherePhaseGroup = new THREE.Group(); // 위상 색 스템 라인
   scene.add(qsphereStateGroup, qspherePhaseGroup);
   const qsphereMarkerGeo = new THREE.SphereGeometry(1, 12, 10);
-  let showState = true;
-  let showPhase = true;
 
   // 위상(라디안)을 π의 간단한 분수로 표기 (0, π, π/2, 2π/3 ...), 아니면 소수 배수로 근사.
   const SIMPLE_FRACTIONS = [
@@ -381,21 +416,11 @@ export function createBlochScene(container) {
         marker.scale.setScalar(radius);
         qsphereStateGroup.add(marker);
 
-        const label = makeLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
-        label.scale.set(0.5, 0.22, 1);
+        const label = makeWideLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
         label.position.copy(pos).multiplyScalar(1.18);
         qsphereStateGroup.add(label);
       });
     }
-    qsphereStateGroup.visible = showState;
-    qspherePhaseGroup.visible = showPhase;
-  }
-
-  function setQSphereOptions({ showState: nextState, showPhase: nextPhase }) {
-    if (nextState !== undefined) showState = nextState;
-    if (nextPhase !== undefined) showPhase = nextPhase;
-    qsphereStateGroup.visible = showState;
-    qspherePhaseGroup.visible = showPhase;
   }
 
   function setMode(nextMode) {
@@ -410,8 +435,8 @@ export function createBlochScene(container) {
     axisZ.visible = isBloch;
     wireframeSphereMesh.visible = isBloch;
     qsphereBgGroup.visible = !isBloch;
-    qsphereStateGroup.visible = !isBloch && showState;
-    qspherePhaseGroup.visible = !isBloch && showPhase;
+    qsphereStateGroup.visible = !isBloch;
+    qspherePhaseGroup.visible = !isBloch;
     // Q-sphere 모드에서는 weight-0/weight-n 마커 라벨이 극에 동일한 정보(+위상)를
     // 이미 표시하므로, 고정 극 라벨은 숨겨서 겹침을 피한다.
     zeroLabel.visible = isBloch;
@@ -429,6 +454,5 @@ export function createBlochScene(container) {
     clearTrail,
     setMode,
     setQSphereData,
-    setQSphereOptions,
   };
 }

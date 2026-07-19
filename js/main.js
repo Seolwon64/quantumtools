@@ -72,9 +72,6 @@ const modeToggleLabel = document.getElementById("mode-toggle-label");
 const entangleWarning = document.getElementById("entangle-warning");
 const sphereModeTitle = document.getElementById("sphere-mode-title");
 const qsphereLegend = document.getElementById("qsphere-legend");
-const qsphereOptions = document.getElementById("qsphere-options");
-const qsphereShowStateChk = document.getElementById("qsphere-show-state");
-const qsphereShowPhaseChk = document.getElementById("qsphere-show-phase");
 const menuBtn = document.getElementById("menu-btn");
 const menuPanel = document.getElementById("menu-panel");
 const probPanelTitle = document.getElementById("prob-panel-title");
@@ -112,13 +109,6 @@ modeToggle.addEventListener("click", () => {
   applySphereModeUI(snap);
 });
 
-qsphereShowStateChk.addEventListener("change", () => {
-  scene.setQSphereOptions({ showState: qsphereShowStateChk.checked });
-});
-qsphereShowPhaseChk.addEventListener("change", () => {
-  scene.setQSphereOptions({ showPhase: qsphereShowPhaseChk.checked });
-});
-
 function applySphereModeUI(snapshot) {
   const isQSphere = sphereMode === "qsphere";
   modeToggle.setAttribute("aria-pressed", String(isQSphere));
@@ -127,7 +117,6 @@ function applySphereModeUI(snapshot) {
   qubitTabs.classList.toggle("hidden", isQSphere);
   sphereModeTitle.classList.toggle("hidden", !isQSphere);
   qsphereLegend.classList.toggle("hidden", !isQSphere);
-  qsphereOptions.classList.toggle("hidden", !isQSphere);
 
   const entangled = Math.hypot(snapshot.bloch.x, snapshot.bloch.y, snapshot.bloch.z) < 0.99;
   const showWarning = sphereMode === "bloch" && entangled;
