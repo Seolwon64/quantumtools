@@ -23,6 +23,15 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function popcount(n) {
+  let count = 0;
+  while (n) {
+    count += n & 1;
+    n >>= 1;
+  }
+  return count;
+}
+
 // WebGL은 대부분의 브라우저/GPU에서 Line의 linewidth를 무시하고 항상 1px로 그리므로,
 // 두께가 실제로 보이는 축을 그리려면 얇은 원기둥 메쉬를 써야 한다.
 function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
@@ -38,17 +47,25 @@ function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
   return mesh;
 }
 
-function makeLabelSprite(text) {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.font = "600 56px -apple-system, sans-serif";
+function drawLabelCanvas(ctx, size, text) {
+  ctx.clearRect(0, 0, size, size);
+  const fontSize = text.length > 3 ? 34 : 56;
+  ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
   ctx.fillStyle = LABEL_COLOR;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, size / 2, size / 2);
+}
+
+// updateLabelSprite(sprite, text)로 나중에 텍스트를 바꿀 수 있도록 canvas/ctx를 보관한다
+// (Bloch <-> Q-sphere 모드 전환 시 극 라벨이 |0>/|1> <-> |00..0>/|11..1>로 바뀌어야 함).
+function makeLabelSprite(text) {
+  const size = 160;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  drawLabelCanvas(ctx, size, text);
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({
     map: texture,
@@ -57,7 +74,16 @@ function makeLabelSprite(text) {
   });
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(0.32, 0.32, 1);
+  sprite.userData.canvas = canvas;
+  sprite.userData.ctx = ctx;
+  sprite.userData.texture = texture;
   return sprite;
+}
+
+function updateLabelSprite(sprite, text) {
+  const { ctx, texture } = sprite.userData;
+  drawLabelCanvas(ctx, sprite.userData.canvas.width, text);
+  texture.needsUpdate = true;
 }
 
 export function createBlochScene(container) {
@@ -91,7 +117,10 @@ export function createBlochScene(container) {
   scene.add(new THREE.Mesh(sphereGeo, sphereMat));
 
   // X, Y, Z 축 (bloch X -> three X, bloch Y -> three Z, bloch Z -> three Y)
-  scene.add(makeAxisMesh("x"), makeAxisMesh("y"), makeAxisMesh("z"));
+  const axisX = makeAxisMesh("x");
+  const axisY = makeAxisMesh("y");
+  const axisZ = makeAxisMesh("z");
+  scene.add(axisX, axisY, axisZ);
 
   // 은은한 회색 라벨: 극(|0>, |1>)과 X, Y 축 양의 방향
   const zeroLabel = makeLabelSprite("|0⟩");
@@ -123,6 +152,7 @@ export function createBlochScene(container) {
   // 실제로 두껍게 보이도록 매 프레임 Tube 메쉬로 재생성한다.
   let trailPoints = [];
   let trailMesh = null;
+  let sceneMode = "bloch"; // setMode()가 갱신. rebuildTrailMesh가 새 메쉬를 만들 때 참조.
   const trailMaterial = new THREE.MeshBasicMaterial({
     color: TRAIL_COLOR,
     transparent: true,
@@ -140,6 +170,7 @@ export function createBlochScene(container) {
     const tubularSegments = Math.max(8, trailPoints.length * 2);
     const geo = new THREE.TubeGeometry(curve, tubularSegments, TRAIL_RADIUS, 6, false);
     trailMesh = new THREE.Mesh(geo, trailMaterial);
+    trailMesh.visible = sceneMode === "bloch";
     scene.add(trailMesh);
   }
 
@@ -231,5 +262,81 @@ export function createBlochScene(container) {
   }
   renderLoop();
 
-  return { setVectorInstant, animateVectorTo, resetView, clearTrail };
+  // ---------- Q-sphere (IBM 스타일 전체 상태 시각화) ----------
+  // Bloch sphere는 얽힌 상태를 표현할 수 없으므로, 얽힌 회로에서는 대신 이 뷰로
+  // 전환해 전체 2^n 계산기저를 위도(해밍 가중치)·경도(같은 가중치 내 균등 분산)로
+  // 배치하고, 크기는 확률, 색상은 위상으로 표현한다.
+  const qsphereGroup = new THREE.Group();
+  qsphereGroup.visible = false;
+  scene.add(qsphereGroup);
+  const qsphereMarkerGeo = new THREE.SphereGeometry(1, 12, 10);
+
+  function clearQSphereGroup() {
+    for (const child of qsphereGroup.children.slice()) {
+      qsphereGroup.remove(child);
+      // qsphereMarkerGeo는 모든 마커가 공유하므로 지우지 않는다 (stem의 Line 지오메트리만 개별 폐기).
+      if (child.geometry && child.geometry !== qsphereMarkerGeo) child.geometry.dispose();
+      child.material?.dispose?.();
+    }
+  }
+
+  function setQSphereData(probabilities, qubitCount) {
+    clearQSphereGroup();
+    if (!qubitCount) return;
+    const byWeight = new Map();
+    for (const entry of probabilities) {
+      const w = popcount(entry.index);
+      if (!byWeight.has(w)) byWeight.set(w, []);
+      byWeight.get(w).push(entry);
+    }
+    const PROB_EPS = 0.05; // %
+    for (const [weight, entries] of byWeight) {
+      const theta = qubitCount === 0 ? 0 : (Math.PI * weight) / qubitCount;
+      entries.forEach((entry, k) => {
+        if (entry.probability < PROB_EPS) return;
+        const phi = entries.length > 1 ? (2 * Math.PI * k) / entries.length : 0;
+        const bx = Math.sin(theta) * Math.cos(phi);
+        const by = Math.sin(theta) * Math.sin(phi);
+        const bz = Math.cos(theta);
+        const pos = blochToThree({ x: bx, y: by, z: bz }).multiplyScalar(SPHERE_RADIUS);
+
+        const hue = ((Math.atan2(entry.im, entry.re) / (2 * Math.PI)) % 1 + 1) % 1;
+        const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
+
+        const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
+        const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
+        qsphereGroup.add(new THREE.Line(stemGeo, stemMat));
+
+        const radius = 0.035 + 0.09 * Math.sqrt(entry.probability / 100);
+        const markerMat = new THREE.MeshBasicMaterial({ color });
+        const marker = new THREE.Mesh(qsphereMarkerGeo, markerMat);
+        marker.position.copy(pos);
+        marker.scale.setScalar(radius);
+        qsphereGroup.add(marker);
+      });
+    }
+  }
+
+  function setMode(nextMode, qubitCount) {
+    sceneMode = nextMode;
+    const isBloch = sceneMode === "bloch";
+    arrow.visible = isBloch;
+    if (trailMesh) trailMesh.visible = isBloch;
+    xLabel.visible = isBloch;
+    yLabel.visible = isBloch;
+    axisX.visible = isBloch;
+    axisY.visible = isBloch;
+    qsphereGroup.visible = !isBloch;
+    updateLabelSprite(zeroLabel, isBloch ? "|0⟩" : `|${"0".repeat(qubitCount)}⟩`);
+    updateLabelSprite(oneLabel, isBloch ? "|1⟩" : `|${"1".repeat(qubitCount)}⟩`);
+  }
+
+  return {
+    setVectorInstant,
+    animateVectorTo,
+    resetView,
+    clearTrail,
+    setMode,
+    setQSphereData,
+  };
 }

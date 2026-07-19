@@ -66,8 +66,39 @@ const stepFwdBtn = document.getElementById("step-fwd-btn");
 const playbackStatus = document.getElementById("playback-status");
 const resetViewBtn = document.getElementById("reset-view-btn");
 const placePopover = document.getElementById("place-popover");
+const modeToggle = document.getElementById("mode-toggle");
+const modeToggleLabel = document.getElementById("mode-toggle-label");
+const entangleWarning = document.getElementById("entangle-warning");
 
 const gateButtons = [];
+
+// ---------- Bloch / Q-sphere 모드 ----------
+// Bloch sphere는 얽힌 상태를 정확히 표현할 수 없다. 얽힘이 감지되면 경고 아이콘을
+// 보여주고, 사용자는 언제든 토글을 눌러 IBM 스타일 Q-sphere(전체 상태) 뷰로 전환할 수 있다.
+let sphereMode = "bloch";
+
+modeToggle.addEventListener("click", () => {
+  sphereMode = sphereMode === "bloch" ? "qsphere" : "bloch";
+  const snap = circuit.getSnapshot();
+  scene.setMode(sphereMode, snap.qubitCount);
+  if (sphereMode === "qsphere") scene.setQSphereData(snap.probabilities, snap.qubitCount);
+  applySphereModeUI(snap);
+});
+
+function applySphereModeUI(snapshot) {
+  const isQSphere = sphereMode === "qsphere";
+  modeToggle.setAttribute("aria-pressed", String(isQSphere));
+  modeToggle.title = isQSphere ? "Switch to Bloch sphere view" : "Switch to Q-sphere view";
+  modeToggleLabel.textContent = isQSphere ? "Q-sphere" : "Bloch";
+  qubitTabs.classList.toggle("hidden", isQSphere);
+
+  const entangled = Math.hypot(snapshot.bloch.x, snapshot.bloch.y, snapshot.bloch.z) < 0.99;
+  const showWarning = sphereMode === "bloch" && entangled;
+  entangleWarning.classList.toggle("hidden", !showWarning);
+}
+
+entangleWarning.addEventListener("mouseenter", () => showTooltip(entangleWarning, "Detected entanglement"));
+entangleWarning.addEventListener("mouseleave", hideTooltip);
 
 // ---------- 배치 팝오버 (각도/컨트롤/파트너 선택) ----------
 
@@ -501,6 +532,8 @@ function renderStateFormula(snapshot) {
 
 function render(snapshot) {
   scene.setVectorInstant(snapshot.bloch);
+  if (sphereMode === "qsphere") scene.setQSphereData(snapshot.probabilities, snapshot.qubitCount);
+  applySphereModeUI(snapshot);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
   updatePaletteAvailability(snapshot.qubitCount);

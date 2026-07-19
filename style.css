@@ -702,6 +702,10 @@ html, body {
   color: #fff;
 }
 
+.qubit-tabs.hidden {
+  display: none;
+}
+
 #sphere-container {
   flex: 1;
   min-height: 0;
@@ -728,6 +732,90 @@ html, body {
 
 .view-reset-btn:active {
   transform: scale(0.9) rotate(-45deg);
+}
+
+/* Sphere footer: 왼쪽 Bloch/Q-sphere 토글, 오른쪽 얽힘 경고 */
+.sphere-footer {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.sphere-footer > * {
+  pointer-events: auto;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 999px;
+  padding: 6px 12px 6px 6px;
+  cursor: pointer;
+}
+
+.mode-toggle-track {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg);
+  position: relative;
+  transition: background 0.18s ease;
+}
+
+.mode-toggle[aria-pressed="true"] .mode-toggle-track {
+  background: var(--primary);
+}
+
+.mode-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(25, 31, 40, 0.3);
+  transition: transform 0.18s ease;
+}
+
+.mode-toggle[aria-pressed="true"] .mode-toggle-knob {
+  transform: translateX(14px);
+}
+
+.mode-toggle-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-body);
+  min-width: 38px;
+  text-align: left;
+}
+
+.entangle-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: #f5c945;
+  cursor: default;
+  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
+}
+
+.entangle-warning.hidden {
+  display: none;
 }
 
 /* Placement popover (각도/컨트롤/파트너 선택) */
