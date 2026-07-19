@@ -74,11 +74,12 @@ function isValidPlacement(cell, targetQubit, qubitCount) {
 }
 
 // onChange(snapshot), onAnimateStep(fromBloch, toBloch) => Promise<void>
-export function createCircuitController({ onChange, onAnimateStep }) {
+// initial: 공유 URL에서 디코딩한 {qubitCount, grid} — 있으면 localStorage보다 우선.
+export function createCircuitController({ onChange, onAnimateStep, initial }) {
   let qubitCount = DEFAULT_QUBITS;
   let grid = emptyGrid(qubitCount);
 
-  const stored = loadStored();
+  const stored = initial ?? loadStored();
   if (stored) {
     qubitCount = stored.qubitCount;
     grid = emptyGrid(qubitCount);

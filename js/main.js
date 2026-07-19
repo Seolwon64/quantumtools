@@ -2,6 +2,7 @@ import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
 import { initResizableLayout } from "./layout.js";
+import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
 
 initResizableLayout();
 
@@ -101,7 +102,7 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
 
   const confirmBtn = document.createElement("button");
   confirmBtn.className = "pill-btn-primary";
-  confirmBtn.textContent = "확인";
+  confirmBtn.textContent = "Apply";
 
   function updateConfirm() {
     confirmBtn.disabled = pendingPlacement.selected.length !== needControls + needPartner;
@@ -111,7 +112,9 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
     const pickLabel = document.createElement("div");
     pickLabel.className = "place-popover-hint";
     pickLabel.textContent =
-      needPartner > 0 ? "연결할 큐비트 선택" : `컨트롤 큐비트 ${needControls}개 선택`;
+      needPartner > 0
+        ? "Select partner qubit"
+        : `Select ${needControls} control qubit${needControls > 1 ? "s" : ""}`;
     placePopover.appendChild(pickLabel);
 
     const pickRow = document.createElement("div");
@@ -166,7 +169,7 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
   actions.className = "place-popover-actions";
   const cancelBtn = document.createElement("button");
   cancelBtn.className = "icon-btn";
-  cancelBtn.textContent = "취소";
+  cancelBtn.textContent = "Cancel";
   cancelBtn.addEventListener("click", closePlacePopover);
 
   confirmBtn.addEventListener("click", () => {
@@ -518,16 +521,24 @@ function render(snapshot) {
 
   playBtn.disabled = snapshot.totalSteps === 0 || (snapshot.isAnimating && !snapshot.isPlaying);
   playBtn.textContent = snapshot.isPlaying ? "⏸" : "▶";
-  playBtn.title = snapshot.isPlaying ? "일시정지" : "재생";
+  playBtn.title = snapshot.isPlaying ? "Pause" : "Play";
 
-  playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} 단계`;
+  playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} steps`;
 }
 
 buildPalette();
 
+// 공유 URL(#c=...)이 있으면 저장된 회로보다 우선 적용하고, 이후 편집이
+// 오래된 해시로 되돌아가지 않도록 주소창에서 해시를 제거한다.
+const sharedCircuit = parseShareHash(location.hash);
+if (sharedCircuit) {
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
 const circuit = createCircuitController({
   onChange: render,
   onAnimateStep: (from, to) => scene.animateVectorTo(from, to, 500),
+  initial: sharedCircuit ?? undefined,
 });
 
 qubitMinusBtn.addEventListener("click", () => {
@@ -562,3 +573,63 @@ playBtn.addEventListener("click", () => {
 });
 
 resetViewBtn.addEventListener("click", () => scene.resetView());
+
+// ---------- 공유 / 내보내기 ----------
+
+const shareBtn = document.getElementById("share-btn");
+const exportBtn = document.getElementById("export-btn");
+const exportMenu = document.getElementById("export-menu");
+const toastEl = document.getElementById("toast");
+let toastTimer = null;
+
+function showToast(message) {
+  toastEl.textContent = message;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800);
+}
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`${label} copied to clipboard`);
+  } catch {
+    showToast("Copy failed");
+  }
+}
+
+shareBtn.addEventListener("click", () => {
+  const snap = circuit.getSnapshot();
+  copyText(buildShareUrl(snap.qubitCount, snap.grid), "Share link");
+});
+
+exportBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!exportMenu.classList.contains("hidden")) {
+    exportMenu.classList.add("hidden");
+    return;
+  }
+  exportMenu.classList.remove("hidden");
+  const rect = exportBtn.getBoundingClientRect();
+  const menuRect = exportMenu.getBoundingClientRect();
+  exportMenu.style.left = `${Math.min(rect.left, window.innerWidth - menuRect.width - 8)}px`;
+  exportMenu.style.top = `${rect.bottom + 6}px`;
+});
+
+document.addEventListener("click", (e) => {
+  if (!exportMenu.classList.contains("hidden") && !exportMenu.contains(e.target)) {
+    exportMenu.classList.add("hidden");
+  }
+});
+
+document.getElementById("export-qasm").addEventListener("click", () => {
+  const snap = circuit.getSnapshot();
+  copyText(toQASM(snap.qubitCount, snap.grid), "OpenQASM 2.0");
+  exportMenu.classList.add("hidden");
+});
+
+document.getElementById("export-qiskit").addEventListener("click", () => {
+  const snap = circuit.getSnapshot();
+  copyText(toQiskit(snap.qubitCount, snap.grid), "Qiskit code");
+  exportMenu.classList.add("hidden");
+});
