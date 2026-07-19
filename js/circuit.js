@@ -17,6 +17,7 @@ import {
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
+export const DEFAULT_QUBITS = 4;
 export const MAX_COLUMNS = 12;
 
 const STORAGE_KEY = "bloch-composer-v1";
@@ -74,7 +75,7 @@ function isValidPlacement(cell, targetQubit, qubitCount) {
 
 // onChange(snapshot), onAnimateStep(fromBloch, toBloch) => Promise<void>
 export function createCircuitController({ onChange, onAnimateStep }) {
-  let qubitCount = MIN_QUBITS;
+  let qubitCount = DEFAULT_QUBITS;
   let grid = emptyGrid(qubitCount);
 
   const stored = loadStored();

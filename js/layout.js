@@ -1,9 +1,10 @@
-// 워크스페이스 리사이즈: 행별 독립 칼럼 스플리터 2개 + 행 스플리터 1개.
-// 위 행(팔레트|회로)과 아래 행(구|확률)의 칼럼 비율이 서로 독립적으로 조절된다.
-const STORAGE_KEY = "bloch-layout-v2";
+// 워크스페이스 리사이즈 (칼럼-메이저): 세로 스플리터 1개(왼쪽↔오른쪽 칼럼) +
+// 칼럼별 가로 스플리터 2개(왼쪽: 팔레트↔구, 오른쪽: 회로↔확률).
+// 각 칼럼의 상/하 분할 비율은 서로 독립적으로 조절된다.
+const STORAGE_KEY = "bloch-layout-v3";
 
-const COL_MIN = 22;
-const COL_MAX = 60;
+const COL_MIN = 18;
+const COL_MAX = 55;
 const ROW_MIN = 25;
 const ROW_MAX = 75;
 
@@ -17,9 +18,9 @@ function loadStored() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (
-      typeof parsed.colTop !== "number" ||
-      typeof parsed.colBottom !== "number" ||
-      typeof parsed.row1 !== "number"
+      typeof parsed.col1 !== "number" ||
+      typeof parsed.rowLeft !== "number" ||
+      typeof parsed.rowRight !== "number"
     ) {
       return null;
     }
@@ -31,19 +32,20 @@ function loadStored() {
 
 export function initResizableLayout() {
   const workspace = document.getElementById("workspace");
-  const topRow = document.getElementById("ws-top");
+  const leftCol = document.getElementById("ws-left");
+  const rightCol = document.getElementById("ws-right");
 
   const stored = loadStored();
   const sizes = {
-    colTop: stored ? clamp(stored.colTop, COL_MIN, COL_MAX) : 36,
-    colBottom: stored ? clamp(stored.colBottom, COL_MIN, COL_MAX) : 55,
-    row1: stored ? clamp(stored.row1, ROW_MIN, ROW_MAX) : 50,
+    col1: stored ? clamp(stored.col1, COL_MIN, COL_MAX) : 27,
+    rowLeft: stored ? clamp(stored.rowLeft, ROW_MIN, ROW_MAX) : 50,
+    rowRight: stored ? clamp(stored.rowRight, ROW_MIN, ROW_MAX) : 50,
   };
 
   function apply() {
-    workspace.style.setProperty("--col-top", `${sizes.colTop}%`);
-    workspace.style.setProperty("--col-bottom", `${sizes.colBottom}%`);
-    workspace.style.setProperty("--row1", `${sizes.row1}%`);
+    workspace.style.setProperty("--col1", `${sizes.col1}%`);
+    workspace.style.setProperty("--row-left", `${sizes.rowLeft}%`);
+    workspace.style.setProperty("--row-right", `${sizes.rowRight}%`);
   }
   apply();
 
@@ -80,18 +82,18 @@ export function initResizableLayout() {
     });
   }
 
-  bindSplitter("col-splitter-top", "col", (ev) => {
+  bindSplitter("col-splitter", "col", (ev) => {
     const rect = workspace.getBoundingClientRect();
-    sizes.colTop = clamp(((ev.clientX - rect.left) / rect.width) * 100, COL_MIN, COL_MAX);
+    sizes.col1 = clamp(((ev.clientX - rect.left) / rect.width) * 100, COL_MIN, COL_MAX);
   });
 
-  bindSplitter("col-splitter-bottom", "col", (ev) => {
-    const rect = workspace.getBoundingClientRect();
-    sizes.colBottom = clamp(((ev.clientX - rect.left) / rect.width) * 100, COL_MIN, COL_MAX);
+  bindSplitter("row-splitter-left", "row", (ev) => {
+    const rect = leftCol.getBoundingClientRect();
+    sizes.rowLeft = clamp(((ev.clientY - rect.top) / rect.height) * 100, ROW_MIN, ROW_MAX);
   });
 
-  bindSplitter("row-splitter", "row", (ev) => {
-    const rect = workspace.getBoundingClientRect();
-    sizes.row1 = clamp(((ev.clientY - rect.top) / rect.height) * 100, ROW_MIN, ROW_MAX);
+  bindSplitter("row-splitter-right", "row", (ev) => {
+    const rect = rightCol.getBoundingClientRect();
+    sizes.rowRight = clamp(((ev.clientY - rect.top) / rect.height) * 100, ROW_MIN, ROW_MAX);
   });
 }

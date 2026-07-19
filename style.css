@@ -47,44 +47,46 @@ html, body {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   padding: 4px 24px 20px;
 }
 
-.ws-row {
+/* 칼럼-메이저 구조: 세로 스플리터 1개(전체 높이) + 칼럼별 가로 스플리터 2개.
+   왼쪽 칼럼(팔레트/구)은 좁게, 오른쪽 칼럼(회로/확률)은 넓게가 기본값. */
+.ws-col {
   display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
 }
 
-.ws-top {
+.ws-left {
   flex: none;
-  height: var(--row1, 50%);
+  width: var(--col1, 27%);
 }
 
-.ws-bottom {
+.ws-right {
   flex: 1;
 }
 
-/* 각 행의 왼쪽 패널 너비만 행별 변수로 제어 -> 행마다 독립 리사이즈 */
-.ws-top .panel-palette {
+.ws-left .panel-palette {
   flex: none;
-  width: var(--col-top, 36%);
+  height: var(--row-left, 50%);
 }
 
-.ws-top .panel-circuit {
+.ws-left .panel-sphere {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
 }
 
-.ws-bottom .panel-sphere {
+.ws-right .panel-circuit {
   flex: none;
-  width: var(--col-bottom, 55%);
+  height: var(--row-right, 50%);
 }
 
-.ws-bottom .panel-probability {
+.ws-right .panel-probability {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
 }
 
 .col-splitter {

@@ -21,20 +21,32 @@
     </header>
 
     <div class="workspace" id="workspace">
-      <div class="ws-row ws-top" id="ws-top">
+      <div class="ws-col ws-left" id="ws-left">
       <section class="panel panel-palette">
         <h2 class="panel-title">Operations</h2>
         <div class="palette-grid" id="gate-palette"></div>
       </section>
 
-      <div class="col-splitter" id="col-splitter-top"></div>
+      <div class="row-splitter" id="row-splitter-left"></div>
 
+      <section class="panel panel-sphere">
+        <div class="sphere-toolbar">
+          <div class="qubit-tabs" id="qubit-tabs"></div>
+          <button class="view-reset-btn" id="reset-view-btn" title="시점 초기화">⟲</button>
+        </div>
+        <div id="sphere-container"></div>
+      </section>
+      </div>
+
+      <div class="col-splitter" id="col-splitter"></div>
+
+      <div class="ws-col ws-right" id="ws-right">
       <section class="panel panel-circuit">
         <div class="circuit-toolbar">
           <h2 class="panel-title">Circuit</h2>
           <div class="qubit-stepper">
             <button class="stepper-btn" id="qubit-minus" title="큐비트 삭제">−</button>
-            <span class="qubit-count" id="qubit-count">2</span>
+            <span class="qubit-count" id="qubit-count">4</span>
             <button class="stepper-btn" id="qubit-plus" title="큐비트 추가">+</button>
           </div>
           <button class="icon-btn" id="clear-btn" title="전체 삭제">전체 삭제</button>
@@ -54,20 +66,7 @@
         </div>
       </section>
 
-      </div>
-
-      <div class="row-splitter" id="row-splitter"></div>
-
-      <div class="ws-row ws-bottom" id="ws-bottom">
-      <section class="panel panel-sphere">
-        <div class="sphere-toolbar">
-          <div class="qubit-tabs" id="qubit-tabs"></div>
-          <button class="view-reset-btn" id="reset-view-btn" title="시점 초기화">⟲</button>
-        </div>
-        <div id="sphere-container"></div>
-      </section>
-
-      <div class="col-splitter" id="col-splitter-bottom"></div>
+      <div class="row-splitter" id="row-splitter-right"></div>
 
       <section class="panel panel-probability">
         <h2 class="panel-title">Probabilities</h2>
