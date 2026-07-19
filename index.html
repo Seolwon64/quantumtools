@@ -113,9 +113,15 @@
       <section class="panel panel-probability">
         <div class="prob-toolbar">
           <h2 class="panel-title" id="prob-panel-title">Probabilities</h2>
-          <button class="mode-toggle mode-toggle-sm" id="prob-mode-toggle" title="Switch to Density Matrix Cityscape" aria-pressed="false">
-            <span class="mode-toggle-track"><span class="mode-toggle-knob"></span></span>
-          </button>
+          <div class="prob-toolbar-right">
+            <div class="segmented hidden" id="dm-part-toggle">
+              <button class="segmented-btn active" data-part="re">Re</button>
+              <button class="segmented-btn" data-part="im">Im</button>
+            </div>
+            <button class="mode-toggle mode-toggle-sm" id="prob-mode-toggle" title="Switch to Density Matrix Cityscape" aria-pressed="false">
+              <span class="mode-toggle-track"><span class="mode-toggle-knob"></span></span>
+            </button>
+          </div>
         </div>
         <div class="prob-chart" id="prob-list"></div>
         <div class="cityscape-container hidden" id="cityscape-container"></div>

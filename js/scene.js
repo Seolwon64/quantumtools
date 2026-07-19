@@ -289,12 +289,15 @@ export function createBlochScene(container) {
   resizeObserver.observe(container);
   resize();
 
+  // renderLoop 정의만 하고 호출은 Q-sphere 요소(qsphereBgGroup, silhouette) 생성 후에 한다
+  // (const TDZ 때문에 먼저 호출하면 "Cannot access before initialization" 발생).
   function renderLoop() {
     controls.update();
+    // Q-sphere 외곽 실루엣 링을 항상 카메라를 향하게(billboard) 회전시켜 구 윤곽처럼 보이게 한다.
+    if (qsphereBgGroup.visible) silhouette.quaternion.copy(camera.quaternion);
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
-  renderLoop();
 
   // ---------- Q-sphere (IBM 스타일 전체 상태 시각화) ----------
   // Bloch sphere는 얽힌 상태를 표현할 수 없으므로, 얽힌 회로에서는 대신 이 뷰로
@@ -316,6 +319,30 @@ export function createBlochScene(container) {
   });
   const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 48, 36), qsphereFillMat);
   qsphereBgGroup.add(qsphereFillMesh);
+
+  // 극-극 수직 중심축 (IBM Q-sphere처럼 위/아래 극을 잇는 얇은 세로선)
+  const poleAxisMat = new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.5 });
+  const poleAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, -SPHERE_RADIUS, 0),
+      new THREE.Vector3(0, SPHERE_RADIUS, 0),
+    ]),
+    poleAxisMat
+  );
+  qsphereBgGroup.add(poleAxis);
+
+  // 바깥 실루엣 원 — 항상 카메라를 향하는 great-circle 링으로 구 윤곽을 또렷하게.
+  const SILHOUETTE_SEGMENTS = 96;
+  const silhouettePoints = [];
+  for (let s = 0; s <= SILHOUETTE_SEGMENTS; s++) {
+    const a = (2 * Math.PI * s) / SILHOUETTE_SEGMENTS;
+    silhouettePoints.push(new THREE.Vector3(Math.cos(a) * SPHERE_RADIUS, Math.sin(a) * SPHERE_RADIUS, 0));
+  }
+  const silhouette = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(silhouettePoints),
+    new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.55 })
+  );
+  qsphereBgGroup.add(silhouette);
 
   let qsphereRingQubitCount = -1;
   function rebuildQSphereRings(qubitCount) {
@@ -446,6 +473,8 @@ export function createBlochScene(container) {
       updateLabelSprite(oneLabel, "|1⟩");
     }
   }
+
+  renderLoop();
 
   return {
     setVectorInstant,

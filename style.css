@@ -668,6 +668,41 @@ html, body {
   cursor: pointer;
 }
 
+.prob-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.segmented {
+  display: flex;
+  background: var(--bg);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented.hidden {
+  display: none;
+}
+
+.segmented-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.segmented-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
 .cityscape-container {
   flex: 1;
   min-height: 0;

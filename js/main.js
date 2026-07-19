@@ -78,6 +78,7 @@ const probPanelTitle = document.getElementById("prob-panel-title");
 const probModeToggle = document.getElementById("prob-mode-toggle");
 const probChart = document.getElementById("prob-list");
 const cityscapeContainer = document.getElementById("cityscape-container");
+const dmPartToggle = document.getElementById("dm-part-toggle");
 
 const gateButtons = [];
 
@@ -128,6 +129,7 @@ entangleWarning.addEventListener("mouseleave", hideTooltip);
 
 // ---------- Probabilities / Density Matrix Cityscape ----------
 let probMode = "chart";
+let dmPart = "re"; // 밀도행렬 Re/Im 성분 선택
 let cityscape = null; // 처음 전환할 때 생성 (숨겨진 컨테이너는 크기가 0이라 미리 만들면 카메라 비율이 깨짐)
 
 probModeToggle.addEventListener("click", () => {
@@ -138,10 +140,21 @@ probModeToggle.addEventListener("click", () => {
   probPanelTitle.textContent = isCityscape ? "Density Matrix" : "Probabilities";
   probChart.classList.toggle("hidden", isCityscape);
   cityscapeContainer.classList.toggle("hidden", !isCityscape);
+  dmPartToggle.classList.toggle("hidden", !isCityscape);
   if (isCityscape) {
     if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
-    cityscape.setData(circuit.getSnapshot().densityMatrix);
+    cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
   }
+});
+
+dmPartToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".segmented-btn");
+  if (!btn) return;
+  dmPart = btn.dataset.part;
+  for (const b of dmPartToggle.querySelectorAll(".segmented-btn")) {
+    b.classList.toggle("active", b === btn);
+  }
+  if (cityscape) cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
 });
 
 // ---------- 배치 팝오버 (각도/컨트롤/파트너 선택) ----------
@@ -578,7 +591,7 @@ function render(snapshot) {
   scene.setVectorInstant(snapshot.bloch);
   if (sphereMode === "qsphere") scene.setQSphereData(snapshot.probabilities, snapshot.qubitCount);
   applySphereModeUI(snapshot);
-  if (probMode === "cityscape" && cityscape) cityscape.setData(snapshot.densityMatrix);
+  if (probMode === "cityscape" && cityscape) cityscape.setData(snapshot.densityMatrix, dmPart);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
   updatePaletteAvailability(snapshot.qubitCount);
