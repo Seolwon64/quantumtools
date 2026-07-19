@@ -201,7 +201,13 @@ export function basisProbabilities(state, qubitCount) {
     const amp = state[i];
     let label = "";
     for (let q = qubitCount - 1; q >= 0; q--) label += (i >> q) & 1;
-    results.push({ index: i, label, probability: (amp.re * amp.re + amp.im * amp.im) * 100 });
+    results.push({
+      index: i,
+      label,
+      re: amp.re,
+      im: amp.im,
+      probability: (amp.re * amp.re + amp.im * amp.im) * 100,
+    });
   }
   return results;
 }

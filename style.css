@@ -374,9 +374,17 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Probability chart (세로 막대그래프) */
+/* Probability chart (세로 막대그래프) + 상태벡터 수식 */
+.prob-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
 .prob-chart {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -384,6 +392,17 @@ html, body {
   align-items: stretch;
   gap: 10px;
   padding: 4px 4px 2px;
+}
+
+.prob-formula {
+  flex: none;
+  max-width: 45%;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 14px;
+  color: var(--text-title);
 }
 
 .prob-bar-col {

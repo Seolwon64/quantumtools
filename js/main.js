@@ -20,6 +20,7 @@ const gatePalette = document.getElementById("gate-palette");
 const circuitGrid = document.getElementById("circuit-grid");
 const qubitTabs = document.getElementById("qubit-tabs");
 const probList = document.getElementById("prob-list");
+const probFormula = document.getElementById("prob-formula");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
@@ -207,6 +208,47 @@ function renderProbabilities(snapshot) {
 
     col.append(value, track, label);
     probList.appendChild(col);
+  }
+  renderStateFormula(snapshot);
+}
+
+// 진폭 계수를 LaTeX 문자열로 변환. 반환값은 { text, negative } — 음수 실계수의
+// 부호는 항 연결부호(-)로 흡수하기 위해 분리해서 알려준다.
+function formatAmplitude(re, im) {
+  const EPS = 0.005;
+  const fmt = (v) => {
+    const rounded = Math.abs(v).toFixed(2).replace(/\.?0+$/, "") || "0";
+    return rounded === "1" ? "" : rounded;
+  };
+  if (Math.abs(im) < EPS) {
+    return { text: fmt(re), negative: re < 0 };
+  }
+  if (Math.abs(re) < EPS) {
+    return { text: `${fmt(im)}i`, negative: im < 0 };
+  }
+  const sign = im < 0 ? "-" : "+";
+  const imAbs = Math.abs(im).toFixed(2);
+  return { text: `(${re.toFixed(2)} ${sign} ${imAbs}i)`, negative: false };
+}
+
+function renderStateFormula(snapshot) {
+  const terms = snapshot.probabilities.filter((e) => e.probability > 0.5);
+  let latex = "|\\psi\\rangle = ";
+  terms.forEach((entry, i) => {
+    const { text, negative } = formatAmplitude(entry.re, entry.im);
+    if (i === 0) {
+      latex += negative ? "-" : "";
+    } else {
+      latex += negative ? " - " : " + ";
+    }
+    latex += text ? `${text}\\,|${entry.label}\\rangle` : `|${entry.label}\\rangle`;
+  });
+  if (terms.length === 0) latex += "0";
+
+  if (window.katex) {
+    window.katex.render(latex, probFormula, { throwOnError: false });
+  } else {
+    probFormula.textContent = latex;
   }
 }
 

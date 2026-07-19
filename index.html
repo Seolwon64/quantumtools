@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Bloch Sphere</title>
 <link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -54,7 +56,10 @@
 
       <section class="panel panel-probability">
         <h2 class="panel-title">Probabilities</h2>
-        <div class="prob-chart" id="prob-list"></div>
+        <div class="prob-body">
+          <div class="prob-chart" id="prob-list"></div>
+          <div class="prob-formula" id="prob-formula"></div>
+        </div>
       </section>
 
       <section class="panel panel-sphere">
