@@ -5,13 +5,38 @@ import { initResizableLayout } from "./layout.js";
 
 initResizableLayout();
 
+// IBM Qiskit Composer 팔레트와 동일한 배치 (마지막 파이 아이콘은 확률 표시 위젯이라
+// 자체 Probabilities 패널로 대체, CZ는 팔레트에서 제외하되 엔진은 유지)
 const PALETTE_ORDER = [
-  "H", "CNOT", "CZ", "SWAP", "CTRL", "I",
+  "H", "X", "CNOT", "CCX", "SWAP", "I",
   "T", "S", "Z", "Tdg", "Sdg", "P",
-  "RZ", "MEASURE", "RESET", "BARRIER", "X", "Y",
-  "SX", "SXdg", "RX", "RY", "RXX", "RZZ",
-  "U", "RCCX", "RC3X",
+  "RZ", "MEASURE", "RESET", "BARRIER", "CTRL", "IF",
+  "SX", "SXdg", "Y", "RX", "RY", "RXX",
+  "RZZ", "U", "RCCX", "RC3X",
 ];
+
+// Qiskit 스타일 측정 게이지 아이콘
+const MEASURE_SVG =
+  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  '<path d="M5 16a7 7 0 0 1 14 0" />' +
+  '<line x1="12" y1="16" x2="16.5" y2="9.5" />' +
+  '<text x="17.5" y="8" font-size="8" fill="currentColor" stroke="none">z</text>' +
+  "</svg>";
+
+function stackGlyph(dots, symbol) {
+  const dot = '<span class="glyph-dot"></span>';
+  const line = '<span class="glyph-line"></span>';
+  return `<span class="glyph-stack">${(dot + line).repeat(dots)}<span class="glyph-sym">${symbol}</span></span>`;
+}
+
+// 팔레트 칩 전용 글리프 (없으면 label 텍스트 사용)
+const PALETTE_GLYPHS = {
+  X: '<span class="glyph-sym">⊕</span>',
+  CNOT: stackGlyph(1, "⊕"),
+  CCX: stackGlyph(2, "⊕"),
+  SWAP: '<span class="glyph-stack"><span class="glyph-sym">×</span><span class="glyph-line"></span><span class="glyph-sym">×</span></span>',
+  MEASURE: MEASURE_SVG,
+};
 
 // .circuit-grid 좌표 상수 (style.css의 셀/행 치수와 일치해야 함)
 const GRID_PAD_TOP = 4;
@@ -175,6 +200,29 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
 
 // ---------- 팔레트 ----------
 
+// 스크롤 컨테이너에 잘리지 않도록 body에 고정 위치로 띄우는 커스텀 툴팁
+const gateTooltip = document.createElement("div");
+gateTooltip.className = "gate-tooltip hidden";
+document.body.appendChild(gateTooltip);
+
+function showTooltip(anchor, text) {
+  gateTooltip.textContent = text;
+  gateTooltip.classList.remove("hidden");
+  const rect = anchor.getBoundingClientRect();
+  const tipRect = gateTooltip.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(8, rect.left + rect.width / 2 - tipRect.width / 2),
+    window.innerWidth - tipRect.width - 8
+  );
+  const top = rect.top - tipRect.height - 8;
+  gateTooltip.style.left = `${left}px`;
+  gateTooltip.style.top = `${top < 8 ? rect.bottom + 8 : top}px`;
+}
+
+function hideTooltip() {
+  gateTooltip.classList.add("hidden");
+}
+
 function buildPalette() {
   gatePalette.innerHTML = "";
   for (const gateName of PALETTE_ORDER) {
@@ -182,17 +230,25 @@ function buildPalette() {
     if (!info) continue;
     const btn = document.createElement("button");
     btn.className = `gate-chip group-${info.group}`;
-    btn.textContent = info.label;
+    if (PALETTE_GLYPHS[gateName]) {
+      btn.innerHTML = PALETTE_GLYPHS[gateName];
+    } else {
+      btn.textContent = info.label;
+    }
     btn.dataset.gate = gateName;
+    btn.dataset.tip = info.desc ?? info.label;
     btn.draggable = true;
     btn.addEventListener("dragstart", (e) => {
       if (btn.dataset.ready === "false") {
         e.preventDefault();
         return;
       }
+      hideTooltip();
       e.dataTransfer.setData("text/plain", gateName);
       e.dataTransfer.effectAllowed = "copy";
     });
+    btn.addEventListener("mouseenter", () => showTooltip(btn, btn.dataset.tip));
+    btn.addEventListener("mouseleave", hideTooltip);
     gatePalette.appendChild(btn);
     gateButtons.push(btn);
   }
@@ -201,11 +257,14 @@ function buildPalette() {
 function updatePaletteAvailability(qubitCount) {
   for (const btn of gateButtons) {
     const info = GATE_INFO[btn.dataset.gate];
-    const available = qubitCount >= (info.minQubits ?? 1);
+    const supported = info.ready !== false;
+    const available = supported && qubitCount >= (info.minQubits ?? 1);
     btn.dataset.ready = String(available);
-    btn.title = available
-      ? info.label
-      : `${info.label} — 큐비트 ${info.minQubits}개 이상 필요`;
+    btn.dataset.tip = !supported
+      ? info.desc
+      : available
+        ? info.desc ?? info.label
+        : `${info.desc ?? info.label} — 큐비트 ${info.minQubits}개 이상 필요`;
   }
 }
 
@@ -257,10 +316,14 @@ function buildCircuitGrid(snapshot) {
           const chip = document.createElement("div");
           chip.className = `placed-gate group-${info.group}`;
           if (role.type === "partner") chip.classList.add("placed-partner");
-          chip.textContent =
-            role.type === "target" ? (info.targetLabel ?? info.label)
-            : info.kind === "swap" ? "×"
-            : info.label;
+          if (role.cell.gate === "MEASURE") {
+            chip.innerHTML = MEASURE_SVG;
+          } else {
+            chip.textContent =
+              role.type === "target" ? (info.targetLabel ?? info.label)
+              : info.kind === "swap" ? "×"
+              : info.label;
+          }
           chip.title = "클릭해서 삭제";
           cell.appendChild(chip);
         }
@@ -310,7 +373,7 @@ circuitGrid.addEventListener("drop", (e) => {
   cell.classList.remove("drag-over");
   const gateName = e.dataTransfer.getData("text/plain");
   const info = GATE_INFO[gateName];
-  if (!info) return;
+  if (!info || info.ready === false) return;
   const snapshot = circuit.getSnapshot();
   if (snapshot.qubitCount < (info.minQubits ?? 1)) return;
   const column = Number(cell.dataset.col);

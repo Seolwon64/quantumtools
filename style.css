@@ -158,6 +158,56 @@ html, body {
   cursor: not-allowed;
 }
 
+/* 팔레트 칩 글리프 (CNOT/CCX/SWAP의 점-선 스택, 측정 게이지) */
+.glyph-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.glyph-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.glyph-line {
+  width: 1.5px;
+  height: 3px;
+  background: currentColor;
+}
+
+.glyph-sym {
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.gate-chip svg {
+  pointer-events: none;
+}
+
+/* 게이트 설명 툴팁 (body 고정 배치라 스크롤 컨테이너에 안 잘림) */
+.gate-tooltip {
+  position: fixed;
+  z-index: 60;
+  background: var(--text-title);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.gate-tooltip.hidden {
+  display: none;
+}
+
 .group-hadamard { background: #ffe4e0; color: #e5484d; }
 .group-pauli { background: var(--primary-dim); color: var(--primary); }
 .group-phase { background: #e3f6ee; color: #12805c; }
