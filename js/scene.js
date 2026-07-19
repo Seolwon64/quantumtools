@@ -106,7 +106,7 @@ export function createBlochScene(container) {
     controls.update();
   }
 
-  // 와이어프레임 구
+  // 와이어프레임 구 (Bloch 모드 전용)
   const sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 28, 18);
   const sphereMat = new THREE.MeshBasicMaterial({
     color: WIREFRAME_COLOR,
@@ -114,7 +114,8 @@ export function createBlochScene(container) {
     transparent: true,
     opacity: 0.35,
   });
-  scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+  const wireframeSphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+  scene.add(wireframeSphereMesh);
 
   // X, Y, Z 축 (bloch X -> three X, bloch Y -> three Z, bloch Z -> three Y)
   const axisX = makeAxisMesh("x");
@@ -266,22 +267,88 @@ export function createBlochScene(container) {
   // Bloch sphere는 얽힌 상태를 표현할 수 없으므로, 얽힌 회로에서는 대신 이 뷰로
   // 전환해 전체 2^n 계산기저를 위도(해밍 가중치)·경도(같은 가중치 내 균등 분산)로
   // 배치하고, 크기는 확률, 색상은 위상으로 표현한다.
-  const qsphereGroup = new THREE.Group();
-  qsphereGroup.visible = false;
-  scene.add(qsphereGroup);
-  const qsphereMarkerGeo = new THREE.SphereGeometry(1, 12, 10);
+  const qsphereBgGroup = new THREE.Group();
+  qsphereBgGroup.visible = false;
+  scene.add(qsphereBgGroup);
 
-  function clearQSphereGroup() {
-    for (const child of qsphereGroup.children.slice()) {
-      qsphereGroup.remove(child);
-      // qsphereMarkerGeo는 모든 마커가 공유하므로 지우지 않는다 (stem의 Line 지오메트리만 개별 폐기).
-      if (child.geometry && child.geometry !== qsphereMarkerGeo) child.geometry.dispose();
+  const qsphereFillMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.12,
+    depthWrite: false,
+  });
+  const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 32, 24), qsphereFillMat);
+  qsphereBgGroup.add(qsphereFillMesh);
+
+  let qsphereRingQubitCount = -1;
+  function rebuildQSphereRings(qubitCount) {
+    if (qubitCount === qsphereRingQubitCount) return;
+    qsphereRingQubitCount = qubitCount;
+    for (const child of qsphereBgGroup.children.slice()) {
+      if (child === qsphereFillMesh) continue;
+      qsphereBgGroup.remove(child);
+      child.geometry?.dispose?.();
+      child.material?.dispose?.();
+    }
+    const ringMat = new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.4 });
+    const SEGMENTS = 64;
+    for (let w = 1; w < qubitCount; w++) {
+      const theta = (Math.PI * w) / qubitCount;
+      const r = Math.sin(theta) * SPHERE_RADIUS;
+      const y = Math.cos(theta) * SPHERE_RADIUS;
+      const points = [];
+      for (let s = 0; s <= SEGMENTS; s++) {
+        const a = (2 * Math.PI * s) / SEGMENTS;
+        points.push(new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a)));
+      }
+      qsphereBgGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMat));
+    }
+  }
+
+  const qsphereStateGroup = new THREE.Group(); // 마커(점) + |ket⟩ phase 라벨
+  const qspherePhaseGroup = new THREE.Group(); // 위상 색 스템 라인
+  scene.add(qsphereStateGroup, qspherePhaseGroup);
+  const qsphereMarkerGeo = new THREE.SphereGeometry(1, 12, 10);
+  let showState = true;
+  let showPhase = true;
+
+  // 위상(라디안)을 π의 간단한 분수로 표기 (0, π, π/2, 2π/3 ...), 아니면 소수 배수로 근사.
+  const SIMPLE_FRACTIONS = [
+    [1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 6], [5, 6], [1, 8], [3, 8], [5, 8], [7, 8],
+  ];
+  function formatPhase(rad) {
+    const EPS = 0.02;
+    let a = rad % (2 * Math.PI);
+    if (a > Math.PI) a -= 2 * Math.PI;
+    if (a <= -Math.PI) a += 2 * Math.PI;
+    if (Math.abs(a) < EPS) return "0";
+    if (Math.abs(Math.abs(a) - Math.PI) < EPS) return "π";
+    const sign = a < 0 ? "-" : "";
+    const absFrac = Math.abs(a) / Math.PI;
+    for (const [num, den] of SIMPLE_FRACTIONS) {
+      if (Math.abs(absFrac - num / den) < EPS) {
+        return `${sign}${num === 1 ? "" : num}π/${den}`;
+      }
+    }
+    return `${(a / Math.PI).toFixed(2)}π`;
+  }
+
+  function clearGroup(group) {
+    for (const child of group.children.slice()) {
+      group.remove(child);
+      // Line(stem)만 개별 지오메트리를 갖는다. 마커는 qsphereMarkerGeo를 공유하고,
+      // Sprite(라벨)는 three.js가 내부적으로 공유하는 싱글턴 지오메트리를 쓰므로
+      // 절대 dispose하면 안 된다 (다른 모든 스프라이트가 함께 깨진다).
+      if (child.isLine) child.geometry?.dispose?.();
+      child.material?.map?.dispose?.();
       child.material?.dispose?.();
     }
   }
 
   function setQSphereData(probabilities, qubitCount) {
-    clearQSphereGroup();
+    clearGroup(qsphereStateGroup);
+    clearGroup(qspherePhaseGroup);
+    rebuildQSphereRings(qubitCount);
     if (!qubitCount) return;
     const byWeight = new Map();
     for (const entry of probabilities) {
@@ -291,7 +358,7 @@ export function createBlochScene(container) {
     }
     const PROB_EPS = 0.05; // %
     for (const [weight, entries] of byWeight) {
-      const theta = qubitCount === 0 ? 0 : (Math.PI * weight) / qubitCount;
+      const theta = (Math.PI * weight) / qubitCount;
       entries.forEach((entry, k) => {
         if (entry.probability < PROB_EPS) return;
         const phi = entries.length > 1 ? (2 * Math.PI * k) / entries.length : 0;
@@ -299,25 +366,39 @@ export function createBlochScene(container) {
         const by = Math.sin(theta) * Math.sin(phi);
         const bz = Math.cos(theta);
         const pos = blochToThree({ x: bx, y: by, z: bz }).multiplyScalar(SPHERE_RADIUS);
-
-        const hue = ((Math.atan2(entry.im, entry.re) / (2 * Math.PI)) % 1 + 1) % 1;
+        const phaseRad = Math.atan2(entry.im, entry.re);
+        const hue = ((phaseRad / (2 * Math.PI)) % 1 + 1) % 1;
         const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
 
         const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
-        const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
-        qsphereGroup.add(new THREE.Line(stemGeo, stemMat));
+        const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 });
+        qspherePhaseGroup.add(new THREE.Line(stemGeo, stemMat));
 
         const radius = 0.035 + 0.09 * Math.sqrt(entry.probability / 100);
         const markerMat = new THREE.MeshBasicMaterial({ color });
         const marker = new THREE.Mesh(qsphereMarkerGeo, markerMat);
         marker.position.copy(pos);
         marker.scale.setScalar(radius);
-        qsphereGroup.add(marker);
+        qsphereStateGroup.add(marker);
+
+        const label = makeLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
+        label.scale.set(0.5, 0.22, 1);
+        label.position.copy(pos).multiplyScalar(1.18);
+        qsphereStateGroup.add(label);
       });
     }
+    qsphereStateGroup.visible = showState;
+    qspherePhaseGroup.visible = showPhase;
   }
 
-  function setMode(nextMode, qubitCount) {
+  function setQSphereOptions({ showState: nextState, showPhase: nextPhase }) {
+    if (nextState !== undefined) showState = nextState;
+    if (nextPhase !== undefined) showPhase = nextPhase;
+    qsphereStateGroup.visible = showState;
+    qspherePhaseGroup.visible = showPhase;
+  }
+
+  function setMode(nextMode) {
     sceneMode = nextMode;
     const isBloch = sceneMode === "bloch";
     arrow.visible = isBloch;
@@ -326,9 +407,19 @@ export function createBlochScene(container) {
     yLabel.visible = isBloch;
     axisX.visible = isBloch;
     axisY.visible = isBloch;
-    qsphereGroup.visible = !isBloch;
-    updateLabelSprite(zeroLabel, isBloch ? "|0⟩" : `|${"0".repeat(qubitCount)}⟩`);
-    updateLabelSprite(oneLabel, isBloch ? "|1⟩" : `|${"1".repeat(qubitCount)}⟩`);
+    axisZ.visible = isBloch;
+    wireframeSphereMesh.visible = isBloch;
+    qsphereBgGroup.visible = !isBloch;
+    qsphereStateGroup.visible = !isBloch && showState;
+    qspherePhaseGroup.visible = !isBloch && showPhase;
+    // Q-sphere 모드에서는 weight-0/weight-n 마커 라벨이 극에 동일한 정보(+위상)를
+    // 이미 표시하므로, 고정 극 라벨은 숨겨서 겹침을 피한다.
+    zeroLabel.visible = isBloch;
+    oneLabel.visible = isBloch;
+    if (isBloch) {
+      updateLabelSprite(zeroLabel, "|0⟩");
+      updateLabelSprite(oneLabel, "|1⟩");
+    }
   }
 
   return {
@@ -338,5 +429,6 @@ export function createBlochScene(container) {
     clearTrail,
     setMode,
     setQSphereData,
+    setQSphereOptions,
   };
 }

@@ -284,6 +284,19 @@ export function qubitBlochVector(state, q) {
   return blochVectorFromRho(reducedDensityMatrix(state, q));
 }
 
+// 전역 상태의 밀도행렬 ρ = |ψ⟩⟨ψ| (rho[i][j] = amp_i * conj(amp_j)).
+// Density Matrix Cityscape 시각화용 — 순수 상태이므로 대각원소는 basisProbabilities와 일치한다.
+export function densityMatrix(state) {
+  const n = state.length;
+  const rho = Array.from({ length: n }, () => new Array(n));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      rho[i][j] = cMul(state[i], cConj(state[j]));
+    }
+  }
+  return rho;
+}
+
 // 모든 계산기저에 대한 확률(%). label은 상위 큐비트가 왼쪽에 오는 이진 문자열.
 export function basisProbabilities(state, qubitCount) {
   const results = [];

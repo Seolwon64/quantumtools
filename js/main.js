@@ -3,6 +3,7 @@ import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.
 import { GATE_INFO } from "./quantum.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
+import { createCityscapeScene } from "./cityscape.js";
 
 initResizableLayout();
 
@@ -69,8 +70,34 @@ const placePopover = document.getElementById("place-popover");
 const modeToggle = document.getElementById("mode-toggle");
 const modeToggleLabel = document.getElementById("mode-toggle-label");
 const entangleWarning = document.getElementById("entangle-warning");
+const sphereModeTitle = document.getElementById("sphere-mode-title");
+const qsphereLegend = document.getElementById("qsphere-legend");
+const qsphereOptions = document.getElementById("qsphere-options");
+const qsphereShowStateChk = document.getElementById("qsphere-show-state");
+const qsphereShowPhaseChk = document.getElementById("qsphere-show-phase");
+const menuBtn = document.getElementById("menu-btn");
+const menuPanel = document.getElementById("menu-panel");
+const probPanelTitle = document.getElementById("prob-panel-title");
+const probModeToggle = document.getElementById("prob-mode-toggle");
+const probChart = document.getElementById("prob-list");
+const cityscapeContainer = document.getElementById("cityscape-container");
 
 const gateButtons = [];
+
+// ---------- 햄버거 메뉴 (열림/닫힘만 구현 — 내용은 추후 확장 예정) ----------
+menuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const willOpen = menuPanel.classList.contains("hidden");
+  menuPanel.classList.toggle("hidden", !willOpen);
+  menuBtn.setAttribute("aria-expanded", String(willOpen));
+});
+
+document.addEventListener("click", (e) => {
+  if (!menuPanel.classList.contains("hidden") && !menuPanel.contains(e.target) && e.target !== menuBtn) {
+    menuPanel.classList.add("hidden");
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+});
 
 // ---------- Bloch / Q-sphere 모드 ----------
 // Bloch sphere는 얽힌 상태를 정확히 표현할 수 없다. 얽힘이 감지되면 경고 아이콘을
@@ -80,9 +107,16 @@ let sphereMode = "bloch";
 modeToggle.addEventListener("click", () => {
   sphereMode = sphereMode === "bloch" ? "qsphere" : "bloch";
   const snap = circuit.getSnapshot();
-  scene.setMode(sphereMode, snap.qubitCount);
+  scene.setMode(sphereMode);
   if (sphereMode === "qsphere") scene.setQSphereData(snap.probabilities, snap.qubitCount);
   applySphereModeUI(snap);
+});
+
+qsphereShowStateChk.addEventListener("change", () => {
+  scene.setQSphereOptions({ showState: qsphereShowStateChk.checked });
+});
+qsphereShowPhaseChk.addEventListener("change", () => {
+  scene.setQSphereOptions({ showPhase: qsphereShowPhaseChk.checked });
 });
 
 function applySphereModeUI(snapshot) {
@@ -91,6 +125,9 @@ function applySphereModeUI(snapshot) {
   modeToggle.title = isQSphere ? "Switch to Bloch sphere view" : "Switch to Q-sphere view";
   modeToggleLabel.textContent = isQSphere ? "Q-sphere" : "Bloch";
   qubitTabs.classList.toggle("hidden", isQSphere);
+  sphereModeTitle.classList.toggle("hidden", !isQSphere);
+  qsphereLegend.classList.toggle("hidden", !isQSphere);
+  qsphereOptions.classList.toggle("hidden", !isQSphere);
 
   const entangled = Math.hypot(snapshot.bloch.x, snapshot.bloch.y, snapshot.bloch.z) < 0.99;
   const showWarning = sphereMode === "bloch" && entangled;
@@ -99,6 +136,24 @@ function applySphereModeUI(snapshot) {
 
 entangleWarning.addEventListener("mouseenter", () => showTooltip(entangleWarning, "Detected entanglement"));
 entangleWarning.addEventListener("mouseleave", hideTooltip);
+
+// ---------- Probabilities / Density Matrix Cityscape ----------
+let probMode = "chart";
+let cityscape = null; // 처음 전환할 때 생성 (숨겨진 컨테이너는 크기가 0이라 미리 만들면 카메라 비율이 깨짐)
+
+probModeToggle.addEventListener("click", () => {
+  probMode = probMode === "chart" ? "cityscape" : "chart";
+  const isCityscape = probMode === "cityscape";
+  probModeToggle.setAttribute("aria-pressed", String(isCityscape));
+  probModeToggle.title = isCityscape ? "Switch to probability chart" : "Switch to Density Matrix Cityscape";
+  probPanelTitle.textContent = isCityscape ? "Density Matrix" : "Probabilities";
+  probChart.classList.toggle("hidden", isCityscape);
+  cityscapeContainer.classList.toggle("hidden", !isCityscape);
+  if (isCityscape) {
+    if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
+    cityscape.setData(circuit.getSnapshot().densityMatrix);
+  }
+});
 
 // ---------- 배치 팝오버 (각도/컨트롤/파트너 선택) ----------
 
@@ -534,6 +589,7 @@ function render(snapshot) {
   scene.setVectorInstant(snapshot.bloch);
   if (sphereMode === "qsphere") scene.setQSphereData(snapshot.probabilities, snapshot.qubitCount);
   applySphereModeUI(snapshot);
+  if (probMode === "cityscape" && cityscape) cityscape.setData(snapshot.densityMatrix);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
   updatePaletteAvailability(snapshot.qubitCount);

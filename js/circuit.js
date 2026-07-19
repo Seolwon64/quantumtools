@@ -12,6 +12,7 @@ import {
   uMatrix,
   qubitBlochVector,
   basisProbabilities,
+  densityMatrix,
   GATE_INFO,
 } from "./quantum.js";
 
@@ -165,6 +166,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
       canRemoveQubit: qubitCount > MIN_QUBITS,
       bloch: qubitBlochVector(state, selectedQubit),
       probabilities: basisProbabilities(state, qubitCount),
+      densityMatrix: densityMatrix(state),
     };
   }
 
