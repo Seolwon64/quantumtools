@@ -8,6 +8,7 @@ const AXIS_COLOR = 0x98a2ad;
 const LABEL_COLOR = "#4e5968";
 const VECTOR_COLOR = 0x3182f6;
 const TRAIL_COLOR = 0xff3b30;
+const TRAIL_RADIUS = 0.024;
 
 // 초기/리셋 시점: 오른쪽 X축, 왼쪽 Y축, 위쪽 Z축이 보이는 구도.
 const INITIAL_CAMERA_POS = new THREE.Vector3(2.6, 1.9, 2.6);
@@ -117,25 +118,39 @@ export function createBlochScene(container) {
 
   resetView();
 
-  // 재생 중 벡터가 지나간 궤적 (빨강, 40% 불투명도). 재생을 다시 누르면 초기화된다.
+  // 재생 중 벡터가 지나간 궤적 (빨강, 90% 불투명도). 재생을 다시 누르면 초기화된다.
+  // Line은 대부분의 WebGL 환경에서 linewidth를 무시하므로(축과 동일한 문제),
+  // 실제로 두껍게 보이도록 매 프레임 Tube 메쉬로 재생성한다.
   let trailPoints = [];
-  const trailGeometry = new THREE.BufferGeometry();
-  const trailMaterial = new THREE.LineBasicMaterial({
+  let trailMesh = null;
+  const trailMaterial = new THREE.MeshBasicMaterial({
     color: TRAIL_COLOR,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.9,
   });
-  const trailLine = new THREE.Line(trailGeometry, trailMaterial);
-  scene.add(trailLine);
+
+  function rebuildTrailMesh() {
+    if (trailMesh) {
+      scene.remove(trailMesh);
+      trailMesh.geometry.dispose();
+      trailMesh = null;
+    }
+    if (trailPoints.length < 2) return;
+    const curve = new THREE.CatmullRomCurve3(trailPoints);
+    const tubularSegments = Math.max(8, trailPoints.length * 2);
+    const geo = new THREE.TubeGeometry(curve, tubularSegments, TRAIL_RADIUS, 6, false);
+    trailMesh = new THREE.Mesh(geo, trailMaterial);
+    scene.add(trailMesh);
+  }
 
   function clearTrail() {
     trailPoints = [];
-    trailGeometry.setFromPoints(trailPoints);
+    rebuildTrailMesh();
   }
 
   function pushTrailPoint(threeDir) {
     trailPoints.push(threeDir.clone().multiplyScalar(SPHERE_RADIUS));
-    trailGeometry.setFromPoints(trailPoints);
+    rebuildTrailMesh();
   }
 
   function setVectorInstant(bloch) {

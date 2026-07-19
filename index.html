@@ -20,11 +20,13 @@
       <h1>Bloch Sphere</h1>
     </header>
 
-    <div class="workspace">
+    <div class="workspace" id="workspace">
       <section class="panel panel-palette">
         <h2 class="panel-title">Operations</h2>
         <div class="palette-grid" id="gate-palette"></div>
       </section>
+
+      <div class="col-splitter" id="col-splitter"></div>
 
       <section class="panel panel-circuit">
         <div class="circuit-toolbar">
@@ -47,6 +49,8 @@
           <span class="playback-status" id="playback-status">0 / 0 단계</span>
         </div>
       </section>
+
+      <div class="row-splitter" id="row-splitter"></div>
 
       <section class="panel panel-probability">
         <h2 class="panel-title">Probabilities</h2>

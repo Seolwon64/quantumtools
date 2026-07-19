@@ -1,6 +1,9 @@
 import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
+import { initResizableLayout } from "./layout.js";
+
+initResizableLayout();
 
 const PALETTE_ORDER = [
   "H", "CNOT", "CZ", "SWAP", "CTRL", "I",

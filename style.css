@@ -47,10 +47,62 @@ html, body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 36% 64%;
-  grid-template-rows: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: var(--col1, 36%) 14px 1fr;
+  grid-template-rows: var(--row1, 1fr) 14px 1fr;
   padding: 4px 24px 20px;
+}
+
+.panel-palette { grid-column: 1; grid-row: 1; }
+.panel-circuit { grid-column: 3; grid-row: 1; }
+.panel-probability { grid-column: 1; grid-row: 3; }
+.panel-sphere { grid-column: 3; grid-row: 3; }
+
+.col-splitter {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  cursor: col-resize;
+  position: relative;
+}
+
+.row-splitter {
+  grid-column: 1 / 4;
+  grid-row: 2;
+  cursor: row-resize;
+  position: relative;
+}
+
+.col-splitter::after,
+.row-splitter::after {
+  content: "";
+  position: absolute;
+  background: var(--text-faint);
+  opacity: 0.25;
+  border-radius: 999px;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.col-splitter::after {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+}
+
+.row-splitter::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
+  transform: translateY(-50%);
+}
+
+.col-splitter:hover::after,
+.col-splitter.is-active::after,
+.row-splitter:hover::after,
+.row-splitter.is-active::after {
+  background: var(--primary);
+  opacity: 0.6;
 }
 
 .panel {
