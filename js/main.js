@@ -1,5 +1,5 @@
 import { createBlochScene } from "./scene.js";
-import { createCircuitController, MAX_COLUMNS } from "./circuit.js";
+import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
 import { initResizableLayout } from "./layout.js";
 
@@ -13,6 +13,14 @@ const PALETTE_ORDER = [
   "U", "RCCX", "RC3X",
 ];
 
+// .circuit-grid 좌표 상수 (style.css의 셀/행 치수와 일치해야 함)
+const GRID_PAD_TOP = 4;
+const GRID_PAD_LEFT = 2;
+const LABEL_WIDTH = 38;
+const ROW_PITCH = 52; // 행 높이 46 + gap 6
+const COL_PITCH = 46; // 셀 42 + margin 4
+const CELL_CENTER = 21;
+
 const sphereContainer = document.getElementById("sphere-container");
 const scene = createBlochScene(sphereContainer);
 
@@ -20,7 +28,7 @@ const gatePalette = document.getElementById("gate-palette");
 const circuitGrid = document.getElementById("circuit-grid");
 const qubitTabs = document.getElementById("qubit-tabs");
 const probList = document.getElementById("prob-list");
-const probFormula = document.getElementById("prob-formula");
+const stateFormula = document.getElementById("state-formula");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
@@ -31,48 +39,141 @@ const playBtn = document.getElementById("play-btn");
 const stepFwdBtn = document.getElementById("step-fwd-btn");
 const playbackStatus = document.getElementById("playback-status");
 const resetViewBtn = document.getElementById("reset-view-btn");
+const placePopover = document.getElementById("place-popover");
 
-const anglePopover = document.getElementById("angle-popover");
-const anglePopoverTitle = document.getElementById("angle-popover-title");
-const angleSlider = document.getElementById("angle-slider");
-const angleValue = document.getElementById("angle-value");
-const angleCancelBtn = document.getElementById("angle-cancel");
-const angleConfirmBtn = document.getElementById("angle-confirm");
+const gateButtons = [];
+
+// ---------- 배치 팝오버 (각도/컨트롤/파트너 선택) ----------
 
 let pendingPlacement = null;
 
-function closeAnglePopover() {
-  anglePopover.classList.add("hidden");
+function closePlacePopover() {
+  placePopover.classList.add("hidden");
+  placePopover.innerHTML = "";
   pendingPlacement = null;
 }
 
-function openAnglePopover(column, qubit, gateName, clientX, clientY) {
-  pendingPlacement = { column, qubit, gateName };
-  anglePopoverTitle.textContent = GATE_INFO[gateName].label;
-  const defaultDeg = Math.round(((GATE_INFO[gateName].defaultTheta ?? Math.PI / 2) * 180) / Math.PI);
-  angleSlider.value = String(defaultDeg);
-  angleValue.textContent = String(defaultDeg);
-  anglePopover.classList.remove("hidden");
-  const popoverWidth = 200;
-  const left = Math.min(clientX, window.innerWidth - popoverWidth - 16);
-  const top = Math.min(clientY, window.innerHeight - 180);
-  anglePopover.style.left = `${Math.max(8, left)}px`;
-  anglePopover.style.top = `${Math.max(8, top)}px`;
+function radToDegRound(rad) {
+  return Math.round((rad * 180) / Math.PI);
 }
 
-angleSlider.addEventListener("input", () => {
-  angleValue.textContent = angleSlider.value;
-});
+function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount) {
+  const info = GATE_INFO[gateName];
+  const needControls = info.kind === "controlled" ? info.controls : 0;
+  const needPartner = info.kind === "swap" || info.kind === "pair-param" ? 1 : 0;
+  const sliderNames =
+    info.kind === "param" || info.kind === "pair-param" ? ["θ"]
+    : info.kind === "param3" ? ["θ", "φ", "λ"]
+    : [];
 
-angleCancelBtn.addEventListener("click", closeAnglePopover);
+  pendingPlacement = { column, qubit, gateName, selected: [] };
+  placePopover.innerHTML = "";
 
-angleConfirmBtn.addEventListener("click", () => {
-  if (!pendingPlacement) return;
-  const thetaRad = (Number(angleSlider.value) * Math.PI) / 180;
-  scene.clearTrail();
-  circuit.placeGate(pendingPlacement.column, pendingPlacement.qubit, pendingPlacement.gateName, thetaRad);
-  closeAnglePopover();
-});
+  const title = document.createElement("div");
+  title.className = "place-popover-title";
+  title.textContent = `${info.label} → q[${qubit}]`;
+  placePopover.appendChild(title);
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.className = "pill-btn-primary";
+  confirmBtn.textContent = "확인";
+
+  function updateConfirm() {
+    confirmBtn.disabled = pendingPlacement.selected.length !== needControls + needPartner;
+  }
+
+  if (needControls + needPartner > 0) {
+    const pickLabel = document.createElement("div");
+    pickLabel.className = "place-popover-hint";
+    pickLabel.textContent =
+      needPartner > 0 ? "연결할 큐비트 선택" : `컨트롤 큐비트 ${needControls}개 선택`;
+    placePopover.appendChild(pickLabel);
+
+    const pickRow = document.createElement("div");
+    pickRow.className = "qpick-row";
+    for (let q = 0; q < qubitCount; q++) {
+      if (q === qubit) continue;
+      const btn = document.createElement("button");
+      btn.className = "qpick-btn";
+      btn.textContent = `q[${q}]`;
+      btn.addEventListener("click", () => {
+        const idx = pendingPlacement.selected.indexOf(q);
+        if (idx >= 0) {
+          pendingPlacement.selected.splice(idx, 1);
+          btn.classList.remove("selected");
+        } else if (pendingPlacement.selected.length < needControls + needPartner) {
+          pendingPlacement.selected.push(q);
+          btn.classList.add("selected");
+        }
+        updateConfirm();
+      });
+      pickRow.appendChild(btn);
+    }
+    placePopover.appendChild(pickRow);
+  }
+
+  const sliderInputs = [];
+  for (const name of sliderNames) {
+    const row = document.createElement("div");
+    row.className = "slider-row";
+    const label = document.createElement("span");
+    label.className = "slider-label";
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "slider-value";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "360";
+    slider.step = "1";
+    const defaultDeg = name === "θ" ? radToDegRound(info.defaultTheta ?? Math.PI / 2) : 0;
+    slider.value = String(defaultDeg);
+    label.textContent = name;
+    valueSpan.textContent = `${defaultDeg}°`;
+    slider.addEventListener("input", () => {
+      valueSpan.textContent = `${slider.value}°`;
+    });
+    row.append(label, slider, valueSpan);
+    placePopover.appendChild(row);
+    sliderInputs.push(slider);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "place-popover-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "icon-btn";
+  cancelBtn.textContent = "취소";
+  cancelBtn.addEventListener("click", closePlacePopover);
+
+  confirmBtn.addEventListener("click", () => {
+    if (!pendingPlacement) return;
+    const params = {};
+    const toRad = (v) => (Number(v) * Math.PI) / 180;
+    if (sliderNames.length === 1) params.theta = toRad(sliderInputs[0].value);
+    if (sliderNames.length === 3) {
+      params.theta = toRad(sliderInputs[0].value);
+      params.phi = toRad(sliderInputs[1].value);
+      params.lambda = toRad(sliderInputs[2].value);
+    }
+    if (needControls > 0) params.controls = pendingPlacement.selected.slice();
+    if (needPartner > 0) params.partner = pendingPlacement.selected[0];
+    scene.clearTrail();
+    circuit.placeGate(pendingPlacement.column, pendingPlacement.qubit, pendingPlacement.gateName, params);
+    closePlacePopover();
+  });
+
+  actions.append(cancelBtn, confirmBtn);
+  placePopover.appendChild(actions);
+  updateConfirm();
+
+  placePopover.classList.remove("hidden");
+  const rect = placePopover.getBoundingClientRect();
+  const left = Math.min(clientX, window.innerWidth - rect.width - 16);
+  const top = Math.min(clientY, window.innerHeight - rect.height - 16);
+  placePopover.style.left = `${Math.max(8, left)}px`;
+  placePopover.style.top = `${Math.max(8, top)}px`;
+}
+
+// ---------- 팔레트 ----------
 
 function buildPalette() {
   gatePalette.innerHTML = "";
@@ -83,21 +184,50 @@ function buildPalette() {
     btn.className = `gate-chip group-${info.group}`;
     btn.textContent = info.label;
     btn.dataset.gate = gateName;
-    btn.dataset.ready = String(info.ready);
-    btn.draggable = info.ready;
-    btn.title = info.ready ? info.label : `${info.label} (다음 단계에서 지원 예정)`;
-    if (info.ready) {
-      btn.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData("text/plain", gateName);
-        e.dataTransfer.effectAllowed = "copy";
-      });
-    }
+    btn.draggable = true;
+    btn.addEventListener("dragstart", (e) => {
+      if (btn.dataset.ready === "false") {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData("text/plain", gateName);
+      e.dataTransfer.effectAllowed = "copy";
+    });
     gatePalette.appendChild(btn);
+    gateButtons.push(btn);
   }
 }
 
+function updatePaletteAvailability(qubitCount) {
+  for (const btn of gateButtons) {
+    const info = GATE_INFO[btn.dataset.gate];
+    const available = qubitCount >= (info.minQubits ?? 1);
+    btn.dataset.ready = String(available);
+    btn.title = available
+      ? info.label
+      : `${info.label} — 큐비트 ${info.minQubits}개 이상 필요`;
+  }
+}
+
+// ---------- 회로 그리드 ----------
+
 function buildCircuitGrid(snapshot) {
   circuitGrid.innerHTML = "";
+
+  // 칼럼별 역할 맵: qubit -> { type: "target"|"control"|"partner", cell, targetQ }
+  const roleMaps = [];
+  for (let col = 0; col < MAX_COLUMNS; col++) {
+    const roles = new Map();
+    for (let t = 0; t < snapshot.qubitCount; t++) {
+      const cell = snapshot.grid[col]?.[t];
+      if (!cell) continue;
+      roles.set(t, { type: "target", cell, targetQ: t });
+      for (const q of cell.controls ?? []) roles.set(q, { type: "control", cell, targetQ: t });
+      if (typeof cell.partner === "number") roles.set(cell.partner, { type: "partner", cell, targetQ: t });
+    }
+    roleMaps.push(roles);
+  }
+
   for (let q = 0; q < snapshot.qubitCount; q++) {
     const row = document.createElement("div");
     row.className = "qubit-row";
@@ -115,19 +245,48 @@ function buildCircuitGrid(snapshot) {
       cell.dataset.col = String(col);
       cell.dataset.qubit = String(q);
 
-      const placement = snapshot.grid[col]?.[q];
-      if (placement) {
-        const info = GATE_INFO[placement.gate];
-        const chip = document.createElement("div");
-        chip.className = `placed-gate group-${info.group}`;
-        chip.textContent = info.label;
-        chip.title = "클릭해서 삭제";
-        cell.appendChild(chip);
+      const role = roleMaps[col].get(q);
+      if (role) {
+        const info = GATE_INFO[role.cell.gate];
+        if (role.type === "control") {
+          const dot = document.createElement("div");
+          dot.className = "ctrl-dot";
+          dot.title = "클릭해서 삭제";
+          cell.appendChild(dot);
+        } else {
+          const chip = document.createElement("div");
+          chip.className = `placed-gate group-${info.group}`;
+          if (role.type === "partner") chip.classList.add("placed-partner");
+          chip.textContent =
+            role.type === "target" ? (info.targetLabel ?? info.label)
+            : info.kind === "swap" ? "×"
+            : info.label;
+          chip.title = "클릭해서 삭제";
+          cell.appendChild(chip);
+        }
       }
       wire.appendChild(cell);
     }
     row.appendChild(wire);
     circuitGrid.appendChild(row);
+  }
+
+  // 다중 큐비트 게이트의 세로 연결선
+  for (let col = 0; col < MAX_COLUMNS; col++) {
+    for (let t = 0; t < snapshot.qubitCount; t++) {
+      const cell = snapshot.grid[col]?.[t];
+      if (!cell) continue;
+      const qubits = involvedQubits(cell, t);
+      if (qubits.length < 2) continue;
+      const minQ = Math.min(...qubits);
+      const maxQ = Math.max(...qubits);
+      const line = document.createElement("div");
+      line.className = "gate-connector";
+      line.style.left = `${GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER - 1}px`;
+      line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER + 2}px`;
+      line.style.height = `${(maxQ - minQ) * ROW_PITCH}px`;
+      circuitGrid.appendChild(line);
+    }
   }
 }
 
@@ -151,14 +310,20 @@ circuitGrid.addEventListener("drop", (e) => {
   cell.classList.remove("drag-over");
   const gateName = e.dataTransfer.getData("text/plain");
   const info = GATE_INFO[gateName];
-  if (!info || !info.ready) return;
+  if (!info) return;
+  const snapshot = circuit.getSnapshot();
+  if (snapshot.qubitCount < (info.minQubits ?? 1)) return;
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
-  if (info.kind === "param") {
-    openAnglePopover(column, qubit, gateName, e.clientX, e.clientY);
+
+  const needsPopover =
+    info.kind === "param" || info.kind === "param3" ||
+    info.kind === "controlled" || info.kind === "swap" || info.kind === "pair-param";
+  if (needsPopover) {
+    openPlacePopover(column, qubit, gateName, e.clientX, e.clientY, snapshot.qubitCount);
   } else {
     scene.clearTrail();
-    circuit.placeGate(column, qubit, gateName);
+    circuit.placeGate(column, qubit, gateName, {});
   }
 });
 
@@ -170,6 +335,8 @@ circuitGrid.addEventListener("click", (e) => {
   scene.clearTrail();
   circuit.removeGate(column, qubit);
 });
+
+// ---------- 큐비트 탭 / 확률 / 수식 ----------
 
 function buildQubitTabs(snapshot) {
   qubitTabs.innerHTML = "";
@@ -209,11 +376,9 @@ function renderProbabilities(snapshot) {
     col.append(value, track, label);
     probList.appendChild(col);
   }
-  renderStateFormula(snapshot);
 }
 
-// 진폭 계수를 LaTeX 문자열로 변환. 반환값은 { text, negative } — 음수 실계수의
-// 부호는 항 연결부호(-)로 흡수하기 위해 분리해서 알려준다.
+// 진폭 계수를 표시 문자열로 변환. 음수 실계수의 부호는 항 연결부호로 흡수.
 function formatAmplitude(re, im) {
   const EPS = 0.005;
   const fmt = (v) => {
@@ -226,42 +391,58 @@ function formatAmplitude(re, im) {
   if (Math.abs(re) < EPS) {
     return { text: `${fmt(im)}i`, negative: im < 0 };
   }
-  const sign = im < 0 ? "-" : "+";
-  const imAbs = Math.abs(im).toFixed(2);
-  return { text: `(${re.toFixed(2)} ${sign} ${imAbs}i)`, negative: false };
+  const sign = im < 0 ? "−" : "+";
+  return { text: `(${re.toFixed(2)}${sign}${Math.abs(im).toFixed(2)}i)`, negative: false };
 }
 
 function renderStateFormula(snapshot) {
+  stateFormula.innerHTML = "";
+  const prefix = document.createElement("span");
+  prefix.className = "formula-psi";
+  prefix.textContent = "|ψ⟩ =";
+  stateFormula.appendChild(prefix);
+
   const terms = snapshot.probabilities.filter((e) => e.probability > 0.5);
-  let latex = "|\\psi\\rangle = ";
   terms.forEach((entry, i) => {
     const { text, negative } = formatAmplitude(entry.re, entry.im);
-    if (i === 0) {
-      latex += negative ? "-" : "";
-    } else {
-      latex += negative ? " - " : " + ";
-    }
-    latex += text ? `${text}\\,|${entry.label}\\rangle` : `|${entry.label}\\rangle`;
-  });
-  if (terms.length === 0) latex += "0";
+    const sep = document.createElement("span");
+    sep.className = "formula-sep";
+    sep.textContent = i === 0 ? (negative ? "−" : "") : negative ? "−" : "+";
+    if (sep.textContent) stateFormula.appendChild(sep);
 
-  if (window.katex) {
-    window.katex.render(latex, probFormula, { throwOnError: false });
-  } else {
-    probFormula.textContent = latex;
+    const term = document.createElement("span");
+    term.className = "formula-term";
+    if (text) {
+      const coef = document.createElement("span");
+      coef.className = "formula-coef";
+      coef.textContent = text;
+      term.appendChild(coef);
+    }
+    const ket = document.createElement("span");
+    ket.textContent = `|${entry.label}⟩`;
+    term.appendChild(ket);
+    stateFormula.appendChild(term);
+  });
+
+  if (terms.length === 0) {
+    const zero = document.createElement("span");
+    zero.textContent = "0";
+    stateFormula.appendChild(zero);
   }
 }
+
+// ---------- 메인 렌더 ----------
 
 function render(snapshot) {
   scene.setVectorInstant(snapshot.bloch);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
-  qubitMinusBtn.disabled = !snapshot.canRemoveQubit;
-  qubitPlusBtn.disabled = !snapshot.canAddQubit;
+  updatePaletteAvailability(snapshot.qubitCount);
 
   buildCircuitGrid(snapshot);
   buildQubitTabs(snapshot);
   renderProbabilities(snapshot);
+  renderStateFormula(snapshot);
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
@@ -279,23 +460,26 @@ function render(snapshot) {
   playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} 단계`;
 }
 
+buildPalette();
+
 const circuit = createCircuitController({
   onChange: render,
   onAnimateStep: (from, to) => scene.animateVectorTo(from, to, 500),
 });
 
-buildPalette();
-
 qubitMinusBtn.addEventListener("click", () => {
   scene.clearTrail();
+  closePlacePopover();
   circuit.setQubitCount(circuit.getSnapshot().qubitCount - 1);
 });
 qubitPlusBtn.addEventListener("click", () => {
   scene.clearTrail();
+  closePlacePopover();
   circuit.setQubitCount(circuit.getSnapshot().qubitCount + 1);
 });
 clearBtn.addEventListener("click", () => {
   scene.clearTrail();
+  closePlacePopover();
   circuit.clear();
 });
 resetBtn.addEventListener("click", () => {

@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Bloch Sphere</title>
 <link rel="stylesheet" href="style.css" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -40,8 +38,11 @@
           </div>
           <button class="icon-btn" id="clear-btn" title="전체 삭제">전체 삭제</button>
         </div>
-        <div class="circuit-scroll">
-          <div class="circuit-grid" id="circuit-grid"></div>
+        <div class="circuit-body">
+          <div class="circuit-scroll">
+            <div class="circuit-grid" id="circuit-grid"></div>
+          </div>
+          <div class="circuit-formula" id="state-formula"></div>
         </div>
         <div class="playback-controls">
           <button class="round-btn" id="reset-btn" title="처음으로">⏮</button>
@@ -56,10 +57,7 @@
 
       <section class="panel panel-probability">
         <h2 class="panel-title">Probabilities</h2>
-        <div class="prob-body">
-          <div class="prob-chart" id="prob-list"></div>
-          <div class="prob-formula" id="prob-formula"></div>
-        </div>
+        <div class="prob-chart" id="prob-list"></div>
       </section>
 
       <section class="panel panel-sphere">
@@ -72,15 +70,7 @@
     </div>
   </div>
 
-  <div class="angle-popover hidden" id="angle-popover">
-    <div class="angle-popover-title" id="angle-popover-title">RX</div>
-    <input type="range" id="angle-slider" min="0" max="360" step="1" value="90" />
-    <div class="angle-popover-value"><span id="angle-value">90</span>°</div>
-    <div class="angle-popover-actions">
-      <button class="icon-btn" id="angle-cancel">취소</button>
-      <button class="pill-btn-primary" id="angle-confirm">확인</button>
-    </div>
-  </div>
+  <div class="place-popover hidden" id="place-popover"></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

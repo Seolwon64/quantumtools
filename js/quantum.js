@@ -92,6 +92,11 @@ const PARAM_MATRIX_BUILDERS = {
 };
 
 // 팔레트/UI 메타데이터. group은 색상 분류용.
+// kind: fixed(고정 1큐비트) | param(각도 1개) | param3(U: θ,φ,λ) |
+//       controlled(base 게이트 + 컨트롤 N개) | swap(파트너 1개) |
+//       pair-param(파트너 1개 + 각도) | dot(칼럼 컨트롤 점) |
+//       reset(|0⟩ 사영) | noop(상태 불변)
+// minQubits: 배치에 필요한 최소 큐비트 수 (팔레트 비활성 판단용)
 export const GATE_INFO = {
   H: { label: "H", kind: "fixed", group: "hadamard", ready: true },
   X: { label: "X", kind: "fixed", group: "pauli", ready: true },
@@ -108,20 +113,33 @@ export const GATE_INFO = {
   RY: { label: "RY", kind: "param", group: "rotation", ready: true, defaultTheta: Math.PI / 2 },
   RZ: { label: "RZ", kind: "param", group: "rotation", ready: true, defaultTheta: Math.PI / 2 },
   P: { label: "P", kind: "param", group: "phase", ready: true, defaultTheta: Math.PI / 2 },
-  // 2/3/4큐비트 및 구조 게이트: 팔레트에 노출되지만 Phase 1에서는 배치 불가.
-  CNOT: { label: "⊕", kind: "multi", group: "control", ready: false, qubits: 2 },
-  CZ: { label: "CZ", kind: "multi", group: "control", ready: false, qubits: 2 },
-  SWAP: { label: "SWAP", kind: "multi", group: "control", ready: false, qubits: 2 },
-  RXX: { label: "RXX", kind: "multi", group: "rotation", ready: false, qubits: 2 },
-  RZZ: { label: "RZZ", kind: "multi", group: "rotation", ready: false, qubits: 2 },
-  CTRL: { label: "•", kind: "modifier", group: "control", ready: false, qubits: 1 },
-  RCCX: { label: "RCCX", kind: "multi", group: "rotation", ready: false, qubits: 3 },
-  RC3X: { label: "RC3X", kind: "multi", group: "rotation", ready: false, qubits: 4 },
-  U: { label: "U", kind: "param3", group: "rotation", ready: false, qubits: 1 },
-  BARRIER: { label: "⋮", kind: "structural", group: "structural", ready: false, qubits: 1 },
-  MEASURE: { label: "📏", kind: "structural", group: "structural", ready: false, qubits: 1 },
-  RESET: { label: "|0⟩", kind: "structural", group: "structural", ready: false, qubits: 1 },
+  CNOT: { label: "⊕", targetLabel: "⊕", kind: "controlled", base: "X", controls: 1, group: "control", ready: true, minQubits: 2 },
+  CZ: { label: "CZ", targetLabel: "Z", kind: "controlled", base: "Z", controls: 1, group: "control", ready: true, minQubits: 2 },
+  SWAP: { label: "SWAP", targetLabel: "×", kind: "swap", group: "control", ready: true, minQubits: 2 },
+  RXX: { label: "RXX", targetLabel: "RXX", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2 },
+  RZZ: { label: "RZZ", targetLabel: "RZZ", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2 },
+  CTRL: { label: "•", kind: "dot", group: "control", ready: true },
+  RCCX: { label: "RCCX", targetLabel: "⊕", kind: "controlled", base: "X", controls: 2, group: "rotation", ready: true, minQubits: 3 },
+  RC3X: { label: "RC3X", targetLabel: "⊕", kind: "controlled", base: "X", controls: 3, group: "rotation", ready: true, minQubits: 4 },
+  U: { label: "U", kind: "param3", group: "rotation", ready: true, defaultTheta: Math.PI / 2 },
+  BARRIER: { label: "⋮", kind: "noop", group: "structural", ready: true },
+  MEASURE: { label: "📏", kind: "noop", group: "structural", ready: true },
+  RESET: { label: "|0⟩", kind: "reset", group: "structural", ready: true },
 };
+
+function cPolar(r, angle) {
+  return c(r * Math.cos(angle), r * Math.sin(angle));
+}
+
+// U(θ, φ, λ) 3-파라미터 범용 단일 큐비트 유니터리
+export function uMatrix(theta, phi = 0, lambda = 0) {
+  const cos = Math.cos(theta / 2);
+  const sin = Math.sin(theta / 2);
+  return [
+    [c(cos), cPolar(-sin, lambda)],
+    [cPolar(sin, phi), cPolar(cos, phi + lambda)],
+  ];
+}
 
 function matrixFor(gateName, theta) {
   if (FIXED_MATRICES[gateName]) return FIXED_MATRICES[gateName];
@@ -161,6 +179,76 @@ export function applyUnitary(state, targetQubit, matrix, controlQubits = []) {
 export function applyGate(state, gateName, targetQubit, { theta, controlQubits = [] } = {}) {
   const matrix = matrixFor(gateName, theta);
   return applyUnitary(state, targetQubit, matrix, controlQubits);
+}
+
+// 두 큐비트의 값을 교환 (SWAP)
+export function applySwap(state, a, b) {
+  const maskA = 1 << a;
+  const maskB = 1 << b;
+  const next = state.slice();
+  for (let i = 0; i < state.length; i++) {
+    if ((i & maskA) !== 0 && (i & maskB) === 0) {
+      const j = (i & ~maskA) | maskB;
+      next[i] = state[j];
+      next[j] = state[i];
+    }
+  }
+  return next;
+}
+
+// RXX(θ) = exp(-i θ/2 X⊗X): i와 i^(maskA|maskB) 성분을 섞는다.
+export function applyRXX(state, a, b, theta) {
+  const both = (1 << a) | (1 << b);
+  const cos = Math.cos(theta / 2);
+  const sin = Math.sin(theta / 2);
+  const next = state.slice();
+  const done = new Array(state.length).fill(false);
+  for (let i = 0; i < state.length; i++) {
+    if (done[i]) continue;
+    const j = i ^ both;
+    done[i] = done[j] = true;
+    const ai = state[i];
+    const aj = state[j];
+    // new = cos·a - i·sin·partner
+    next[i] = c(cos * ai.re + sin * aj.im, cos * ai.im - sin * aj.re);
+    next[j] = c(cos * aj.re + sin * ai.im, cos * aj.im - sin * ai.re);
+  }
+  return next;
+}
+
+// RZZ(θ) = exp(-i θ/2 Z⊗Z): 대각 위상. 두 비트가 같으면 e^{-iθ/2}, 다르면 e^{+iθ/2}.
+export function applyRZZ(state, a, b, theta) {
+  const maskA = 1 << a;
+  const maskB = 1 << b;
+  const half = theta / 2;
+  return state.map((amp, i) => {
+    const same = ((i & maskA) !== 0) === ((i & maskB) !== 0);
+    const angle = same ? -half : half;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return c(amp.re * cos - amp.im * sin, amp.re * sin + amp.im * cos);
+  });
+}
+
+// Reset(|0⟩): 결정론적으로 |0⟩ 분기에 사영 후 재정규화.
+// 해당 큐비트가 확정 |1⟩이면 1-분기 진폭을 0-분기로 옮긴다 (X 후 사영과 동일).
+export function applyReset(state, q) {
+  const mask = 1 << q;
+  let norm0 = 0;
+  for (let i = 0; i < state.length; i++) {
+    if ((i & mask) === 0) norm0 += state[i].re * state[i].re + state[i].im * state[i].im;
+  }
+  if (norm0 < 1e-12) {
+    const next = state.map(() => c(0));
+    for (let i = 0; i < state.length; i++) {
+      if (i & mask) next[i & ~mask] = c(state[i].re, state[i].im);
+    }
+    return next;
+  }
+  const scale = 1 / Math.sqrt(norm0);
+  return state.map((amp, i) =>
+    (i & mask) ? c(0) : c(amp.re * scale, amp.im * scale)
+  );
 }
 
 // 큐비트 q의 2x2 축약밀도행렬 (다른 큐비트를 partial trace)

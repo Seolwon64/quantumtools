@@ -148,20 +148,38 @@ export function createBlochScene(container) {
     rebuildTrailMesh();
   }
 
-  function pushTrailPoint(threeDir) {
-    trailPoints.push(threeDir.clone().multiplyScalar(SPHERE_RADIUS));
+  // tip: 화살표 끝점 위치 (방향 x 길이, three.js 좌표)
+  function pushTrailPoint(tip) {
+    trailPoints.push(tip.clone().multiplyScalar(SPHERE_RADIUS));
     rebuildTrailMesh();
   }
 
-  function setVectorInstant(bloch) {
-    const dir = blochToThree(bloch).normalize();
+  // 벡터 길이(순수도) 반영: 얽힘으로 축약상태가 혼합되면 화살표가 구 안쪽으로 줄어든다.
+  function applyArrow(dir, length) {
+    const len = Math.max(length, 0.001);
     arrow.setDirection(dir);
+    arrow.setLength(len * SPHERE_RADIUS, Math.min(0.22, len * 0.5), Math.min(0.12, len * 0.3));
+  }
+
+  function safeDirection(v, fallback) {
+    return v.lengthSq() < 1e-12 ? fallback.clone() : v.clone().normalize();
+  }
+
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  function setVectorInstant(bloch) {
+    const v = blochToThree(bloch);
+    applyArrow(safeDirection(v, UP), v.length());
   }
 
   function animateVectorTo(fromBloch, toBloch, duration = 500) {
     return new Promise((resolve) => {
-      const fromV = blochToThree(fromBloch).normalize();
-      const toV = blochToThree(toBloch).normalize();
+      const fromRaw = blochToThree(fromBloch);
+      const toRaw = blochToThree(toBloch);
+      const fromLen = fromRaw.length();
+      const toLen = toRaw.length();
+      const fromV = safeDirection(fromRaw, UP);
+      const toV = safeDirection(toRaw, fromV);
       const qTotal = new THREE.Quaternion().setFromUnitVectors(fromV, toV);
       const identity = new THREE.Quaternion();
       const start = performance.now();
@@ -171,8 +189,9 @@ export function createBlochScene(container) {
         const eased = easeOutCubic(t);
         const qStep = identity.clone().slerp(qTotal, eased);
         const dir = fromV.clone().applyQuaternion(qStep).normalize();
-        arrow.setDirection(dir);
-        pushTrailPoint(dir);
+        const len = fromLen + (toLen - fromLen) * eased;
+        applyArrow(dir, len);
+        pushTrailPoint(dir.clone().multiplyScalar(Math.max(len, 0.001)));
         if (t < 1) {
           requestAnimationFrame(frame);
         } else {

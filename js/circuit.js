@@ -1,5 +1,19 @@
 // 큐비트(행) x 칼럼(열) 그리드 회로 컨트롤러. 상태 계산, 스텝 재생, localStorage 지속성.
-import { initialState, applyGate, qubitBlochVector, basisProbabilities, GATE_INFO } from "./quantum.js";
+// 다중 큐비트 게이트는 타겟 큐비트 셀에만 placement를 저장하고,
+// controls/partner 필드로 관여하는 다른 큐비트를 기록한다.
+import {
+  initialState,
+  applyGate,
+  applyUnitary,
+  applySwap,
+  applyRXX,
+  applyRZZ,
+  applyReset,
+  uMatrix,
+  qubitBlochVector,
+  basisProbabilities,
+  GATE_INFO,
+} from "./quantum.js";
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
@@ -39,6 +53,25 @@ function usedColumnCount(grid) {
   return 0;
 }
 
+// placement가 관여하는 모든 큐비트 (타겟 + 컨트롤 + 파트너)
+export function involvedQubits(cell, targetQubit) {
+  const qubits = [targetQubit];
+  if (Array.isArray(cell.controls)) qubits.push(...cell.controls);
+  if (typeof cell.partner === "number") qubits.push(cell.partner);
+  return qubits;
+}
+
+function isValidPlacement(cell, targetQubit, qubitCount) {
+  const info = GATE_INFO[cell.gate];
+  if (!info || !info.ready) return false;
+  const qubits = involvedQubits(cell, targetQubit);
+  if (new Set(qubits).size !== qubits.length) return false;
+  if (qubits.some((q) => q < 0 || q >= qubitCount)) return false;
+  if (info.kind === "controlled" && (cell.controls?.length ?? 0) !== info.controls) return false;
+  if ((info.kind === "swap" || info.kind === "pair-param") && typeof cell.partner !== "number") return false;
+  return true;
+}
+
 // onChange(snapshot), onAnimateStep(fromBloch, toBloch) => Promise<void>
 export function createCircuitController({ onChange, onAnimateStep }) {
   let qubitCount = MIN_QUBITS;
@@ -51,9 +84,18 @@ export function createCircuitController({ onChange, onAnimateStep }) {
     for (let col = 0; col < Math.min(MAX_COLUMNS, stored.grid.length); col++) {
       for (let q = 0; q < qubitCount; q++) {
         const cell = stored.grid[col]?.[q];
-        if (cell && GATE_INFO[cell.gate]?.ready) grid[col][q] = cell;
+        if (cell && isValidPlacement(cell, q, qubitCount)) grid[col][q] = cell;
       }
     }
+  }
+
+  // 칼럼 안에서 q를 점유 중인 placement의 타겟 큐비트를 찾는다 (없으면 -1)
+  function occupantTarget(column, q) {
+    for (let t = 0; t < qubitCount; t++) {
+      const cell = grid[column][t];
+      if (cell && involvedQubits(cell, t).includes(q)) return t;
+    }
+    return -1;
   }
 
   let selectedQubit = 0;
@@ -64,9 +106,43 @@ export function createCircuitController({ onChange, onAnimateStep }) {
   function stateAt(step) {
     let state = initialState(qubitCount);
     for (let col = 0; col < step; col++) {
+      // 칼럼의 CTRL 점은 같은 칼럼의 단일 타겟 게이트들에 컨트롤로 부여된다.
+      const dotControls = [];
+      for (let q = 0; q < qubitCount; q++) {
+        if (grid[col][q]?.gate === "CTRL") dotControls.push(q);
+      }
       for (let q = 0; q < qubitCount; q++) {
         const cell = grid[col][q];
-        if (cell) state = applyGate(state, cell.gate, q, { theta: cell.theta });
+        if (!cell) continue;
+        const info = GATE_INFO[cell.gate];
+        switch (info.kind) {
+          case "fixed":
+          case "param":
+            state = applyGate(state, cell.gate, q, { theta: cell.theta, controlQubits: dotControls });
+            break;
+          case "param3":
+            state = applyUnitary(state, q, uMatrix(cell.theta, cell.phi, cell.lambda), dotControls);
+            break;
+          case "controlled":
+            state = applyGate(state, info.base, q, {
+              controlQubits: [...cell.controls, ...dotControls],
+            });
+            break;
+          case "swap":
+            state = applySwap(state, q, cell.partner);
+            break;
+          case "pair-param":
+            state = cell.gate === "RXX"
+              ? applyRXX(state, q, cell.partner, cell.theta)
+              : applyRZZ(state, q, cell.partner, cell.theta);
+            break;
+          case "reset":
+            state = applyReset(state, q);
+            break;
+          case "dot":
+          case "noop":
+            break;
+        }
       }
     }
     return state;
@@ -95,20 +171,33 @@ export function createCircuitController({ onChange, onAnimateStep }) {
     onChange(snapshot());
   }
 
-  function placeGate(column, qubit, gateName, theta) {
+  // params: { theta?, phi?, lambda?, controls?, partner? }
+  function placeGate(column, qubit, gateName, params = {}) {
     if (isAnimating || isPlaying) return;
     if (column < 0 || column >= MAX_COLUMNS) return;
-    if (qubit < 0 || qubit >= qubitCount) return;
-    if (!GATE_INFO[gateName]?.ready) return;
-    grid[column][qubit] = theta === undefined ? { gate: gateName } : { gate: gateName, theta };
+    const cell = { gate: gateName };
+    if (params.theta !== undefined) cell.theta = params.theta;
+    if (params.phi !== undefined) cell.phi = params.phi;
+    if (params.lambda !== undefined) cell.lambda = params.lambda;
+    if (params.controls !== undefined) cell.controls = params.controls;
+    if (params.partner !== undefined) cell.partner = params.partner;
+    if (!isValidPlacement(cell, qubit, qubitCount)) return;
+    // 관여하는 모든 큐비트 자리가 비어 있어야 배치 가능 (자기 자신이 점유 중이면 교체)
+    for (const q of involvedQubits(cell, qubit)) {
+      const occupant = occupantTarget(column, q);
+      if (occupant !== -1 && occupant !== qubit) return;
+    }
+    grid[column][qubit] = cell;
     stepIndex = usedColumnCount(grid);
     notify();
   }
 
   function removeGate(column, qubit) {
     if (isAnimating || isPlaying) return;
-    if (!grid[column] || !grid[column][qubit]) return;
-    grid[column][qubit] = null;
+    if (!grid[column]) return;
+    const target = occupantTarget(column, qubit);
+    if (target === -1) return;
+    grid[column][target] = null;
     stepIndex = Math.min(stepIndex, usedColumnCount(grid));
     notify();
   }
@@ -126,7 +215,9 @@ export function createCircuitController({ onChange, onAnimateStep }) {
     const newGrid = emptyGrid(next);
     for (let col = 0; col < MAX_COLUMNS; col++) {
       for (let q = 0; q < Math.min(qubitCount, next); q++) {
-        newGrid[col][q] = grid[col][q];
+        const cell = grid[col][q];
+        // 컨트롤/파트너가 삭제된 큐비트를 가리키는 placement는 함께 제거
+        if (cell && isValidPlacement(cell, q, next)) newGrid[col][q] = cell;
       }
     }
     qubitCount = next;

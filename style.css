@@ -224,18 +224,72 @@ html, body {
   background: var(--bg);
 }
 
+.circuit-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
 .circuit-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
 }
 
+.circuit-formula {
+  flex: none;
+  max-width: 38%;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  align-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.formula-psi {
+  color: var(--text-body);
+}
+
+.formula-coef {
+  color: var(--primary);
+}
+
+.formula-sep {
+  color: var(--text-faint);
+}
+
 .circuit-grid {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 4px 2px;
   width: max-content;
+}
+
+.gate-connector {
+  position: absolute;
+  width: 2px;
+  background: var(--text-body);
+  opacity: 0.55;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.ctrl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-title);
+  cursor: pointer;
 }
 
 .qubit-row {
@@ -301,6 +355,10 @@ html, body {
 
 .placed-gate:hover {
   transform: scale(1.08);
+}
+
+.placed-partner {
+  opacity: 0.75;
 }
 
 /* Playback */
@@ -374,17 +432,9 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Probability chart (세로 막대그래프) + 상태벡터 수식 */
-.prob-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 16px;
-}
-
+/* Probability chart (세로 막대그래프) */
 .prob-chart {
   flex: 1;
-  min-width: 0;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -392,17 +442,6 @@ html, body {
   align-items: stretch;
   gap: 10px;
   padding: 4px 4px 2px;
-}
-
-.prob-formula {
-  flex: none;
-  max-width: 45%;
-  overflow: auto;
-  display: flex;
-  align-items: center;
-  padding: 4px 8px;
-  font-size: 14px;
-  color: var(--text-title);
 }
 
 .prob-bar-col {
@@ -518,42 +557,98 @@ html, body {
   transform: scale(0.9) rotate(-45deg);
 }
 
-/* Angle popover */
-.angle-popover {
+/* Placement popover (각도/컨트롤/파트너 선택) */
+.place-popover {
   position: fixed;
   z-index: 50;
   background: var(--card-bg);
   border-radius: 16px;
   padding: 16px;
-  width: 200px;
+  width: 232px;
   box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.angle-popover.hidden {
+.place-popover.hidden {
   display: none;
 }
 
-.angle-popover-title {
+.place-popover-title {
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 8px;
   color: var(--primary);
 }
 
-.angle-popover input[type="range"] {
-  width: 100%;
+.place-popover-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-weight: 600;
 }
 
-.angle-popover-value {
-  text-align: center;
+.qpick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.qpick-btn {
+  border: none;
+  background: var(--bg);
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.qpick-btn:active {
+  transform: scale(0.94);
+}
+
+.qpick-btn.selected {
+  background: var(--primary);
+  color: #fff;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-label {
+  flex: none;
+  width: 14px;
   font-size: 13px;
   font-weight: 700;
-  margin: 6px 0 12px;
+  color: var(--text-body);
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.slider-value {
+  flex: none;
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.angle-popover-actions {
+.place-popover-actions {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+
+.pill-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
