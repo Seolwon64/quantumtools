@@ -148,9 +148,18 @@ export function createBlochScene(container) {
     rebuildTrailMesh();
   }
 
-  // tip: 화살표 끝점 위치 (방향 x 길이, three.js 좌표)
+  // tip: 화살표 끝점 위치 (방향 x 길이, three.js 좌표).
+  // 벡터가 정지한 스텝(no-op, 다른 큐비트 게이트)에서는 같은 좌표가 매 프레임 쌓이는데,
+  // CatmullRomCurve3가 중복 점에서 0-접선 -> TubeGeometry NaN을 만들어 궤적이 깜빡이므로
+  // 마지막 점과 사실상 같은 위치면 추가하지 않는다.
+  const TRAIL_MIN_DIST_SQ = 1e-6;
+
   function pushTrailPoint(tip) {
-    trailPoints.push(tip.clone().multiplyScalar(SPHERE_RADIUS));
+    const point = tip.clone().multiplyScalar(SPHERE_RADIUS);
+    if (point.lengthSq() < TRAIL_MIN_DIST_SQ) return; // 화살표 숨김(길이~0) 구간
+    const last = trailPoints[trailPoints.length - 1];
+    if (last && last.distanceToSquared(point) < TRAIL_MIN_DIST_SQ) return;
+    trailPoints.push(point);
     rebuildTrailMesh();
   }
 

@@ -264,7 +264,7 @@ function updatePaletteAvailability(qubitCount) {
       ? info.desc
       : available
         ? info.desc ?? info.label
-        : `${info.desc ?? info.label} — 큐비트 ${info.minQubits}개 이상 필요`;
+        : `${info.desc ?? info.label} — requires ≥${info.minQubits} qubits`;
   }
 }
 
@@ -310,7 +310,7 @@ function buildCircuitGrid(snapshot) {
         if (role.type === "control") {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
-          dot.title = "클릭해서 삭제";
+          dot.title = "Click to remove";
           cell.appendChild(dot);
         } else {
           const chip = document.createElement("div");
@@ -324,7 +324,7 @@ function buildCircuitGrid(snapshot) {
               : info.kind === "swap" ? "×"
               : info.label;
           }
-          chip.title = "클릭해서 삭제";
+          chip.title = "Click to remove";
           cell.appendChild(chip);
         }
       }

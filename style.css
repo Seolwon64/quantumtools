@@ -46,27 +46,57 @@ html, body {
 .workspace {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: var(--col1, 36%) 14px 1fr;
-  grid-template-rows: var(--row1, 1fr) 14px 1fr;
+  display: flex;
+  flex-direction: column;
   padding: 4px 24px 20px;
 }
 
-.panel-palette { grid-column: 1; grid-row: 1; }
-.panel-circuit { grid-column: 3; grid-row: 1; }
-.panel-probability { grid-column: 1; grid-row: 3; }
-.panel-sphere { grid-column: 3; grid-row: 3; }
+.ws-row {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ws-top {
+  flex: none;
+  height: var(--row1, 50%);
+}
+
+.ws-bottom {
+  flex: 1;
+}
+
+/* 각 행의 왼쪽 패널 너비만 행별 변수로 제어 -> 행마다 독립 리사이즈 */
+.ws-top .panel-palette {
+  flex: none;
+  width: var(--col-top, 36%);
+}
+
+.ws-top .panel-circuit {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-bottom .panel-sphere {
+  flex: none;
+  width: var(--col-bottom, 55%);
+}
+
+.ws-bottom .panel-probability {
+  flex: 1;
+  min-width: 0;
+}
 
 .col-splitter {
-  grid-column: 2;
-  grid-row: 1 / 4;
+  flex: none;
+  width: 14px;
   cursor: col-resize;
   position: relative;
 }
 
 .row-splitter {
-  grid-column: 1 / 4;
-  grid-row: 2;
+  flex: none;
+  height: 14px;
   cursor: row-resize;
   position: relative;
 }

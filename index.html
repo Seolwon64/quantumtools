@@ -21,12 +21,13 @@
     </header>
 
     <div class="workspace" id="workspace">
+      <div class="ws-row ws-top" id="ws-top">
       <section class="panel panel-palette">
         <h2 class="panel-title">Operations</h2>
         <div class="palette-grid" id="gate-palette"></div>
       </section>
 
-      <div class="col-splitter" id="col-splitter"></div>
+      <div class="col-splitter" id="col-splitter-top"></div>
 
       <section class="panel panel-circuit">
         <div class="circuit-toolbar">
@@ -53,13 +54,11 @@
         </div>
       </section>
 
+      </div>
+
       <div class="row-splitter" id="row-splitter"></div>
 
-      <section class="panel panel-probability">
-        <h2 class="panel-title">Probabilities</h2>
-        <div class="prob-chart" id="prob-list"></div>
-      </section>
-
+      <div class="ws-row ws-bottom" id="ws-bottom">
       <section class="panel panel-sphere">
         <div class="sphere-toolbar">
           <div class="qubit-tabs" id="qubit-tabs"></div>
@@ -67,6 +66,14 @@
         </div>
         <div id="sphere-container"></div>
       </section>
+
+      <div class="col-splitter" id="col-splitter-bottom"></div>
+
+      <section class="panel panel-probability">
+        <h2 class="panel-title">Probabilities</h2>
+        <div class="prob-chart" id="prob-list"></div>
+      </section>
+      </div>
     </div>
   </div>
 
