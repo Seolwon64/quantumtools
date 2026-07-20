@@ -7,15 +7,25 @@ import { createCityscapeScene } from "./cityscape.js";
 
 initResizableLayout();
 
-// IBM Qiskit Composer 팔레트와 동일한 배치 (마지막 파이 아이콘은 확률 표시 위젯이라
-// 자체 Probabilities 패널로 대체, CZ는 팔레트에서 제외하되 엔진은 유지)
-const PALETTE_ORDER = [
-  "H", "X", "CNOT", "CCX", "SWAP", "I",
-  "T", "S", "Z", "Tdg", "Sdg", "P",
-  "RZ", "MEASURE", "RESET", "BARRIER", "CTRL", "IF",
-  "SX", "SXdg", "Y", "RX", "RY", "RXX",
-  "RZZ", "U", "RCCX", "RC3X",
+// 팔레트 표시 계층 전용 카테고리 정의 (시뮬레이션/게이트 로직과 무관).
+// 색상은 style.css의 --cat-* 변수 한 곳에서 정의하고, 여기서는 카테고리 id만 참조한다.
+// 색상만으로는 색각 이상 사용자가 구분하기 어려우므로 카테고리마다 이름 라벨을 붙인다.
+const PALETTE_CATEGORIES = [
+  { id: "pauli", label: "Pauli & Clifford", gates: ["H", "X", "Y", "Z", "I", "S", "Sdg", "SX", "SXdg"] },
+  { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P", "RZ"] },
+  { id: "rotation", label: "Rotations", gates: ["RX", "RY", "U"] },
+  { id: "multi", label: "Multi-qubit", gates: ["CNOT", "CCX", "SWAP", "CTRL", "RCCX", "RC3X"] },
+  { id: "interaction", label: "Interaction", gates: ["RXX", "RZZ"] },
+  { id: "structural", label: "Non-unitary", gates: ["MEASURE", "RESET", "BARRIER", "IF"] },
 ];
+
+// 미구현 게이트는 피처 플래그로 렌더링에서만 제외한다 (정의/엔진 코드는 그대로 유지).
+const GATE_ENABLED = { IF: false };
+
+// gate → 카테고리 id (색상 클래스 cat-* 용). 위 정의에서 파생한다.
+const GATE_CATEGORY = {};
+for (const cat of PALETTE_CATEGORIES) for (const g of cat.gates) GATE_CATEGORY[g] = cat.id;
+GATE_CATEGORY.CZ = "multi"; // 팔레트엔 없지만 공유 회로로 캔버스에 올 수 있어 색을 부여
 
 // Qiskit 스타일 측정 게이지 아이콘
 const MEASURE_SVG =
@@ -31,9 +41,11 @@ function stackGlyph(dots, symbol) {
   return `<span class="glyph-stack">${(dot + line).repeat(dots)}<span class="glyph-sym">${symbol}</span></span>`;
 }
 
-// 팔레트 칩 전용 글리프 (없으면 label 텍스트 사용)
+// 팔레트 칩 전용 글리프 (없으면 label 텍스트 사용).
+// 주의: X는 여기서 제외해 팔레트 버튼이 문자 "X"(= info.label)로 렌더링되게 한다.
+// ⊕는 CNOT/CCX 팔레트 버튼의 controlled-NOT 타깃 표시로만 남기며,
+// 회로 캔버스의 CNOT 타깃(⊕)은 quantum.js의 targetLabel이 담당하므로 여기서 건드리지 않는다.
 const PALETTE_GLYPHS = {
-  X: '<span class="glyph-sym">⊕</span>',
   CNOT: stackGlyph(1, "⊕"),
   CCX: stackGlyph(2, "⊕"),
   SWAP: '<span class="glyph-stack"><span class="glyph-sym">×</span><span class="glyph-line"></span><span class="glyph-sym">×</span></span>',
@@ -314,34 +326,53 @@ function hideTooltip() {
   gateTooltip.classList.add("hidden");
 }
 
+function makeGateChip(gateName, categoryId) {
+  const info = GATE_INFO[gateName];
+  const btn = document.createElement("button");
+  btn.className = `gate-chip cat-${categoryId}`;
+  if (PALETTE_GLYPHS[gateName]) {
+    btn.innerHTML = PALETTE_GLYPHS[gateName];
+  } else {
+    btn.textContent = info.label;
+  }
+  btn.dataset.gate = gateName;
+  btn.dataset.tip = info.desc ?? info.label;
+  btn.draggable = true;
+  btn.addEventListener("dragstart", (e) => {
+    if (btn.dataset.ready === "false") {
+      e.preventDefault();
+      return;
+    }
+    hideTooltip();
+    e.dataTransfer.setData("text/plain", gateName);
+    e.dataTransfer.effectAllowed = "copy";
+  });
+  btn.addEventListener("mouseenter", () => showTooltip(btn, btn.dataset.tip));
+  btn.addEventListener("mouseleave", hideTooltip);
+  gateButtons.push(btn);
+  return btn;
+}
+
 function buildPalette() {
   gatePalette.innerHTML = "";
-  for (const gateName of PALETTE_ORDER) {
-    const info = GATE_INFO[gateName];
-    if (!info) continue;
-    const btn = document.createElement("button");
-    btn.className = `gate-chip group-${info.group}`;
-    if (PALETTE_GLYPHS[gateName]) {
-      btn.innerHTML = PALETTE_GLYPHS[gateName];
-    } else {
-      btn.textContent = info.label;
-    }
-    btn.dataset.gate = gateName;
-    btn.dataset.tip = info.desc ?? info.label;
-    btn.draggable = true;
-    btn.addEventListener("dragstart", (e) => {
-      if (btn.dataset.ready === "false") {
-        e.preventDefault();
-        return;
-      }
-      hideTooltip();
-      e.dataTransfer.setData("text/plain", gateName);
-      e.dataTransfer.effectAllowed = "copy";
-    });
-    btn.addEventListener("mouseenter", () => showTooltip(btn, btn.dataset.tip));
-    btn.addEventListener("mouseleave", hideTooltip);
-    gatePalette.appendChild(btn);
-    gateButtons.push(btn);
+  for (const cat of PALETTE_CATEGORIES) {
+    // 존재하고 피처 플래그가 꺼지지 않은 게이트만 노출 (예: IF는 enabled:false로 숨김)
+    const gates = cat.gates.filter((g) => GATE_INFO[g] && GATE_ENABLED[g] !== false);
+    if (gates.length === 0) continue;
+
+    const section = document.createElement("div");
+    section.className = "palette-section";
+
+    const label = document.createElement("div");
+    label.className = "palette-cat-label";
+    label.textContent = cat.label;
+
+    const grid = document.createElement("div");
+    grid.className = "palette-grid";
+    for (const gateName of gates) grid.appendChild(makeGateChip(gateName, cat.id));
+
+    section.append(label, grid);
+    gatePalette.appendChild(section);
   }
 }
 
@@ -405,7 +436,7 @@ function buildCircuitGrid(snapshot) {
           cell.appendChild(dot);
         } else {
           const chip = document.createElement("div");
-          chip.className = `placed-gate group-${info.group}`;
+          chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
           if (role.type === "partner") chip.classList.add("placed-partner");
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;

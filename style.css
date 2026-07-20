@@ -8,6 +8,15 @@
   --text-faint: #8b95a1;
   --radius: 20px;
   --radius-sm: 12px;
+
+  /* 게이트 카테고리 색상 — 한 곳에서만 정의. 저채도 파스텔 배경 + 진한 텍스트로
+     WCAG AA(≥4.5:1) 대비를 만족한다. 게이트 버튼은 카테고리 클래스만 참조한다. */
+  --cat-pauli-bg: #e7f0fd;        --cat-pauli-fg: #1554b8;        /* Pauli & Clifford */
+  --cat-phase-bg: #e2f4ed;        --cat-phase-fg: #0d6b4e;        /* Phase / T */
+  --cat-rotation-bg: #f0e9fc;     --cat-rotation-fg: #6b28c9;     /* Rotations */
+  --cat-multi-bg: #fbeede;        --cat-multi-fg: #8f5008;        /* Multi-qubit */
+  --cat-interaction-bg: #fce7f0;  --cat-interaction-fg: #a8175a;  /* Interaction */
+  --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary (gray) */
 }
 
 * {
@@ -222,13 +231,34 @@ html, body {
 }
 
 /* Palette */
-.palette-grid {
+.palette-body {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.palette-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 카테고리 이름 라벨 (색각 이상 사용자도 카테고리 구분 가능하도록) */
+.palette-cat-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.palette-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 8px;
-  overflow-y: auto;
   align-content: start;
 }
 
@@ -361,12 +391,14 @@ html, body {
   transform: translateX(-50%) translateY(0);
 }
 
-.group-hadamard { background: #ffe4e0; color: #e5484d; }
-.group-pauli { background: var(--primary-dim); color: var(--primary); }
-.group-phase { background: #e3f6ee; color: #12805c; }
-.group-rotation { background: #f3ebfd; color: #8b5cf6; }
-.group-control { background: #dbe9fb; color: #1d4ed8; }
-.group-structural { background: #eef0f2; color: #8b95a1; }
+/* 게이트 카테고리 색상 클래스 — 팔레트 버튼과 캔버스에 배치된 게이트 공통 사용.
+   색은 :root의 --cat-* 변수에서만 온다(버튼별 하드코딩 없음). */
+.cat-pauli { background: var(--cat-pauli-bg); color: var(--cat-pauli-fg); }
+.cat-phase { background: var(--cat-phase-bg); color: var(--cat-phase-fg); }
+.cat-rotation { background: var(--cat-rotation-bg); color: var(--cat-rotation-fg); }
+.cat-multi { background: var(--cat-multi-bg); color: var(--cat-multi-fg); }
+.cat-interaction { background: var(--cat-interaction-bg); color: var(--cat-interaction-fg); }
+.cat-structural { background: var(--cat-structural-bg); color: var(--cat-structural-fg); }
 
 /* Circuit */
 .circuit-toolbar {
