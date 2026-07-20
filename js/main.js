@@ -12,8 +12,8 @@ initResizableLayout();
 // 색상만으로는 색각 이상 사용자가 구분하기 어려우므로 카테고리마다 이름 라벨을 붙인다.
 const PALETTE_CATEGORIES = [
   { id: "pauli", label: "Pauli & Clifford", gates: ["H", "X", "Y", "Z", "I", "S", "Sdg", "SX", "SXdg"] },
-  { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P", "RZ"] },
-  { id: "rotation", label: "Rotations", gates: ["RX", "RY", "U"] },
+  { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P"] },
+  { id: "rotation", label: "Rotations", gates: ["RX", "RY", "RZ", "U"] },
   { id: "multi", label: "Multi-qubit", gates: ["CNOT", "CCX", "SWAP", "CTRL", "RCCX", "RC3X"] },
   { id: "interaction", label: "Interaction", gates: ["RXX", "RZZ"] },
   { id: "structural", label: "Non-unitary", gates: ["MEASURE", "RESET", "BARRIER", "IF"] },
@@ -87,7 +87,18 @@ const qsphereLegend = document.getElementById("qsphere-legend");
 const menuBtn = document.getElementById("menu-btn");
 const menuPanel = document.getElementById("menu-panel");
 const probPanelTitle = document.getElementById("prob-panel-title");
+const probEndian = document.getElementById("prob-endian");
 const probModeToggle = document.getElementById("prob-mode-toggle");
+
+// 비트 순서(엔디언) 라벨: little-endian(q0이 오른쪽 끝) 표기를 명시한다.
+const ENDIAN_TOOLTIP = "Little-endian: q0 is the rightmost bit (Qiskit convention)";
+function endianLabelText(n) {
+  const parts = [];
+  for (let i = n - 1; i >= 0; i--) parts.push(`q${i}`);
+  return `|${parts.join(" ")}⟩`;
+}
+probEndian.addEventListener("mouseenter", () => showTooltip(probEndian, ENDIAN_TOOLTIP));
+probEndian.addEventListener("mouseleave", hideTooltip);
 const probChart = document.getElementById("prob-list");
 const cityscapeContainer = document.getElementById("cityscape-container");
 const dmPartToggle = document.getElementById("dm-part-toggle");
@@ -614,6 +625,14 @@ function renderStateFormula(snapshot) {
     zero.textContent = "0";
     stateFormula.appendChild(zero);
   }
+
+  // 비트 순서 라벨 (수식 아래 줄, 작고 회색)
+  const endian = document.createElement("span");
+  endian.className = "endian-label formula-endian";
+  endian.textContent = endianLabelText(snapshot.qubitCount);
+  endian.addEventListener("mouseenter", () => showTooltip(endian, ENDIAN_TOOLTIP));
+  endian.addEventListener("mouseleave", hideTooltip);
+  stateFormula.appendChild(endian);
 }
 
 // ---------- 메인 렌더 ----------
@@ -625,6 +644,7 @@ function render(snapshot) {
   if (probMode === "cityscape" && cityscape) cityscape.setData(snapshot.densityMatrix, dmPart);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
+  probEndian.textContent = endianLabelText(snapshot.qubitCount);
   updatePaletteAvailability(snapshot.qubitCount);
 
   buildCircuitGrid(snapshot);

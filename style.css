@@ -9,6 +9,14 @@
   --radius: 20px;
   --radius-sm: 12px;
 
+  /* 팔레트 버튼 치수/간격/폰트 — 한 곳에서만 정의(나머지는 참조). */
+  --gate-size: 56px;   /* 버튼 최소 한 변 */
+  --gate-gap: 6px;     /* 버튼 사이 간격 */
+  --gate-font: 14px;   /* 라벨 폰트 크기 */
+  --palette-cat-font: 9px;      /* 카테고리 헤더 폰트 */
+  --palette-cat-gap: 4px;       /* 헤더 ↔ 그리드 간격 */
+  --palette-section-gap: 9px;   /* 섹션 사이 간격 */
+
   /* 게이트 카테고리 색상 — 한 곳에서만 정의. 저채도 파스텔 배경 + 진한 텍스트로
      WCAG AA(≥4.5:1) 대비를 만족한다. 게이트 버튼은 카테고리 클래스만 참조한다. */
   --cat-pauli-bg: #e7f0fd;        --cat-pauli-fg: #1554b8;        /* Pauli & Clifford */
@@ -237,28 +245,29 @@ html, body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--palette-section-gap);
 }
 
 .palette-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--palette-cat-gap);
 }
 
 /* 카테고리 이름 라벨 (색각 이상 사용자도 카테고리 구분 가능하도록) */
 .palette-cat-label {
-  font-size: 10px;
+  font-size: var(--palette-cat-font);
   font-weight: 700;
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
+/* 열 개수 고정 대신 컨테이너 폭에 맞춰 자동으로 채운다 */
 .palette-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gate-size), 1fr));
+  gap: var(--gate-gap);
   align-content: start;
 }
 
@@ -266,12 +275,13 @@ html, body {
   aspect-ratio: 1;
   border: none;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--gate-font);
   font-weight: 700;
   cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap; /* √X†, RCCX 등 긴 라벨이 줄바꿈되지 않게 */
   transition: transform 0.12s ease;
 }
 
@@ -700,10 +710,33 @@ html, body {
   cursor: pointer;
 }
 
+.prob-toolbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .prob-toolbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 비트 순서(엔디언) 라벨 — 본문보다 작고 회색으로 시선을 뺏지 않게 */
+.endian-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* 상태벡터 수식 아래 줄에 표시 (flex-wrap 컨테이너에서 새 줄로 내림) */
+.formula-endian {
+  flex-basis: 100%;
+  margin-top: 4px;
 }
 
 .segmented {
