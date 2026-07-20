@@ -37,6 +37,20 @@ function popcount(n) {
   return count;
 }
 
+// IBM Quantum Composer의 Q-sphere 위상 색상환에 맞춘 매핑.
+// 기준점: phase 0 = 빨강, π/2 = 초록, π = 하늘색, 3π/2 = 보라. 위상 각도(라디안)를
+// 네 기준의 HSL hue(도)로 조각별 선형 보간해 IBM과 동일한 색을 낸다.
+// (일반 hue=phase/2π 방식은 π/2가 연두, π가 청록으로 나와 IBM과 어긋난다.)
+const PHASE_HUE_STOPS = [0, 120, 200, 285, 360]; // phase 0, π/2, π, 3π/2, 2π
+export function phaseToColor(phaseRad) {
+  const frac = ((phaseRad / (2 * Math.PI)) % 1 + 1) % 1; // 0..1
+  const seg = frac * 4;
+  const i = Math.min(3, Math.floor(seg));
+  const t = seg - i;
+  const hue = PHASE_HUE_STOPS[i] + (PHASE_HUE_STOPS[i + 1] - PHASE_HUE_STOPS[i]) * t;
+  return new THREE.Color().setHSL(hue / 360, 0.72, 0.55);
+}
+
 // WebGL은 대부분의 브라우저/GPU에서 Line의 linewidth를 무시하고 항상 1px로 그리므로,
 // 두께가 실제로 보이는 축을 그리려면 얇은 원기둥 메쉬를 써야 한다.
 function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
@@ -474,8 +488,7 @@ export function createBlochScene(container) {
         const bz = Math.cos(theta);
         const pos = blochToThree({ x: bx, y: by, z: bz }).multiplyScalar(SPHERE_RADIUS);
         const phaseRad = Math.atan2(entry.im, entry.re);
-        const hue = ((phaseRad / (2 * Math.PI)) % 1 + 1) % 1;
-        const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
+        const color = phaseToColor(phaseRad);
 
         const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
         const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 });

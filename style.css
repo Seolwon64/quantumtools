@@ -973,7 +973,10 @@ html, body {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: conic-gradient(from 90deg, #ff0000, #ff00c8, #6a00ff, #00c8ff, #00ff6a, #c8ff00, #ff0000);
+  /* IBM 매핑: 상단(π/2)=초록, 우측(0)=빨강, 하단(3π/2)=보라, 좌측(π)=하늘색 */
+  background: conic-gradient(from 0deg,
+    #3adf3a 0deg, #dfdf3a 45deg, #df3a3a 90deg, #df3aa1 135deg,
+    #b63adf 180deg, #403adf 225deg, #3aa8df 270deg, #3adfa8 315deg, #3adf3a 360deg);
   box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
 }
 

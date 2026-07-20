@@ -19,7 +19,10 @@
   }
   .wheel {
     width: 64px; height: 64px; border-radius: 50%;
-    background: conic-gradient(from 90deg, #ff0000, #ff00c8, #6a00ff, #00c8ff, #00ff6a, #c8ff00, #ff0000);
+    /* IBM 매핑: 상단(π/2)=초록, 우측(0)=빨강, 하단(3π/2)=보라, 좌측(π)=하늘색 */
+    background: conic-gradient(from 0deg,
+      #3adf3a 0deg, #dfdf3a 45deg, #df3a3a 90deg, #df3aa1 135deg,
+      #b63adf 180deg, #403adf 225deg, #3aa8df 270deg, #3adfa8 315deg, #3adf3a 360deg);
     box-shadow: 0 2px 10px rgba(25,31,40,.18);
   }
   .legend span { font-size: 11px; font-weight: 700; color: #8b95a1; text-transform: uppercase; letter-spacing: .04em; }
@@ -128,6 +131,15 @@ const silhouette = lineOf(silPts, 0x8b95a1, 0.5); scene.add(silhouette);
 
 // ---------- 상태 노드 + 중심선 ----------
 function popcount(n) { let c = 0; while (n) { c += n & 1; n >>= 1; } return c; }
+
+// IBM Q-sphere 위상 색상환: 0=빨강, π/2=초록, π=하늘색, 3π/2=보라를 hue(도)로 보간.
+const PHASE_HUE_STOPS = [0, 120, 200, 285, 360];
+function phaseToColor(phaseRad) {
+  const frac = ((phaseRad / (2 * Math.PI)) % 1 + 1) % 1;
+  const seg = frac * 4, i = Math.min(3, Math.floor(seg)), t = seg - i;
+  const hue = PHASE_HUE_STOPS[i] + (PHASE_HUE_STOPS[i + 1] - PHASE_HUE_STOPS[i]) * t;
+  return new THREE.Color().setHSL(hue / 360, 0.72, 0.55);
+}
 const markerGeo = new THREE.SphereGeometry(1, 16, 12);
 
 const byWeight = new Map();
@@ -149,8 +161,7 @@ for (const [w, entries] of byWeight) {
       Math.sin(theta) * Math.sin(phi) * RADIUS
     );
     const phase = Math.atan2(e.amp.im, e.amp.re);
-    const hue = ((phase / (2 * Math.PI)) % 1 + 1) % 1;
-    const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
+    const color = phaseToColor(phase);
 
     // 중심 -> 노드 반투명 직선
     scene.add(lineOf([new THREE.Vector3(0, 0, 0), pos], color, 0.8));
