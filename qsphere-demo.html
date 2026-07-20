@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glass Q-sphere — standalone demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f2f4f6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #app { width: 100vw; height: 100vh; display: block; }
+  .caption {
+    position: fixed; left: 20px; top: 16px; color: #4e5968;
+    font-size: 14px; font-weight: 600; line-height: 1.5; pointer-events: none;
+  }
+  .caption b { color: #191f28; }
+  .legend {
+    position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+  }
+  .wheel {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: conic-gradient(from 90deg, #ff0000, #ff00c8, #6a00ff, #00c8ff, #00ff6a, #c8ff00, #ff0000);
+    box-shadow: 0 2px 10px rgba(25,31,40,.18);
+  }
+  .legend span { font-size: 11px; font-weight: 700; color: #8b95a1; text-transform: uppercase; letter-spacing: .04em; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="app"></canvas>
+  <div class="caption">
+    <b>Glass Q-sphere</b><br />
+    Superposition demo &middot; drag to rotate &middot; scroll to zoom<br />
+    node size = probability &middot; node color = phase
+  </div>
+  <div class="legend"><div class="wheel"></div><span>Phase</span></div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const RADIUS = 1;
+const AXIS = 0x98a2ad;
+
+// ---------- 더미 데이터: 3큐비트 중첩 상태 ----------
+// 계산기저 진폭 리스트(길이 2^n). 아래는 |0> / |1> 계열이 여러 기저에 걸쳐 중첩된
+// 상태의 예시로, 위도(해밍 가중치)마다 노드가 놓이고 위상마다 색이 달라지도록 골랐다.
+// 단순한 (|0>+|1>)/√2 를 보고 싶으면 QUBITS=1, AMPS=[{re:.707,im:0},{re:.707,im:0}].
+const QUBITS = 3;
+const s = Math.SQRT1_2 / 2; // 진폭 크기(합 확률 1)
+const AMPS = new Array(1 << QUBITS).fill(0).map(() => ({ re: 0, im: 0 }));
+AMPS[0b000] = { re: 0.5, im: 0 };                 // 위상 0   (빨강)
+AMPS[0b001] = { re: 0, im: 0.5 };                 // 위상 π/2 (연두)
+AMPS[0b011] = { re: -0.5, im: 0 };                // 위상 π   (청록)
+AMPS[0b111] = { re: 0, im: -0.5 };                // 위상 3π/2(보라)
+
+// ---------- 씬 / 렌더러 / 조명 / 환경맵 ----------
+const canvas = document.getElementById("app");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+camera.position.set(2.6, 1.9, 2.6);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 2.2;
+controls.maxDistance = 6;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(3, 4, 2); scene.add(key);
+const rim = new THREE.PointLight(0xffffff, 0.6); rim.position.set(-3, 1.5, -2); scene.add(rim);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// ---------- 유리 구 본체 ----------
+const glass = new THREE.Mesh(
+  new THREE.SphereGeometry(RADIUS, 64, 48),
+  new THREE.MeshPhysicalMaterial({
+    color: 0xeaf0f7, metalness: 0, roughness: 0.08,
+    transmission: 1.0, thickness: 1.4, ior: 1.35,
+    clearcoat: 1.0, clearcoatRoughness: 0.12,
+    transparent: true, opacity: 1.0, envMapIntensity: 1.1, depthWrite: false,
+  })
+);
+scene.add(glass);
+
+// ---------- 위도 / 경도 / 적도 / 극축 ----------
+function lineOf(points, color, opacity) {
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+  );
+}
+// 극축
+scene.add(lineOf([new THREE.Vector3(0, -RADIUS, 0), new THREE.Vector3(0, RADIUS, 0)], AXIS, 0.45));
+// 경도 메리디안
+for (let m = 0; m < 8; m++) {
+  const lon = (Math.PI * m) / 8, pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = (Math.PI * i) / 48, y = Math.cos(t), r = Math.sin(t);
+    pts.push(new THREE.Vector3(r * Math.cos(lon) * RADIUS, y * RADIUS, r * Math.sin(lon) * RADIUS));
+  }
+  scene.add(lineOf(pts, AXIS, 0.22));
+}
+// 위도(해밍 가중치) 링
+for (let w = 1; w < QUBITS; w++) {
+  const th = (Math.PI * w) / QUBITS, r = Math.sin(th), y = Math.cos(th), pts = [];
+  for (let i = 0; i <= 64; i++) { const a = (2 * Math.PI * i) / 64; pts.push(new THREE.Vector3(r * Math.cos(a) * RADIUS, y * RADIUS, r * Math.sin(a) * RADIUS)); }
+  scene.add(lineOf(pts, 0x6b7684, 0.45));
+}
+// 적도
+{ const pts = []; for (let i = 0; i <= 96; i++) { const a = (2 * Math.PI * i) / 96; pts.push(new THREE.Vector3(Math.cos(a) * RADIUS, 0, Math.sin(a) * RADIUS)); } scene.add(lineOf(pts, 0x8b95a1, 0.4)); }
+// 외곽 실루엣(카메라 향해 빌보드)
+const silPts = []; for (let i = 0; i <= 96; i++) { const a = (2 * Math.PI * i) / 96; silPts.push(new THREE.Vector3(Math.cos(a) * RADIUS, Math.sin(a) * RADIUS, 0)); }
+const silhouette = lineOf(silPts, 0x8b95a1, 0.5); scene.add(silhouette);
+
+// ---------- 상태 노드 + 중심선 ----------
+function popcount(n) { let c = 0; while (n) { c += n & 1; n >>= 1; } return c; }
+const markerGeo = new THREE.SphereGeometry(1, 16, 12);
+
+const byWeight = new Map();
+AMPS.forEach((amp, index) => {
+  const prob = amp.re * amp.re + amp.im * amp.im;
+  if (prob < 5e-4) return;
+  const w = popcount(index);
+  if (!byWeight.has(w)) byWeight.set(w, []);
+  byWeight.get(w).push({ index, amp, prob });
+});
+
+for (const [w, entries] of byWeight) {
+  const theta = (Math.PI * w) / QUBITS;
+  entries.forEach((e, k) => {
+    const phi = entries.length > 1 ? (2 * Math.PI * k) / entries.length : 0;
+    const pos = new THREE.Vector3(
+      Math.sin(theta) * Math.cos(phi) * RADIUS,
+      Math.cos(theta) * RADIUS,
+      Math.sin(theta) * Math.sin(phi) * RADIUS
+    );
+    const phase = Math.atan2(e.amp.im, e.amp.re);
+    const hue = ((phase / (2 * Math.PI)) % 1 + 1) % 1;
+    const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
+
+    // 중심 -> 노드 반투명 직선
+    scene.add(lineOf([new THREE.Vector3(0, 0, 0), pos], color, 0.8));
+
+    // 확률 비례 크기, 위상 색, 광택 구슬
+    const marker = new THREE.Mesh(markerGeo, new THREE.MeshStandardMaterial({
+      color, roughness: 0.3, metalness: 0, emissive: color, emissiveIntensity: 0.28,
+    }));
+    marker.position.copy(pos);
+    marker.scale.setScalar(0.05 + 0.11 * Math.sqrt(e.prob));
+    scene.add(marker);
+  });
+}
+
+// ---------- 루프 / 리사이즈 ----------
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+}
+addEventListener("resize", resize); resize();
+
+(function loop() {
+  controls.update();
+  silhouette.quaternion.copy(camera.quaternion); // 실루엣을 항상 카메라 정면으로
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

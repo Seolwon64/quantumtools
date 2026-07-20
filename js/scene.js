@@ -1,6 +1,7 @@
 // Three.js 기반 Bloch sphere 3D 렌더링, Slerp 상태 벡터 애니메이션, 시점 리셋.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 // index.html의 html,body font-family와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가
 // DOM 폰트와 다른 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
@@ -126,12 +127,20 @@ export function createBlochScene(container) {
   controls.minDistance = 2.2;
   controls.maxDistance = 6;
 
-  // Q-sphere 채움 구를 은은하게 음영지게(입체감) 보이려면 조명이 필요하다.
-  // MeshBasicMaterial(와이어프레임/축/화살표/트레일)은 조명 영향을 받지 않으므로 안전하다.
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
-  keyLight.position.set(2, 3, 2);
+  // Q-sphere 유리 구에 하이라이트/음영/입체감을 주기 위한 조명 + 환경맵.
+  // Bloch 모드의 와이어프레임/축/화살표/트레일은 전부 MeshBasicMaterial이라
+  // 조명·환경맵 영향을 받지 않으므로 Bloch 뷰는 그대로 유지된다.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+  keyLight.position.set(3, 4, 2);
   scene.add(keyLight);
+  const rimLight = new THREE.PointLight(0xffffff, 0.6);
+  rimLight.position.set(-3, 1.5, -2);
+  scene.add(rimLight);
+
+  // MeshPhysicalMaterial(유리 구)와 광택 노드가 주변을 반사하도록 부드러운 실내 환경맵을 굽는다.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
   function resetView() {
     camera.position.copy(INITIAL_CAMERA_POS);
@@ -307,54 +316,90 @@ export function createBlochScene(container) {
   qsphereBgGroup.visible = false;
   scene.add(qsphereBgGroup);
 
-  // 조명을 받는 재질을 써서 IBM Q-sphere처럼 은은한 입체 음영이 보이게 한다
-  // (MeshBasicMaterial은 항상 평평하게 렌더링되어 구가 잘 보이지 않았다).
-  const qsphereFillMat = new THREE.MeshStandardMaterial({
-    color: 0xe4e7eb,
-    transparent: true,
-    opacity: 0.35,
-    roughness: 1,
+  // 유리 같은 반투명 구 (MeshPhysicalMaterial + transmission). 환경맵을 반사해
+  // 표면에 하이라이트가 맺히고 속이 비쳐 입체적인 유리 구슬처럼 보인다.
+  const qsphereFillMat = new THREE.MeshPhysicalMaterial({
+    color: 0xeaf0f7,
     metalness: 0,
+    roughness: 0.08,
+    transmission: 1.0,
+    thickness: 1.4,
+    ior: 1.35,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.12,
+    transparent: true,
+    opacity: 1.0,
+    envMapIntensity: 1.1,
     depthWrite: false,
   });
-  const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 48, 36), qsphereFillMat);
+  const qsphereFillMesh = new THREE.Mesh(new THREE.SphereGeometry(SPHERE_RADIUS, 64, 48), qsphereFillMat);
   qsphereBgGroup.add(qsphereFillMesh);
 
-  // 극-극 수직 중심축 (IBM Q-sphere처럼 위/아래 극을 잇는 얇은 세로선)
-  const poleAxisMat = new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.5 });
+  // --- 정적 장식(큐비트 수와 무관, 한 번만 생성) ---
+  // 극-극 수직 중심축
   const poleAxis = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, -SPHERE_RADIUS, 0),
       new THREE.Vector3(0, SPHERE_RADIUS, 0),
     ]),
-    poleAxisMat
+    new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.45 })
   );
   qsphereBgGroup.add(poleAxis);
 
+  // 경도(longitude) 메리디안 — globe처럼 구를 감싸는 세로 반원들
+  const meridianMat = new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.22 });
+  const N_LON = 8;
+  const LON_SEG = 48;
+  for (let m = 0; m < N_LON; m++) {
+    const lon = (Math.PI * m) / N_LON;
+    const pts = [];
+    for (let s = 0; s <= LON_SEG; s++) {
+      const t = (Math.PI * s) / LON_SEG; // 극각 0..π
+      const y = Math.cos(t) * SPHERE_RADIUS;
+      const r = Math.sin(t) * SPHERE_RADIUS;
+      pts.push(new THREE.Vector3(r * Math.cos(lon), y, r * Math.sin(lon)));
+    }
+    qsphereBgGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), meridianMat));
+  }
+
+  // 적도(equator) — 살짝 강조
+  const equatorPts = [];
+  for (let s = 0; s <= 96; s++) {
+    const a = (2 * Math.PI * s) / 96;
+    equatorPts.push(new THREE.Vector3(Math.cos(a) * SPHERE_RADIUS, 0, Math.sin(a) * SPHERE_RADIUS));
+  }
+  qsphereBgGroup.add(
+    new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(equatorPts),
+      new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.4 })
+    )
+  );
+
   // 바깥 실루엣 원 — 항상 카메라를 향하는 great-circle 링으로 구 윤곽을 또렷하게.
-  const SILHOUETTE_SEGMENTS = 96;
   const silhouettePoints = [];
-  for (let s = 0; s <= SILHOUETTE_SEGMENTS; s++) {
-    const a = (2 * Math.PI * s) / SILHOUETTE_SEGMENTS;
+  for (let s = 0; s <= 96; s++) {
+    const a = (2 * Math.PI * s) / 96;
     silhouettePoints.push(new THREE.Vector3(Math.cos(a) * SPHERE_RADIUS, Math.sin(a) * SPHERE_RADIUS, 0));
   }
   const silhouette = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(silhouettePoints),
-    new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.55 })
+    new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.5 })
   );
   qsphereBgGroup.add(silhouette);
 
+  // --- 위도(해밍 가중치) 링: 노드가 놓이는 위치. 큐비트 수 바뀔 때만 재생성 ---
+  const qsphereRingsGroup = new THREE.Group();
+  qsphereBgGroup.add(qsphereRingsGroup);
   let qsphereRingQubitCount = -1;
   function rebuildQSphereRings(qubitCount) {
     if (qubitCount === qsphereRingQubitCount) return;
     qsphereRingQubitCount = qubitCount;
-    for (const child of qsphereBgGroup.children.slice()) {
-      if (child === qsphereFillMesh) continue;
-      qsphereBgGroup.remove(child);
-      child.geometry?.dispose?.();
-      child.material?.dispose?.();
+    for (const child of qsphereRingsGroup.children.slice()) {
+      qsphereRingsGroup.remove(child);
+      child.geometry.dispose();
+      child.material.dispose();
     }
-    const ringMat = new THREE.LineBasicMaterial({ color: AXIS_COLOR, transparent: true, opacity: 0.4 });
+    const ringMat = new THREE.LineBasicMaterial({ color: 0x6b7684, transparent: true, opacity: 0.45 });
     const SEGMENTS = 64;
     for (let w = 1; w < qubitCount; w++) {
       const theta = (Math.PI * w) / qubitCount;
@@ -365,7 +410,7 @@ export function createBlochScene(container) {
         const a = (2 * Math.PI * s) / SEGMENTS;
         points.push(new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a)));
       }
-      qsphereBgGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMat));
+      qsphereRingsGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMat));
     }
   }
 
@@ -433,11 +478,18 @@ export function createBlochScene(container) {
         const color = new THREE.Color().setHSL(hue, 0.75, 0.55);
 
         const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
-        const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 });
+        const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 });
         qspherePhaseGroup.add(new THREE.Line(stemGeo, stemMat));
 
         const radius = 0.035 + 0.09 * Math.sqrt(entry.probability / 100);
-        const markerMat = new THREE.MeshBasicMaterial({ color });
+        // 광택 구슬: 환경맵/조명을 받아 유리 구 안에서 빛나는 노드처럼 보이게 한다.
+        const markerMat = new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.3,
+          metalness: 0.0,
+          emissive: color,
+          emissiveIntensity: 0.28,
+        });
         const marker = new THREE.Mesh(qsphereMarkerGeo, markerMat);
         marker.position.copy(pos);
         marker.scale.setScalar(radius);
