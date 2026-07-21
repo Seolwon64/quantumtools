@@ -143,7 +143,7 @@ export function uMatrix(theta, phi = 0, lambda = 0) {
   ];
 }
 
-function matrixFor(gateName, theta) {
+export function matrixFor(gateName, theta) {
   if (FIXED_MATRICES[gateName]) return FIXED_MATRICES[gateName];
   if (PARAM_MATRIX_BUILDERS[gateName]) {
     const info = GATE_INFO[gateName];
@@ -151,6 +151,13 @@ function matrixFor(gateName, theta) {
   }
   throw new Error(`구현되지 않은 게이트: ${gateName}`);
 }
+
+// 단일 타깃 2x2 유니터리로 시뮬레이션되는 base 게이트 목록 (U는 별도 처리).
+const SINGLE_QUBIT_GATES = new Set([
+  "H", "X", "Y", "Z", "S", "Sdg", "T", "Tdg", "I", "SX", "SXdg", "RX", "RY", "RZ", "P",
+]);
+// 컨트롤을 붙일 수 없는 비유니터리/마커. 위반 시 명확한 에러를 낸다. [4]
+const NON_CONTROLLABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL"]);
 
 export function initialState(qubitCount) {
   const size = 1 << qubitCount;
@@ -183,12 +190,18 @@ export function applyGate(state, gateName, targetQubit, { theta, controlQubits =
   return applyUnitary(state, targetQubit, matrix, controlQubits);
 }
 
-// 두 큐비트의 값을 교환 (SWAP)
-export function applySwap(state, a, b) {
+function controlMaskOf(controlQubits) {
+  return controlQubits.reduce((mask, q) => mask | (1 << q), 0);
+}
+
+// 두 큐비트의 값을 교환 (SWAP). controlQubits가 있으면 controlled-SWAP(Fredkin).
+export function applySwap(state, a, b, controlQubits = []) {
   const maskA = 1 << a;
   const maskB = 1 << b;
+  const cmask = controlMaskOf(controlQubits);
   const next = state.slice();
   for (let i = 0; i < state.length; i++) {
+    if ((i & cmask) !== cmask) continue;
     if ((i & maskA) !== 0 && (i & maskB) === 0) {
       const j = (i & ~maskA) | maskB;
       next[i] = state[j];
@@ -198,9 +211,10 @@ export function applySwap(state, a, b) {
   return next;
 }
 
-// RXX(θ) = exp(-i θ/2 X⊗X): i와 i^(maskA|maskB) 성분을 섞는다.
-export function applyRXX(state, a, b, theta) {
+// RXX(θ) = exp(-i θ/2 X⊗X): i와 i^(maskA|maskB) 성분을 섞는다. controlQubits면 controlled-RXX.
+export function applyRXX(state, a, b, theta, controlQubits = []) {
   const both = (1 << a) | (1 << b);
+  const cmask = controlMaskOf(controlQubits);
   const cos = Math.cos(theta / 2);
   const sin = Math.sin(theta / 2);
   const next = state.slice();
@@ -209,6 +223,8 @@ export function applyRXX(state, a, b, theta) {
     if (done[i]) continue;
     const j = i ^ both;
     done[i] = done[j] = true;
+    // 컨트롤 비트는 a,b와 겹치지 않으므로 i와 j의 컨트롤 비트는 동일 — i만 검사.
+    if ((i & cmask) !== cmask) continue;
     const ai = state[i];
     const aj = state[j];
     // new = cos·a - i·sin·partner
@@ -219,17 +235,46 @@ export function applyRXX(state, a, b, theta) {
 }
 
 // RZZ(θ) = exp(-i θ/2 Z⊗Z): 대각 위상. 두 비트가 같으면 e^{-iθ/2}, 다르면 e^{+iθ/2}.
-export function applyRZZ(state, a, b, theta) {
+// controlQubits면 controlled-RZZ.
+export function applyRZZ(state, a, b, theta, controlQubits = []) {
   const maskA = 1 << a;
   const maskB = 1 << b;
+  const cmask = controlMaskOf(controlQubits);
   const half = theta / 2;
   return state.map((amp, i) => {
+    if ((i & cmask) !== cmask) return amp;
     const same = ((i & maskA) !== 0) === ((i & maskB) !== 0);
     const angle = same ? -half : half;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     return c(amp.re * cos - amp.im * sin, amp.re * sin + amp.im * cos);
   });
+}
+
+// ---------- 정규(canonical) placement 적용: { gate, targets, controls, params } ----------
+// 모든 게이트를 일반적으로 처리한다(게이트별 컨트롤 특수 분기 없음).
+// extraControls: 칼럼 CTRL(•) 점에서 온 추가 컨트롤.
+export function applyPlacement(state, cell, extraControls = []) {
+  const gate = cell.gate;
+  const targets = cell.targets ?? [];
+  const controls = cell.controls ?? [];
+  const params = cell.params ?? {};
+
+  if (NON_CONTROLLABLE.has(gate)) {
+    if (controls.length > 0 || extraControls.length > 0) {
+      throw new Error(`${gate} cannot be controlled`);
+    }
+    if (gate === "RESET") return applyReset(state, targets[0]);
+    return state; // MEASURE, BARRIER, CTRL: 상태벡터 불변
+  }
+
+  const ctrl = controls.length || extraControls.length ? [...controls, ...extraControls] : [];
+  if (gate === "SWAP") return applySwap(state, targets[0], targets[1], ctrl);
+  if (gate === "RXX") return applyRXX(state, targets[0], targets[1], params.theta ?? Math.PI / 2, ctrl);
+  if (gate === "RZZ") return applyRZZ(state, targets[0], targets[1], params.theta ?? Math.PI / 2, ctrl);
+  if (gate === "U") return applyUnitary(state, targets[0], uMatrix(params.theta ?? 0, params.phi ?? 0, params.lambda ?? 0), ctrl);
+  if (SINGLE_QUBIT_GATES.has(gate)) return applyUnitary(state, targets[0], matrixFor(gate, params.theta), ctrl);
+  return state; // 알 수 없는 게이트: 무시
 }
 
 // Reset(|0⟩): 결정론적으로 |0⟩ 분기에 사영 후 재정규화.

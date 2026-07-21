@@ -406,16 +406,16 @@ function updatePaletteAvailability(qubitCount) {
 function buildCircuitGrid(snapshot) {
   circuitGrid.innerHTML = "";
 
-  // 칼럼별 역할 맵: qubit -> { type: "target"|"control"|"partner", cell, targetQ }
+  // 칼럼별 역할 맵: qubit -> { type: "target"|"control", cell, primary }
+  // canonical 셀은 홈 행(targets[0])에만 저장되며, 관여 큐비트는 targets/controls로 표시.
   const roleMaps = [];
   for (let col = 0; col < MAX_COLUMNS; col++) {
     const roles = new Map();
     for (let t = 0; t < snapshot.qubitCount; t++) {
       const cell = snapshot.grid[col]?.[t];
       if (!cell) continue;
-      roles.set(t, { type: "target", cell, targetQ: t });
-      for (const q of cell.controls ?? []) roles.set(q, { type: "control", cell, targetQ: t });
-      if (typeof cell.partner === "number") roles.set(cell.partner, { type: "partner", cell, targetQ: t });
+      cell.targets.forEach((tq, i) => roles.set(tq, { type: "target", cell, primary: i === 0 }));
+      for (const q of cell.controls ?? []) roles.set(q, { type: "control", cell, primary: false });
     }
     roleMaps.push(roles);
   }
@@ -448,14 +448,12 @@ function buildCircuitGrid(snapshot) {
         } else {
           const chip = document.createElement("div");
           chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
-          if (role.type === "partner") chip.classList.add("placed-partner");
+          if (!role.primary) chip.classList.add("placed-partner"); // 두 번째 타깃은 살짝 흐리게(기존과 동일)
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
           } else {
             chip.textContent =
-              role.type === "target" ? (info.targetLabel ?? info.label)
-              : info.kind === "swap" ? "×"
-              : info.label;
+              role.cell.gate === "SWAP" ? "×" : (info.targetLabel ?? info.label);
           }
           chip.title = "Click to remove";
           cell.appendChild(chip);
@@ -472,7 +470,7 @@ function buildCircuitGrid(snapshot) {
     for (let t = 0; t < snapshot.qubitCount; t++) {
       const cell = snapshot.grid[col]?.[t];
       if (!cell) continue;
-      const qubits = involvedQubits(cell, t);
+      const qubits = involvedQubits(cell);
       if (qubits.length < 2) continue;
       const minQ = Math.min(...qubits);
       const maxQ = Math.max(...qubits);
