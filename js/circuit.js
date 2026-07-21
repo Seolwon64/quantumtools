@@ -223,6 +223,47 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     notify();
   }
 
+  // "•" 부착: controlQubit을 같은 칼럼의 (가장 가까운) 게이트 controls 배열에 추가한다.
+  // 시뮬레이션 코드는 건드리지 않고 데이터 모델(controls)만 수정한다.
+  // 반환: { ok, reason } — 실패 시 이유를 UI 툴팁으로 표시할 수 있게 한다.
+  function addControl(column, controlQubit) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    if (column < 0 || column >= MAX_COLUMNS) return { ok: false, reason: "Invalid column" };
+    if (occupantTarget(column, controlQubit) !== -1) return { ok: false, reason: "Cell already occupied" };
+    const homes = [];
+    for (let t = 0; t < qubitCount; t++) {
+      if (grid[column][t] && grid[column][t].gate !== "CTRL") homes.push(t);
+    }
+    if (homes.length === 0) return { ok: false, reason: "No gate in this column to control" };
+    homes.sort((a, b) => Math.abs(a - controlQubit) - Math.abs(b - controlQubit));
+    const home = homes[0];
+    const cell = grid[column][home];
+    if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be controlled` };
+    const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
+    if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
+    grid[column][home] = newCell;
+    stepIndex = usedColumnCount(grid);
+    notify();
+    return { ok: true };
+  }
+
+  // 제어점 제거: controlQubit이 어떤 게이트의 controls면 그 항목만 뺀다.
+  // 반환: 제거했으면 true (클릭이 제어점이었음), 아니면 false.
+  function removeControl(column, controlQubit) {
+    if (isAnimating || isPlaying) return false;
+    if (!grid[column]) return false;
+    for (let t = 0; t < qubitCount; t++) {
+      const cell = grid[column][t];
+      if (cell && (cell.controls ?? []).includes(controlQubit)) {
+        grid[column][t] = { ...cell, controls: cell.controls.filter((c) => c !== controlQubit) };
+        stepIndex = Math.min(stepIndex, usedColumnCount(grid));
+        notify();
+        return true;
+      }
+    }
+    return false;
+  }
+
   function clear() {
     if (isAnimating || isPlaying) return;
     grid = emptyGrid(qubitCount);
@@ -320,6 +361,8 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     getSnapshot: snapshot,
     placeGate,
     removeGate,
+    addControl,
+    removeControl,
     clear,
     setQubitCount,
     selectQubit,

@@ -14,7 +14,7 @@ const PALETTE_CATEGORIES = [
   { id: "pauli", label: "Pauli & Clifford", gates: ["H", "X", "Y", "Z", "I", "S", "Sdg", "SX", "SXdg"] },
   { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P"] },
   { id: "rotation", label: "Rotations", gates: ["RX", "RY", "RZ", "U"] },
-  { id: "multi", label: "Multi-qubit", gates: ["CNOT", "CCX", "SWAP", "CTRL", "RCCX", "RC3X"] },
+  { id: "multi", label: "Multi-qubit", gates: ["CTRL", "CNOT", "CCX", "SWAP", "RCCX", "RC3X"] },
   { id: "interaction", label: "Interaction", gates: ["RXX", "RZZ"] },
   { id: "structural", label: "Non-unitary", gates: ["MEASURE", "RESET", "BARRIER", "IF"] },
 ];
@@ -26,6 +26,27 @@ const GATE_ENABLED = { IF: false };
 const GATE_CATEGORY = {};
 for (const cat of PALETTE_CATEGORIES) for (const g of cat.gates) GATE_CATEGORY[g] = cat.id;
 GATE_CATEGORY.CZ = "multi"; // 팔레트엔 없지만 공유 회로로 캔버스에 올 수 있어 색을 부여
+
+// 제어가 붙은 게이트의 표준 이름 (hover 표시용). 매핑에 없으면 Controlled-<gate>.
+const CONTROLLED_NAMES = {
+  "X+1": "CX (CNOT)",
+  "Z+1": "CZ",
+  "X+2": "CCX (Toffoli)",
+  "SWAP+1": "CSWAP (Fredkin)",
+  "P+1": "CP",
+  "RZ+1": "CRZ",
+};
+function standardGateName(cell) {
+  const g = cell.gate;
+  const nc = cell.controls?.length ?? 0;
+  const label = GATE_INFO[g]?.label ?? g;
+  if (nc === 0) return label;
+  const named = CONTROLLED_NAMES[`${g}+${nc}`];
+  if (named) return named;
+  if (g === "X" && nc >= 3) return "MCX";
+  if (g === "Z" && nc >= 3) return "MCZ";
+  return `Controlled-${label}`;
+}
 
 // Qiskit 스타일 측정 게이지 아이콘
 const MEASURE_SVG =
@@ -46,6 +67,7 @@ function stackGlyph(dots, symbol) {
 // ⊕는 CNOT/CCX 팔레트 버튼의 controlled-NOT 타깃 표시로만 남기며,
 // 회로 캔버스의 CNOT 타깃(⊕)은 quantum.js의 targetLabel이 담당하므로 여기서 건드리지 않는다.
 const PALETTE_GLYPHS = {
+  CTRL: '<span class="glyph-ctrl"><span class="glyph-ctrl-dot"></span><span class="glyph-ctrl-text">Control</span></span>',
   CNOT: stackGlyph(1, "⊕"),
   CCX: stackGlyph(2, "⊕"),
   SWAP: '<span class="glyph-stack"><span class="glyph-sym">×</span><span class="glyph-line"></span><span class="glyph-sym">×</span></span>',
@@ -337,6 +359,20 @@ function hideTooltip() {
   gateTooltip.classList.add("hidden");
 }
 
+// 드롭 거부 등 일시적 안내: 잠깐 보여주고 자동으로 사라진다.
+let transientTipTimer = null;
+function showTransientTip(anchor, text) {
+  showTooltip(anchor, text);
+  clearTimeout(transientTipTimer);
+  transientTipTimer = setTimeout(hideTooltip, 1700);
+}
+
+// 배치된 게이트/제어점에 hover하면 표준 이름(CX, CZ, CCX …)을 툴팁으로 보여준다.
+function attachGateHover(el, cell) {
+  el.addEventListener("mouseenter", () => showTooltip(el, standardGateName(cell)));
+  el.addEventListener("mouseleave", hideTooltip);
+}
+
 function makeGateChip(gateName, categoryId) {
   const info = GATE_INFO[gateName];
   const btn = document.createElement("button");
@@ -440,10 +476,12 @@ function buildCircuitGrid(snapshot) {
       const role = roleMaps[col].get(q);
       if (role) {
         const info = GATE_INFO[role.cell.gate];
-        if (role.type === "control") {
+        // controlled-Z는 CZ 표준 표기(•—•)라 타깃도 채운 점으로 그린다.
+        const controlledZ = role.cell.gate === "Z" && (role.cell.controls?.length ?? 0) > 0;
+        if (role.type === "control" || (role.type === "target" && controlledZ)) {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
-          dot.title = "Click to remove";
+          attachGateHover(dot, role.cell);
           cell.appendChild(dot);
         } else {
           const chip = document.createElement("div");
@@ -455,7 +493,7 @@ function buildCircuitGrid(snapshot) {
             chip.textContent =
               role.cell.gate === "SWAP" ? "×" : (info.targetLabel ?? info.label);
           }
-          chip.title = "Click to remove";
+          attachGateHover(chip, role.cell);
           cell.appendChild(chip);
         }
       }
@@ -510,6 +548,14 @@ circuitGrid.addEventListener("drop", (e) => {
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
 
+  // "•"(Control) 드롭: 같은 열 게이트의 controls에 이 큐비트를 부착한다.
+  if (gateName === "CTRL") {
+    scene.clearTrail();
+    const res = circuit.addControl(column, qubit);
+    if (!res.ok) showTransientTip(cell, res.reason);
+    return;
+  }
+
   const needsPopover =
     info.kind === "param" || info.kind === "param3" ||
     info.kind === "controlled" || info.kind === "swap" || info.kind === "pair-param";
@@ -527,7 +573,10 @@ circuitGrid.addEventListener("click", (e) => {
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
   scene.clearTrail();
-  circuit.removeGate(column, qubit);
+  // 제어점을 클릭하면 그 제어만 제거, 타깃/일반 게이트면 게이트 전체 제거
+  if (!circuit.removeControl(column, qubit)) {
+    circuit.removeGate(column, qubit);
+  }
 });
 
 // ---------- 큐비트 탭 / 확률 / 수식 ----------

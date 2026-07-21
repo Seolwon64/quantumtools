@@ -322,6 +322,28 @@ html, body {
   pointer-events: none;
 }
 
+/* "• Control" 팔레트 글리프: 채운 점 + 작은 캡션 */
+.glyph-ctrl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.glyph-ctrl-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.glyph-ctrl-text {
+  font-size: 9px;
+  font-weight: 700;
+}
+
 .gate-chip svg {
   pointer-events: none;
 }
