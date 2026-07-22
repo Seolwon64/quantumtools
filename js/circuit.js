@@ -24,7 +24,7 @@ export const MAX_COLUMNS = 12;
 const STORAGE_KEY = "bloch-composer-v1";
 
 // 게이트별 타깃 개수(기본 1). RCCX/RC3X는 모든 관여 큐비트를 targets에 담는다(controls 경로 안 탐).
-const TARGET_COUNT = { SWAP: 2, RXX: 2, RZZ: 2, RCCX: 3, RC3X: 4 };
+const TARGET_COUNT = { SWAP: 2, RXX: 2, RYY: 2, RZZ: 2, RCCX: 3, RC3X: 4 };
 // 컨트롤(•)을 부착할 수 없는 게이트: 측정류 + 이미 고정된 상대위상 게이트
 const NON_CONTROLLABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL"]);
 const FIXED_MULTI = new Set(["RCCX", "RC3X"]); // 컨트롤 부착 거부(분해가 이미 고정)
@@ -64,6 +64,8 @@ export function migrateCell(cell, homeRow) {
       return { gate: info.base, targets: [homeRow], controls: (cell.controls ?? []).slice(), params: {} };
     case "swap":
       return { gate: "SWAP", targets: [homeRow, cell.partner], controls: [], params: {} };
+    case "cswap": // CSWAP 프리셋 → SWAP + control (CNOT/CCX 프리셋과 동일한 전개)
+      return { gate: "SWAP", targets: [homeRow, cell.partner], controls: (cell.controls ?? []).slice(), params: {} };
     case "pair-param": // RXX/RZZ
       return { gate: cell.gate, targets: [homeRow, cell.partner], controls: [], params };
     default: // fixed / param / param3 / dot / reset / noop

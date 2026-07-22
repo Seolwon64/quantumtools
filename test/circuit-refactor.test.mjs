@@ -282,6 +282,82 @@ test("[4] export: RCCX → rccx (ccx 아님)", () => {
   assert.match(qiskit, /qc\.rccx\(0, 1, 2\)/);
 });
 
+// ---------- RYY (Interaction 세트: RXX/RYY/RZZ) ----------
+
+test("RYY(π/2)|00> = (|00> + i|11>)/√2 (Qiskit RYYGate 일치)", () => {
+  const cell = { gate: "RYY", targets: [0, 1], controls: [], params: { theta: Math.PI / 2 } };
+  const out = applyPlacement(basis(2, 0b00), cell);
+  const inv = 1 / Math.SQRT2;
+  // 코너쌍 |00>↔|11>은 Y⊗Y가 부호를 뒤집어 +i·sin (RXX는 −i·sin)
+  assert.ok(approx(out[0b00].re, inv) && approx(out[0b00].im, 0), "amp|00>");
+  assert.ok(approx(out[0b11].re, 0) && approx(out[0b11].im, inv), "amp|11> = +i/√2");
+  assert.ok(approx(out[0b01].re, 0) && approx(out[0b01].im, 0));
+  assert.ok(approx(out[0b10].re, 0) && approx(out[0b10].im, 0));
+});
+
+test("RYY(π/2)|01> = (|01> − i|10>)/√2 (중간쌍은 −i·sin)", () => {
+  const cell = { gate: "RYY", targets: [0, 1], controls: [], params: { theta: Math.PI / 2 } };
+  const out = applyPlacement(basis(2, 0b01), cell);
+  const inv = 1 / Math.SQRT2;
+  assert.ok(approx(out[0b01].re, inv) && approx(out[0b01].im, 0));
+  assert.ok(approx(out[0b10].re, 0) && approx(out[0b10].im, -inv), "amp|10> = −i/√2");
+});
+
+test("RYY 유니터리성: U†U = I", () => {
+  const cell = { gate: "RYY", targets: [0, 1], controls: [], params: { theta: 0.7 } };
+  const U = [];
+  for (let j = 0; j < 4; j++) U.push(applyPlacement(basis(2, j), cell));
+  for (let j = 0; j < 4; j++) {
+    for (let k = 0; k < 4; k++) {
+      let re = 0, im = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = U[j][i], b = U[k][i];
+        re += a.re * b.re + a.im * b.im;
+        im += a.re * b.im - a.im * b.re;
+      }
+      assert.ok(approx(re, j === k ? 1 : 0) && approx(im, 0), `U†U[${j}][${k}]`);
+    }
+  }
+});
+
+test("[1] RYY export: ryy(θ) / qc.ryy", () => {
+  const grid = gridWith(2, [{ col: 0, row: 0, cell: { gate: "RYY", targets: [0, 1], controls: [], params: { theta: Math.PI / 2 } } }]);
+  assert.match(toQASM(2, grid), /^ryy\(1\.570796\) q\[0\],q\[1\];$/m);
+  assert.match(toQiskit(2, grid), /qc\.ryy\(1\.570796, 0, 1\)/);
+});
+
+// ---------- CSWAP (Fredkin): SWAP + controls[1] 프리셋 ----------
+
+test("CSWAP: control q0=1이면 q1,q2 교환 (|q0=1,q1=0,q2=1> → q1=1,q2=0)", () => {
+  // canonical: SWAP targets [q1,q2] + control [q0]
+  const cell = { gate: "SWAP", targets: [1, 2], controls: [0], params: {} };
+  const inIdx = (1 << 0) | (0 << 1) | (1 << 2); // q0=1,q1=0,q2=1 = 5
+  const out = applyPlacement(basis(3, inIdx), cell);
+  const wantIdx = (1 << 0) | (1 << 1) | (0 << 2); // q0=1,q1=1,q2=0 = 3
+  assert.equal(soleIndex(out), wantIdx);
+});
+
+test("CSWAP: control q0=0이면 상태 불변", () => {
+  const cell = { gate: "SWAP", targets: [1, 2], controls: [0], params: {} };
+  const inIdx = (0 << 0) | (0 << 1) | (1 << 2); // q0=0,q1=0,q2=1 = 4
+  const out = applyPlacement(basis(3, inIdx), cell);
+  assert.equal(soleIndex(out), inIdx);
+});
+
+test("[2] CSWAP 프리셋: migrateCell → SWAP + controls (CNOT/CCX와 동일 방식)", () => {
+  // UI 셀 {gate:"CSWAP", partner, controls} → canonical SWAP
+  const cell = migrateCell({ gate: "CSWAP", partner: 2, controls: [0] }, 1);
+  assert.equal(cell.gate, "SWAP");
+  assert.deepEqual(cell.targets, [1, 2]); // [homeRow, partner]
+  assert.deepEqual(cell.controls, [0]);
+});
+
+test("[2] CSWAP export: cswap q[c],q[a],q[b]", () => {
+  const grid = gridWith(3, [{ col: 0, row: 1, cell: { gate: "SWAP", targets: [1, 2], controls: [0], params: {} } }]);
+  assert.match(toQASM(3, grid), /^cswap q\[0\],q\[1\],q\[2\];$/m);
+  assert.match(toQiskit(3, grid), /qc\.cswap\(0, 1, 2\)/);
+});
+
 // migrateGridForTest: 테스트 로컬 헬퍼 (circuit.js의 migrateCell을 그리드에 적용)
 function migrateGridForTest(grid, n) {
   const MAX = grid.length;

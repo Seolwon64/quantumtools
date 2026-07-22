@@ -160,6 +160,7 @@ export function toQASM(qubitCount, grid) {
       else if (gate === "U") lines.push(`u(${fmt(params.theta)},${fmt(params.phi)},${fmt(params.lambda)}) ${q(targets[0])};`);
       else if (gate === "SWAP") lines.push(`swap ${q(targets[0])},${q(targets[1])};`);
       else if (gate === "RXX") lines.push(`rxx(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`);
+      else if (gate === "RYY") lines.push(`ryy(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`);
       else if (gate === "RZZ") lines.push(`rzz(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`);
       else if (gate === "MEASURE") lines.push(`measure ${q(targets[0])} -> c[${targets[0]}];`);
       else if (gate === "RESET") lines.push(`reset ${q(targets[0])};`);
@@ -210,6 +211,7 @@ export function toQiskit(qubitCount, grid) {
       else if (gate === "U") lines.push(`qc.u(${fmt(params.theta)}, ${fmt(params.phi)}, ${fmt(params.lambda)}, ${targets[0]})`);
       else if (gate === "SWAP") lines.push(`qc.swap(${targets[0]}, ${targets[1]})`);
       else if (gate === "RXX") lines.push(`qc.rxx(${fmt(theta)}, ${targets[0]}, ${targets[1]})`);
+      else if (gate === "RYY") lines.push(`qc.ryy(${fmt(theta)}, ${targets[0]}, ${targets[1]})`);
       else if (gate === "RZZ") lines.push(`qc.rzz(${fmt(theta)}, ${targets[0]}, ${targets[1]})`);
       else if (gate === "MEASURE") lines.push(`qc.measure(${targets[0]}, ${targets[0]})`);
       else if (gate === "RESET") lines.push(`qc.reset(${targets[0]})`);

@@ -14,8 +14,8 @@ const PALETTE_CATEGORIES = [
   { id: "pauli", label: "Pauli & Clifford", gates: ["H", "X", "Y", "Z", "I", "S", "Sdg", "SX", "SXdg"] },
   { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P"] },
   { id: "rotation", label: "Rotations", gates: ["RX", "RY", "RZ", "U"] },
-  { id: "multi", label: "Multi-qubit", gates: ["CTRL", "CNOT", "CCX", "SWAP"] },
-  { id: "interaction", label: "Interaction", gates: ["RXX", "RZZ"] },
+  { id: "multi", label: "Multi-qubit", gates: ["CTRL", "CNOT", "CCX", "SWAP", "CSWAP"] },
+  { id: "interaction", label: "Interaction", gates: ["RXX", "RYY", "RZZ"] },
   { id: "structural", label: "Non-unitary", gates: ["MEASURE", "RESET", "BARRIER", "IF"] },
   // 상대위상 Toffoli 변형(Margolus). CCX와 동일하지 않으므로 초심자가 혼동하지 않게 분리.
   { id: "advanced", label: "Advanced · relative phase", gates: ["RCCX", "RC3X"] },
@@ -76,6 +76,7 @@ const PALETTE_GLYPHS = {
   CNOT: stackGlyph(1, "⊕"),
   CCX: stackGlyph(2, "⊕"),
   SWAP: '<span class="glyph-stack"><span class="glyph-sym">×</span><span class="glyph-line"></span><span class="glyph-sym">×</span></span>',
+  CSWAP: '<span class="glyph-stack"><span class="glyph-dot"></span><span class="glyph-line"></span><span class="glyph-sym">×</span><span class="glyph-line"></span><span class="glyph-sym">×</span></span>',
   MEASURE: MEASURE_SVG,
 };
 
@@ -223,15 +224,16 @@ function radToDegRound(rad) {
 
 function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount) {
   const info = GATE_INFO[gateName];
-  // controlled(CNOT/CCX/…)와 decomposed(RCCX/RC3X) 모두 큐비트를 골라야 한다.
-  const needControls = info.kind === "controlled" || info.kind === "decomposed" ? info.controls : 0;
-  const needPartner = info.kind === "swap" || info.kind === "pair-param" ? 1 : 0;
+  // controlled(CNOT/CCX/…)·decomposed(RCCX/RC3X)·cswap는 컨트롤을 고른다.
+  const needControls = info.kind === "controlled" || info.kind === "decomposed" || info.kind === "cswap" ? (info.controls ?? 0) : 0;
+  // swap/pair-param/cswap는 파트너(두 번째 타깃)를 고른다. CSWAP는 파트너+컨트롤 둘 다.
+  const needPartner = info.kind === "swap" || info.kind === "pair-param" || info.kind === "cswap" ? 1 : 0;
   const sliderNames =
     info.kind === "param" || info.kind === "pair-param" ? ["θ"]
     : info.kind === "param3" ? ["θ", "φ", "λ"]
     : [];
 
-  pendingPlacement = { column, qubit, gateName, selected: [] };
+  pendingPlacement = { column, qubit, gateName, partner: [], control: [] };
   placePopover.innerHTML = "";
 
   const title = document.createElement("div");
@@ -244,16 +246,18 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
   confirmBtn.textContent = "Apply";
 
   function updateConfirm() {
-    confirmBtn.disabled = pendingPlacement.selected.length !== needControls + needPartner;
+    confirmBtn.disabled =
+      pendingPlacement.partner.length !== needPartner || pendingPlacement.control.length !== needControls;
   }
 
-  if (needControls + needPartner > 0) {
+  const selectedElsewhere = (role, q) =>
+    (role === "partner" ? pendingPlacement.control : pendingPlacement.partner).includes(q);
+
+  // role별 독립 선택 행. CSWAP는 파트너 행 + 컨트롤 행 둘 다 렌더된다(서로 겹치지 않게).
+  function buildPicker(role, count, labelText) {
     const pickLabel = document.createElement("div");
     pickLabel.className = "place-popover-hint";
-    pickLabel.textContent =
-      needPartner > 0
-        ? "Select partner qubit"
-        : `Select ${needControls} control qubit${needControls > 1 ? "s" : ""}`;
+    pickLabel.textContent = labelText;
     placePopover.appendChild(pickLabel);
 
     const pickRow = document.createElement("div");
@@ -264,12 +268,13 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
       btn.className = "qpick-btn";
       btn.textContent = `q[${q}]`;
       btn.addEventListener("click", () => {
-        const idx = pendingPlacement.selected.indexOf(q);
+        const list = pendingPlacement[role];
+        const idx = list.indexOf(q);
         if (idx >= 0) {
-          pendingPlacement.selected.splice(idx, 1);
+          list.splice(idx, 1);
           btn.classList.remove("selected");
-        } else if (pendingPlacement.selected.length < needControls + needPartner) {
-          pendingPlacement.selected.push(q);
+        } else if (!selectedElsewhere(role, q) && list.length < count) {
+          list.push(q);
           btn.classList.add("selected");
         }
         updateConfirm();
@@ -277,6 +282,13 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
       pickRow.appendChild(btn);
     }
     placePopover.appendChild(pickRow);
+  }
+
+  if (needPartner > 0) {
+    buildPicker("partner", needPartner, needControls > 0 ? "Select swap target qubit" : "Select partner qubit");
+  }
+  if (needControls > 0) {
+    buildPicker("control", needControls, `Select ${needControls} control qubit${needControls > 1 ? "s" : ""}`);
   }
 
   const sliderInputs = [];
@@ -321,8 +333,8 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
       params.phi = toRad(sliderInputs[1].value);
       params.lambda = toRad(sliderInputs[2].value);
     }
-    if (needControls > 0) params.controls = pendingPlacement.selected.slice();
-    if (needPartner > 0) params.partner = pendingPlacement.selected[0];
+    if (needControls > 0) params.controls = pendingPlacement.control.slice();
+    if (needPartner > 0) params.partner = pendingPlacement.partner[0];
     scene.clearTrail();
     circuit.placeGate(pendingPlacement.column, pendingPlacement.qubit, pendingPlacement.gateName, params);
     closePlacePopover();
@@ -574,7 +586,7 @@ circuitGrid.addEventListener("drop", (e) => {
   const needsPopover =
     info.kind === "param" || info.kind === "param3" ||
     info.kind === "controlled" || info.kind === "swap" || info.kind === "pair-param" ||
-    info.kind === "decomposed";
+    info.kind === "decomposed" || info.kind === "cswap";
   if (needsPopover) {
     openPlacePopover(column, qubit, gateName, e.clientX, e.clientY, snapshot.qubitCount);
   } else {

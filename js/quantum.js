@@ -117,7 +117,9 @@ export const GATE_INFO = {
   CZ: { label: "CZ", targetLabel: "Z", kind: "controlled", base: "Z", controls: 1, group: "control", ready: true, minQubits: 2, desc: "CZ — controlled Z" },
   CCX: { label: "CCX", targetLabel: "⊕", kind: "controlled", base: "X", controls: 2, group: "pauli", ready: true, minQubits: 3, desc: "Toffoli (CCX) — double-controlled NOT" },
   SWAP: { label: "SWAP", targetLabel: "×", kind: "swap", group: "pauli", ready: true, minQubits: 2, desc: "SWAP — exchanges two qubits" },
+  CSWAP: { label: "CSWAP", targetLabel: "×", kind: "cswap", controls: 1, group: "control", ready: true, minQubits: 3, desc: "CSWAP (Fredkin) — controlled swap of two qubits" },
   RXX: { label: "RXX", targetLabel: "RXX", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2, desc: "RXX — XX interaction rotation" },
+  RYY: { label: "RYY", targetLabel: "RYY", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2, desc: "RYY — YY interaction rotation" },
   RZZ: { label: "RZZ", targetLabel: "RZZ", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2, desc: "RZZ — ZZ interaction rotation" },
   CTRL: { label: "•", kind: "dot", group: "structural", ready: true, desc: "Control — adds a control to gates in the same column" },
   RCCX: { label: "RCCX", targetLabel: "⊕", kind: "decomposed", qubits: 3, controls: 2, group: "advanced", ready: true, minQubits: 3, desc: "RCCX (Margolus) — Toffoli up to relative phase. Not equivalent to CCX. Safe only when the phase is uncomputed later." },
@@ -234,6 +236,32 @@ export function applyRXX(state, a, b, theta, controlQubits = []) {
   return next;
 }
 
+// RYY(θ) = exp(-i θ/2 Y⊗Y): RXX와 같은 쌍 회전이나 Y⊗Y가 이중반전(코너쌍 |00>↔|11>)의
+// 부호를 뒤집는다 → 코너쌍은 +i·sin, 중간쌍 |01>↔|10>은 −i·sin. controlQubits면 controlled-RYY.
+export function applyRYY(state, a, b, theta, controlQubits = []) {
+  const maskA = 1 << a;
+  const maskB = 1 << b;
+  const both = maskA | maskB;
+  const cmask = controlMaskOf(controlQubits);
+  const cos = Math.cos(theta / 2);
+  const sin = Math.sin(theta / 2);
+  const next = state.slice();
+  const done = new Array(state.length).fill(false);
+  for (let i = 0; i < state.length; i++) {
+    if (done[i]) continue;
+    const j = i ^ both;
+    done[i] = done[j] = true;
+    if ((i & cmask) !== cmask) continue;
+    const ai = state[i];
+    const aj = state[j];
+    // s: 코너쌍(두 비트 동일)이면 −1, 중간쌍이면 +1. new = cos·self − i·sin·s·partner
+    const s = ((i & maskA) !== 0) === ((i & maskB) !== 0) ? -1 : 1;
+    next[i] = c(cos * ai.re + s * sin * aj.im, cos * ai.im - s * sin * aj.re);
+    next[j] = c(cos * aj.re + s * sin * ai.im, cos * aj.im - s * sin * ai.re);
+  }
+  return next;
+}
+
 // RZZ(θ) = exp(-i θ/2 Z⊗Z): 대각 위상. 두 비트가 같으면 e^{-iθ/2}, 다르면 e^{+iθ/2}.
 // controlQubits면 controlled-RZZ.
 export function applyRZZ(state, a, b, theta, controlQubits = []) {
@@ -308,6 +336,7 @@ export function applyPlacement(state, cell, extraControls = []) {
   const ctrl = controls.length || extraControls.length ? [...controls, ...extraControls] : [];
   if (gate === "SWAP") return applySwap(state, targets[0], targets[1], ctrl);
   if (gate === "RXX") return applyRXX(state, targets[0], targets[1], params.theta ?? Math.PI / 2, ctrl);
+  if (gate === "RYY") return applyRYY(state, targets[0], targets[1], params.theta ?? Math.PI / 2, ctrl);
   if (gate === "RZZ") return applyRZZ(state, targets[0], targets[1], params.theta ?? Math.PI / 2, ctrl);
   if (gate === "U") return applyUnitary(state, targets[0], uMatrix(params.theta ?? 0, params.phi ?? 0, params.lambda ?? 0), ctrl);
   if (SINGLE_QUBIT_GATES.has(gate)) return applyUnitary(state, targets[0], matrixFor(gate, params.theta), ctrl);
