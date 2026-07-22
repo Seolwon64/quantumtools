@@ -23,9 +23,11 @@ export const MAX_COLUMNS = 12;
 
 const STORAGE_KEY = "bloch-composer-v1";
 
-// 타깃 2개를 갖는 게이트, 컨트롤을 붙일 수 없는 게이트 [4]
-const TWO_TARGET = new Set(["SWAP", "RXX", "RZZ"]);
+// 게이트별 타깃 개수(기본 1). RCCX/RC3X는 모든 관여 큐비트를 targets에 담는다(controls 경로 안 탐).
+const TARGET_COUNT = { SWAP: 2, RXX: 2, RZZ: 2, RCCX: 3, RC3X: 4 };
+// 컨트롤(•)을 부착할 수 없는 게이트: 측정류 + 이미 고정된 상대위상 게이트
 const NON_CONTROLLABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL"]);
+const FIXED_MULTI = new Set(["RCCX", "RC3X"]); // 컨트롤 부착 거부(분해가 이미 고정)
 
 function emptyGrid(qubitCount) {
   return Array.from({ length: MAX_COLUMNS }, () => new Array(qubitCount).fill(null));
@@ -56,7 +58,9 @@ export function migrateCell(cell, homeRow) {
   if (!info) return { gate: cell.gate, targets: [homeRow], controls: [], params };
 
   switch (info.kind) {
-    case "controlled": // CNOT/CCX/CZ/RCCX/RC3X → base(X/Z) + controls
+    case "decomposed": // RCCX/RC3X: 관여 큐비트를 targets=[...controls, target] 순서로 보존(구 v1 gate명이 유지되어 복원됨)
+      return { gate: cell.gate, targets: [...(cell.controls ?? []), homeRow], controls: [], params: {} };
+    case "controlled": // CNOT/CCX/CZ → base(X/Z) + controls
       return { gate: info.base, targets: [homeRow], controls: (cell.controls ?? []).slice(), params: {} };
     case "swap":
       return { gate: "SWAP", targets: [homeRow, cell.partner], controls: [], params: {} };
@@ -77,7 +81,8 @@ function isValidPlacement(cell, qubitCount) {
   if (new Set(all).size !== all.length) return false;
   if (all.some((q) => q < 0 || q >= qubitCount)) return false;
   if (NON_CONTROLLABLE.has(cell.gate) && controls.length > 0) return false; // [4]
-  if (TWO_TARGET.has(cell.gate) ? targets.length !== 2 : targets.length !== 1) return false;
+  if (FIXED_MULTI.has(cell.gate) && controls.length > 0) return false; // RCCX/RC3X는 controls를 안 씀
+  if (targets.length !== (TARGET_COUNT[cell.gate] ?? 1)) return false;
   return true;
 }
 
@@ -203,12 +208,14 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     if (params.partner !== undefined) uiCell.partner = params.partner;
     const cell = migrateCell(uiCell, qubit);
     if (!isValidPlacement(cell, qubitCount)) return;
+    // 홈 = targets[0] (단일 타깃은 qubit과 동일; RCCX/RC3X는 첫 컨트롤이 홈)
+    const home = cell.targets[0];
     // 관여하는 모든 큐비트 자리가 비어 있어야 배치 가능 (자기 자신이 점유 중이면 교체)
     for (const q of involvedQubits(cell)) {
       const occupant = occupantTarget(column, q);
-      if (occupant !== -1 && occupant !== qubit) return;
+      if (occupant !== -1 && occupant !== home) return;
     }
-    grid[column][qubit] = cell;
+    grid[column][home] = cell;
     stepIndex = usedColumnCount(grid);
     notify();
   }
@@ -239,6 +246,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     const home = homes[0];
     const cell = grid[column][home];
     if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be controlled` };
+    if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control` };
     const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
     if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
     grid[column][home] = newCell;

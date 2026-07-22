@@ -25,6 +25,7 @@
   --cat-multi-bg: #fbeede;        --cat-multi-fg: #8f5008;        /* Multi-qubit */
   --cat-interaction-bg: #fce7f0;  --cat-interaction-fg: #a8175a;  /* Interaction */
   --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary (gray) */
+  --cat-advanced-bg: #fdecea;     --cat-advanced-fg: #b3341a;     /* Advanced · relative phase (경고 톤, ≥4.5:1) */
 }
 
 * {
@@ -431,6 +432,8 @@ html, body {
 .cat-multi { background: var(--cat-multi-bg); color: var(--cat-multi-fg); }
 .cat-interaction { background: var(--cat-interaction-bg); color: var(--cat-interaction-fg); }
 .cat-structural { background: var(--cat-structural-bg); color: var(--cat-structural-fg); }
+/* RCCX/RC3X: 경고 톤 + 점선 테두리로 CCX와 시각 구분(정확한 Toffoli가 아님). */
+.cat-advanced { background: var(--cat-advanced-bg); color: var(--cat-advanced-fg); border: 1.5px dashed var(--cat-advanced-fg); }
 
 /* Circuit */
 .circuit-toolbar {
@@ -639,6 +642,11 @@ html, body {
 
 .placed-partner {
   opacity: 0.75;
+}
+
+/* RCCX/RC3X 타깃 칩: 점선 테두리로 CCX(⊕)와 확실히 구분 */
+.placed-advanced {
+  border: 1.5px dashed var(--cat-advanced-fg);
 }
 
 /* Playback */

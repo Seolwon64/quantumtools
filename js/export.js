@@ -72,7 +72,10 @@ export function decodeCircuit(encoded) {
         if (typeof p.l === "number") oldCell.lambda = p.l;
         if (Array.isArray(p.x)) oldCell.controls = p.x;
         if (typeof p.r === "number") oldCell.partner = p.r;
-        grid[p.c][p.q] = migrateCell(oldCell, p.q);
+        // canonical 홈 = targets[0] (RCCX/RC3X는 첫 컨트롤이 홈이라 p.q와 다를 수 있음)
+        const cell = migrateCell(oldCell, p.q);
+        const home = cell.targets[0];
+        if (home >= 0 && home < data.n) grid[p.c][home] = cell;
       }
     } else {
       return null;
@@ -147,6 +150,10 @@ export function toQASM(qubitCount, grid) {
     const nc = controls.length;
     const theta = params.theta ?? GATE_INFO[gate]?.defaultTheta;
 
+    // 고유 상대위상 게이트: 역매핑(X+2→ccx)보다 먼저 검사 — ccx로 잘못 나가지 않게.
+    if (gate === "RCCX") { lines.push(`rccx ${targets.map(q).join(",")};`); return; }
+    if (gate === "RC3X") { lines.push(`rc3x ${targets.map(q).join(",")};`); return; }
+
     if (nc === 0) {
       if (SIMPLE[gate]) lines.push(`${SIMPLE[gate]} ${q(targets[0])};`);
       else if (PARAM[gate]) lines.push(`${PARAM[gate]}(${fmt(theta)}) ${q(targets[0])};`);
@@ -192,6 +199,11 @@ export function toQiskit(qubitCount, grid) {
     const { gate, targets, controls = [], params = {} } = cell;
     const nc = controls.length;
     const theta = params.theta ?? GATE_INFO[gate]?.defaultTheta;
+
+    // 고유 상대위상 게이트: 역매핑(X→ccx)보다 먼저. Qiskit: RCCXGate=rccx, RC3XGate=rcccx.
+    if (gate === "RCCX") { lines.push(`qc.rccx(${targets.join(", ")})`); return; }
+    if (gate === "RC3X") { lines.push(`qc.rcccx(${targets.join(", ")})`); return; }
+
     if (nc === 0) {
       if (SIMPLE[gate]) lines.push(`qc.${SIMPLE[gate]}(${targets[0]})`);
       else if (PARAM[gate]) lines.push(`qc.${PARAM[gate]}(${fmt(theta)}, ${targets[0]})`);

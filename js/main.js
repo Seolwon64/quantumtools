@@ -14,9 +14,11 @@ const PALETTE_CATEGORIES = [
   { id: "pauli", label: "Pauli & Clifford", gates: ["H", "X", "Y", "Z", "I", "S", "Sdg", "SX", "SXdg"] },
   { id: "phase", label: "Phase / T", gates: ["T", "Tdg", "P"] },
   { id: "rotation", label: "Rotations", gates: ["RX", "RY", "RZ", "U"] },
-  { id: "multi", label: "Multi-qubit", gates: ["CTRL", "CNOT", "CCX", "SWAP", "RCCX", "RC3X"] },
+  { id: "multi", label: "Multi-qubit", gates: ["CTRL", "CNOT", "CCX", "SWAP"] },
   { id: "interaction", label: "Interaction", gates: ["RXX", "RZZ"] },
   { id: "structural", label: "Non-unitary", gates: ["MEASURE", "RESET", "BARRIER", "IF"] },
+  // 상대위상 Toffoli 변형(Margolus). CCX와 동일하지 않으므로 초심자가 혼동하지 않게 분리.
+  { id: "advanced", label: "Advanced · relative phase", gates: ["RCCX", "RC3X"] },
 ];
 
 // 미구현 게이트는 피처 플래그로 렌더링에서만 제외한다 (정의/엔진 코드는 그대로 유지).
@@ -38,8 +40,11 @@ const CONTROLLED_NAMES = {
 };
 function standardGateName(cell) {
   const g = cell.gate;
+  const info = GATE_INFO[g];
+  // RCCX/RC3X: 상대위상 경고 전문을 hover로 노출 (CCX와 혼동 방지).
+  if (info?.kind === "decomposed") return info.desc;
   const nc = cell.controls?.length ?? 0;
-  const label = GATE_INFO[g]?.label ?? g;
+  const label = info?.label ?? g;
   if (nc === 0) return label;
   const named = CONTROLLED_NAMES[`${g}+${nc}`];
   if (named) return named;
@@ -218,7 +223,8 @@ function radToDegRound(rad) {
 
 function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount) {
   const info = GATE_INFO[gateName];
-  const needControls = info.kind === "controlled" ? info.controls : 0;
+  // controlled(CNOT/CCX/…)와 decomposed(RCCX/RC3X) 모두 큐비트를 골라야 한다.
+  const needControls = info.kind === "controlled" || info.kind === "decomposed" ? info.controls : 0;
   const needPartner = info.kind === "swap" || info.kind === "pair-param" ? 1 : 0;
   const sliderNames =
     info.kind === "param" || info.kind === "pair-param" ? ["θ"]
@@ -450,7 +456,15 @@ function buildCircuitGrid(snapshot) {
     for (let t = 0; t < snapshot.qubitCount; t++) {
       const cell = snapshot.grid[col]?.[t];
       if (!cell) continue;
-      cell.targets.forEach((tq, i) => roles.set(tq, { type: "target", cell, primary: i === 0 }));
+      const decomposed = GATE_INFO[cell.gate]?.kind === "decomposed";
+      cell.targets.forEach((tq, i) => {
+        // RCCX/RC3X: targets의 마지막 = ⊕ 타깃, 앞쪽 = 컨트롤 점으로 그린다.
+        if (decomposed && i < cell.targets.length - 1) {
+          roles.set(tq, { type: "control", cell, primary: false });
+        } else {
+          roles.set(tq, { type: "target", cell, primary: decomposed || i === 0 });
+        }
+      });
       for (const q of cell.controls ?? []) roles.set(q, { type: "control", cell, primary: false });
     }
     roleMaps.push(roles);
@@ -486,6 +500,7 @@ function buildCircuitGrid(snapshot) {
         } else {
           const chip = document.createElement("div");
           chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
+          if (info?.kind === "decomposed") chip.classList.add("placed-advanced"); // RCCX/RC3X 시각 구분
           if (!role.primary) chip.classList.add("placed-partner"); // 두 번째 타깃은 살짝 흐리게(기존과 동일)
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
@@ -558,7 +573,8 @@ circuitGrid.addEventListener("drop", (e) => {
 
   const needsPopover =
     info.kind === "param" || info.kind === "param3" ||
-    info.kind === "controlled" || info.kind === "swap" || info.kind === "pair-param";
+    info.kind === "controlled" || info.kind === "swap" || info.kind === "pair-param" ||
+    info.kind === "decomposed";
   if (needsPopover) {
     openPlacePopover(column, qubit, gateName, e.clientX, e.clientY, snapshot.qubitCount);
   } else {

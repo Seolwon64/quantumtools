@@ -120,8 +120,8 @@ export const GATE_INFO = {
   RXX: { label: "RXX", targetLabel: "RXX", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2, desc: "RXX — XX interaction rotation" },
   RZZ: { label: "RZZ", targetLabel: "RZZ", kind: "pair-param", group: "rotation", ready: true, minQubits: 2, defaultTheta: Math.PI / 2, desc: "RZZ — ZZ interaction rotation" },
   CTRL: { label: "•", kind: "dot", group: "structural", ready: true, desc: "Control — adds a control to gates in the same column" },
-  RCCX: { label: "RCCX", targetLabel: "⊕", kind: "controlled", base: "X", controls: 2, group: "rotation", ready: true, minQubits: 3, desc: "RCCX — relative-phase Toffoli" },
-  RC3X: { label: "RC3X", targetLabel: "⊕", kind: "controlled", base: "X", controls: 3, group: "rotation", ready: true, minQubits: 4, desc: "RC3X — relative-phase triple-controlled NOT" },
+  RCCX: { label: "RCCX", targetLabel: "⊕", kind: "decomposed", qubits: 3, controls: 2, group: "advanced", ready: true, minQubits: 3, desc: "RCCX (Margolus) — Toffoli up to relative phase. Not equivalent to CCX. Safe only when the phase is uncomputed later." },
+  RC3X: { label: "RC3X", targetLabel: "⊕", kind: "decomposed", qubits: 4, controls: 3, group: "advanced", ready: true, minQubits: 4, desc: "RC3X — relative-phase C3X. Not equivalent to C3X (CCCX). Safe only when the phase is uncomputed later." },
   U: { label: "U", kind: "param3", group: "rotation", ready: true, defaultTheta: Math.PI / 2, desc: "U — universal single-qubit rotation (θ, φ, λ)" },
   BARRIER: { label: "⋮", kind: "noop", group: "structural", ready: true, desc: "Barrier — visual separator (state unchanged)" },
   MEASURE: { label: "M", kind: "noop", group: "structural", ready: true, desc: "Measure — Z-basis measurement (fixes probabilities)" },
@@ -251,6 +251,39 @@ export function applyRZZ(state, a, b, theta, controlQubits = []) {
   });
 }
 
+// RCCX (Margolus): 상대위상 Toffoli. CCX와 상대위상만큼 다르다(정확한 CCX가 아님).
+// targets = [a, b, t]: a,b = 컨트롤, t = 타깃. 8x8 하드코딩 없이 H/T/Tdg/CX 분해로 구현.
+// 분해: H(t),T(t),CX(b,t),Tdg(t),CX(a,t),T(t),CX(b,t),Tdg(t),H(t)
+export function applyRCCX(state, a, b, t) {
+  const H = matrixFor("H"), T = matrixFor("T"), Tdg = matrixFor("Tdg"), X = matrixFor("X");
+  const cx = (s, ctrl) => applyUnitary(s, t, X, [ctrl]);
+  let s = state;
+  s = applyUnitary(s, t, H, []);
+  s = applyUnitary(s, t, T, []);
+  s = cx(s, b);
+  s = applyUnitary(s, t, Tdg, []);
+  s = cx(s, a);
+  s = applyUnitary(s, t, T, []);
+  s = cx(s, b);
+  s = applyUnitary(s, t, Tdg, []);
+  s = applyUnitary(s, t, H, []);
+  return s;
+}
+
+// RC3X: 상대위상 C3X. targets = [a, b, c, t]. 18-op H/T/Tdg/CX 분해.
+export function applyRC3X(state, a, b, c, t) {
+  const H = matrixFor("H"), T = matrixFor("T"), Tdg = matrixFor("Tdg"), X = matrixFor("X");
+  const cx = (s, ctrl) => applyUnitary(s, t, X, [ctrl]);
+  let s = state;
+  s = applyUnitary(s, t, H, []); s = applyUnitary(s, t, T, []);
+  s = cx(s, c); s = applyUnitary(s, t, Tdg, []); s = applyUnitary(s, t, H, []);
+  s = cx(s, a); s = applyUnitary(s, t, T, []); s = cx(s, b); s = applyUnitary(s, t, Tdg, []);
+  s = cx(s, a); s = applyUnitary(s, t, T, []); s = cx(s, b); s = applyUnitary(s, t, Tdg, []);
+  s = applyUnitary(s, t, H, []); s = applyUnitary(s, t, T, []);
+  s = cx(s, c); s = applyUnitary(s, t, Tdg, []); s = applyUnitary(s, t, H, []);
+  return s;
+}
+
 // ---------- 정규(canonical) placement 적용: { gate, targets, controls, params } ----------
 // 모든 게이트를 일반적으로 처리한다(게이트별 컨트롤 특수 분기 없음).
 // extraControls: 칼럼 CTRL(•) 점에서 온 추가 컨트롤.
@@ -267,6 +300,10 @@ export function applyPlacement(state, cell, extraControls = []) {
     if (gate === "RESET") return applyReset(state, targets[0]);
     return state; // MEASURE, BARRIER, CTRL: 상태벡터 불변
   }
+
+  // RCCX/RC3X: 상대위상 게이트. controls 경로를 타지 않고 분해로 적용(SINGLE_QUBIT_GATES보다 먼저).
+  if (gate === "RCCX") return applyRCCX(state, targets[0], targets[1], targets[2]);
+  if (gate === "RC3X") return applyRC3X(state, targets[0], targets[1], targets[2], targets[3]);
 
   const ctrl = controls.length || extraControls.length ? [...controls, ...extraControls] : [];
   if (gate === "SWAP") return applySwap(state, targets[0], targets[1], ctrl);
