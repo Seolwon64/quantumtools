@@ -425,3 +425,54 @@ export function basisProbabilities(state, qubitCount) {
   }
   return results;
 }
+
+// Probabilities 패널 표시용 필터. 순수 함수(입력 배열 불변).
+//  - hideZero: 확률 ≤ threshold(기저 확률, 0~1 스케일)인 상태를 숨김
+//  - qubitCount ≥ 6: threshold와 무관하게 상위 topN개만 두고 나머지는 cap(→ "Show all")
+//  - observed(Set<index>): 샘플링에서 관측된 상태는 어떤 필터로도 숨기지 않음
+// probability 필드는 퍼센트(0~100)라 threshold와 비교 시 /100로 맞춘다.
+export function computeVisibleProbabilities(probabilities, options = {}) {
+  const {
+    hideZero = true,
+    threshold = 1e-9,
+    qubitCount = 0,
+    topN = 32,
+    showAll = false,
+    observed = new Set(),
+  } = options;
+  const isObserved = (e) => observed.has(e.index);
+
+  // 1) 영확률(임계값 이하) 숨김 — 관측 상태는 예외
+  let kept = probabilities;
+  const hiddenZero = [];
+  if (hideZero) {
+    kept = [];
+    for (const e of probabilities) {
+      if (e.probability / 100 <= threshold && !isObserved(e)) hiddenZero.push(e);
+      else kept.push(e);
+    }
+  }
+
+  // 2) 큐비트 수가 많으면 상위 topN만 (관측 상태는 항상 포함), 원래 index 순서 유지
+  const capped = [];
+  let capActive = false;
+  if (qubitCount >= 6 && !showAll && kept.length > topN) {
+    capActive = true;
+    const byProb = [...kept].sort((a, b) => b.probability - a.probability || a.index - b.index);
+    const keepSet = new Set();
+    for (let i = 0; i < topN && i < byProb.length; i++) keepSet.add(byProb[i].index);
+    for (const e of kept) if (isObserved(e)) keepSet.add(e.index);
+    const visible = [];
+    for (const e of kept) (keepSet.has(e.index) ? visible : capped).push(e);
+    kept = visible;
+  }
+
+  return {
+    visible: kept,
+    hiddenZeroCount: hiddenZero.length,
+    hiddenZeroProb: hiddenZero.reduce((s, e) => s + e.probability, 0),
+    cappedCount: capped.length,
+    capActive,
+    totalCount: probabilities.length,
+  };
+}

@@ -1,6 +1,6 @@
 import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
-import { GATE_INFO } from "./quantum.js";
+import { GATE_INFO, computeVisibleProbabilities } from "./quantum.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
 import { createCityscapeScene } from "./cityscape.js";
@@ -130,6 +130,9 @@ probEndian.addEventListener("mouseleave", hideTooltip);
 const probChart = document.getElementById("prob-list");
 const cityscapeContainer = document.getElementById("cityscape-container");
 const dmPartToggle = document.getElementById("dm-part-toggle");
+const probHideToggle = document.getElementById("prob-hide-toggle");
+const probHideZeros = document.getElementById("prob-hide-zeros");
+const probFooter = document.getElementById("prob-footer");
 
 const gateButtons = [];
 
@@ -182,6 +185,15 @@ entangleWarning.addEventListener("mouseleave", hideTooltip);
 let probMode = "chart";
 let dmPart = "re"; // 밀도행렬 Re/Im 성분 선택
 let cityscape = null; // 처음 전환할 때 생성 (숨겨진 컨테이너는 크기가 0이라 미리 만들면 카메라 비율이 깨짐)
+let hideZeroProb = true; // "Hide 0%" 토글 (기본 켜짐)
+let probShowAll = false; // 큐비트 많을 때 상위 N개 제한을 사용자가 펼쳤는지
+const PROB_TOP_N = 32; // 6큐비트 이상에서 기본으로 표시하는 상위 상태 개수
+
+// "Hide 0%" 체크박스: 영확률 상태 숨김 토글
+probHideZeros.addEventListener("change", () => {
+  hideZeroProb = probHideZeros.checked;
+  renderProbabilities(circuit.getSnapshot());
+});
 
 probModeToggle.addEventListener("click", () => {
   probMode = probMode === "chart" ? "cityscape" : "chart";
@@ -192,6 +204,8 @@ probModeToggle.addEventListener("click", () => {
   probChart.classList.toggle("hidden", isCityscape);
   cityscapeContainer.classList.toggle("hidden", !isCityscape);
   dmPartToggle.classList.toggle("hidden", !isCityscape);
+  probHideToggle.classList.toggle("hidden", isCityscape); // 확률 필터는 밀도행렬 뷰에선 무의미
+  probFooter.classList.toggle("hidden", isCityscape);
   if (isCityscape) {
     if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
     cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
@@ -625,7 +639,21 @@ function buildQubitTabs(snapshot) {
 
 function renderProbabilities(snapshot) {
   probList.innerHTML = "";
-  for (const entry of snapshot.probabilities) {
+  probFooter.innerHTML = "";
+
+  const { visible, hiddenZeroCount, hiddenZeroProb, capActive } = computeVisibleProbabilities(
+    snapshot.probabilities,
+    {
+      hideZero: hideZeroProb,
+      qubitCount: snapshot.qubitCount,
+      topN: PROB_TOP_N,
+      showAll: probShowAll,
+      // 샘플링 관측 상태는 어떤 필터로도 숨기지 않는다(현재 샘플링 미구현 → 빈 집합).
+      observed: snapshot.observedStates ?? new Set(),
+    }
+  );
+
+  for (const entry of visible) {
     const col = document.createElement("div");
     col.className = "prob-bar-col";
 
@@ -647,6 +675,31 @@ function renderProbabilities(snapshot) {
     col.append(value, track, label);
     probList.appendChild(col);
   }
+
+  // 푸터: 숨긴 개수 안내 + (큐비트 많을 때) Show all / 접기
+  if (hiddenZeroCount > 0) {
+    const note = document.createElement("span");
+    note.className = "prob-hidden-note";
+    note.textContent = `${hiddenZeroCount} state${hiddenZeroCount > 1 ? "s" : ""} hidden (${Math.round(hiddenZeroProb)}%)`;
+    probFooter.appendChild(note);
+  }
+  if (capActive) {
+    probFooter.appendChild(makeShowAllButton(`Show all ${snapshot.probabilities.length} states`, true));
+  } else if (probShowAll && snapshot.qubitCount >= 6 && visible.length > PROB_TOP_N) {
+    probFooter.appendChild(makeShowAllButton(`Show top ${PROB_TOP_N}`, false));
+  }
+}
+
+// Show all / 접기 토글 버튼 생성
+function makeShowAllButton(text, expand) {
+  const btn = document.createElement("button");
+  btn.className = "prob-showall-btn";
+  btn.textContent = text;
+  btn.addEventListener("click", () => {
+    probShowAll = expand;
+    renderProbabilities(circuit.getSnapshot());
+  });
+  return btn;
 }
 
 // 진폭 계수를 표시 문자열로 변환. 음수 실계수의 부호는 항 연결부호로 흡수.
