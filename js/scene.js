@@ -202,6 +202,20 @@ export function createBlochScene(container) {
   );
   scene.add(arrow);
 
+  // 혼합도 시각화: 반지름 |r|인 반투명 내부 구 + 완전혼합(|r|≈0)일 때 원점 점.
+  const innerSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 32, 24),
+    new THREE.MeshBasicMaterial({ color: VECTOR_COLOR, transparent: true, opacity: 0.16, depthWrite: false })
+  );
+  innerSphere.visible = false;
+  scene.add(innerSphere);
+  const originDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 16, 12),
+    new THREE.MeshBasicMaterial({ color: VECTOR_COLOR })
+  );
+  originDot.visible = false;
+  scene.add(originDot);
+
   resetView();
 
   // 재생 중 벡터가 지나간 궤적 (토스 블루, 50% 불투명도). 재생을 다시 누르면 초기화된다.
@@ -251,11 +265,30 @@ export function createBlochScene(container) {
     rebuildTrailMesh();
   }
 
-  // 벡터 길이(순수도) 반영: 얽힘으로 축약상태가 혼합되면 화살표가 구 안쪽으로 줄어든다.
+  const R_MIXED = 0.02; // |r|이 이보다 작으면 완전 혼합 → 화살표 대신 원점 점
+  const R_PURE = 0.999; // |r|이 이보다 크면 순수 → 내부 구 생략(표면 도달)
+  let curMixed = false;
+  let curInner = false;
+
+  // 블로흐 요소(화살표/원점점/내부구) 표시는 현재 |r| 상태와 씬 모드에 함께 좌우된다.
+  function applyBlochVisibility() {
+    const isBloch = sceneMode === "bloch";
+    arrow.visible = isBloch && !curMixed;
+    originDot.visible = isBloch && curMixed;
+    innerSphere.visible = isBloch && curInner;
+  }
+
+  // 벡터 길이(|r|) 반영: 축약상태가 혼합될수록 화살표가 짧아지고 반지름 |r| 내부 구가 드러난다.
   function applyArrow(dir, length) {
-    const len = Math.max(length, 0.001);
-    arrow.setDirection(dir);
-    arrow.setLength(len * SPHERE_RADIUS, Math.min(0.22, len * 0.5), Math.min(0.12, len * 0.3));
+    const len = Math.max(length, 0);
+    curMixed = len < R_MIXED;
+    curInner = !curMixed && len < R_PURE;
+    if (!curMixed) {
+      arrow.setDirection(dir);
+      arrow.setLength(len * SPHERE_RADIUS, Math.min(0.22, len * 0.5), Math.min(0.12, len * 0.3));
+    }
+    innerSphere.scale.setScalar(Math.max(len, 1e-3) * SPHERE_RADIUS);
+    applyBlochVisibility();
   }
 
   function safeDirection(v, fallback) {
@@ -518,7 +551,7 @@ export function createBlochScene(container) {
   function setMode(nextMode) {
     sceneMode = nextMode;
     const isBloch = sceneMode === "bloch";
-    arrow.visible = isBloch;
+    applyBlochVisibility(); // 화살표/원점점/내부구는 |r| 상태에 따라
     if (trailMesh) trailMesh.visible = isBloch;
     xLabel.visible = isBloch;
     yLabel.visible = isBloch;

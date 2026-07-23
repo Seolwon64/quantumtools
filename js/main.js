@@ -109,11 +109,14 @@ const stepFwdBtn = document.getElementById("step-fwd-btn");
 const playbackStatus = document.getElementById("playback-status");
 const resetViewBtn = document.getElementById("reset-view-btn");
 const placePopover = document.getElementById("place-popover");
-const modeToggle = document.getElementById("mode-toggle");
-const modeToggleLabel = document.getElementById("mode-toggle-label");
-const entangleWarning = document.getElementById("entangle-warning");
+const viewToggle = document.getElementById("view-toggle");
 const sphereModeTitle = document.getElementById("sphere-mode-title");
 const qsphereLegend = document.getElementById("qsphere-legend");
+const blochInfo = document.getElementById("bloch-info");
+const blochPurity = document.getElementById("bloch-purity");
+const blochMixedFill = document.getElementById("bloch-mixed-fill");
+const blochMixedPct = document.getElementById("bloch-mixed-pct");
+const sphereCaption = document.getElementById("sphere-caption");
 const menuBtn = document.getElementById("menu-btn");
 const menuPanel = document.getElementById("menu-panel");
 const probPanelTitle = document.getElementById("prob-panel-title");
@@ -157,35 +160,50 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// ---------- Bloch / Q-sphere 모드 ----------
-// Bloch sphere는 얽힌 상태를 정확히 표현할 수 없다. 얽힘이 감지되면 경고 아이콘을
-// 보여주고, 사용자는 언제든 토글을 눌러 IBM 스타일 Q-sphere(전체 상태) 뷰로 전환할 수 있다.
+// ---------- Bloch / Q-sphere 뷰 ----------
+// Bloch 뷰는 선택한 큐비트의 축약 밀도행렬(부분대각합)로 블로흐 벡터를 그린다. 다체계에서
+// |r|<1이면 화살표가 구 안쪽으로 줄고, Purity/Mixedness를 함께 표시한다. Q-sphere는 전체 상태 뷰.
+// 기본값: 큐비트 1개면 Bloch, 2개 이상이면 Q-sphere.
 let sphereMode = "bloch";
 
-modeToggle.addEventListener("click", () => {
-  sphereMode = sphereMode === "bloch" ? "qsphere" : "bloch";
+function setSphereMode(mode) {
+  sphereMode = mode;
   const snap = circuit.getSnapshot();
   scene.setMode(sphereMode);
   if (sphereMode === "qsphere") scene.setQSphereData(snap.probabilities, snap.qubitCount);
   applySphereModeUI(snap);
+}
+
+viewToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".segmented-btn");
+  if (!btn || btn.dataset.view === sphereMode) return;
+  setSphereMode(btn.dataset.view);
 });
 
 function applySphereModeUI(snapshot) {
   const isQSphere = sphereMode === "qsphere";
-  modeToggle.setAttribute("aria-pressed", String(isQSphere));
-  modeToggle.title = isQSphere ? "Switch to Bloch sphere view" : "Switch to Q-sphere view";
-  modeToggleLabel.textContent = isQSphere ? "Q-sphere" : "Bloch";
+  for (const b of viewToggle.querySelectorAll(".segmented-btn")) {
+    b.classList.toggle("active", b.dataset.view === sphereMode);
+  }
   qubitTabs.classList.toggle("hidden", isQSphere);
   sphereModeTitle.classList.toggle("hidden", !isQSphere);
   qsphereLegend.classList.toggle("hidden", !isQSphere);
-
-  const entangled = Math.hypot(snapshot.bloch.x, snapshot.bloch.y, snapshot.bloch.z) < 0.99;
-  const showWarning = sphereMode === "bloch" && entangled;
-  entangleWarning.classList.toggle("hidden", !showWarning);
+  blochInfo.classList.toggle("hidden", isQSphere);
+  updateBlochInfo(snapshot);
 }
 
-entangleWarning.addEventListener("mouseenter", () => showTooltip(entangleWarning, "Detected entanglement"));
-entangleWarning.addEventListener("mouseleave", hideTooltip);
+// Purity = (1+|r|²)/2, Local mixedness = 1−|r|. |r|≈0이면 완전혼합 캡션.
+// "얽힘"이 아니라 "mixedness"로 표기 — 다체계에서 |r|<1의 원인이 얽힘만은 아니다.
+function updateBlochInfo(snapshot) {
+  const r = Math.min(1, Math.hypot(snapshot.bloch.x, snapshot.bloch.y, snapshot.bloch.z));
+  const purity = (1 + r * r) / 2;
+  const mixedness = 1 - r;
+  blochPurity.textContent = purity.toFixed(2);
+  blochMixedFill.style.width = `${mixedness * 100}%`;
+  blochMixedPct.textContent = `${Math.round(mixedness * 100)}%`;
+  const maximallyMixed = sphereMode === "bloch" && r < 0.02;
+  sphereCaption.classList.toggle("hidden", !maximallyMixed);
+}
 
 // ---------- Probabilities / Density Matrix Cityscape ----------
 let probMode = "chart";
@@ -903,6 +921,9 @@ const circuit = createCircuitController({
   onAnimateStep: (from, to) => scene.animateVectorTo(from, to, 500),
   initial: sharedCircuit ?? undefined,
 });
+
+// 기본 뷰: 큐비트 1개면 Bloch, 2개 이상이면 Q-sphere (컨트롤러 생성 후 최초 1회 적용).
+setSphereMode(circuit.getSnapshot().qubitCount === 1 ? "bloch" : "qsphere");
 
 qubitMinusBtn.addEventListener("click", () => {
   scene.clearTrail();

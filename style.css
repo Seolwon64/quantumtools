@@ -1232,6 +1232,82 @@ html, body {
   transform: translate(-50%, -50%);
 }
 
+/* Bloch / Q-sphere 2택 토글 (구 위에 뜨는 세그먼트) */
+.view-toggle {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.12);
+}
+
+/* Purity / Local mixedness 정보 (Bloch 뷰 전용) */
+.bloch-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+.bloch-info.hidden {
+  display: none;
+}
+.bloch-info b {
+  color: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+.bloch-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bloch-mixed-label {
+  color: var(--text-faint);
+}
+.bloch-mixed-bar {
+  width: 46px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.bloch-mixed-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+/* 완전혼합(|r|≈0) 캡션 — 구 중앙 오버레이 (점만 있으면 버그로 오인하므로) */
+.sphere-caption {
+  position: absolute;
+  left: 50%;
+  top: 66%; /* 원점 점보다 아래에 둬 점이 가려지지 않게 */
+  transform: translate(-50%, -50%);
+  max-width: 78%;
+  padding: 7px 13px;
+  border-radius: 10px;
+  background: rgba(25, 31, 40, 0.82);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.35;
+  z-index: 3;
+  pointer-events: none;
+}
+.sphere-caption.hidden {
+  display: none;
+}
+
 .tick-right { top: 50%; left: 100%; margin-left: 8px; }
 .tick-top { top: 0; left: 50%; margin-top: -8px; }
 .tick-left { top: 50%; left: 0; margin-left: -8px; }
