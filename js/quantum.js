@@ -476,3 +476,40 @@ export function computeVisibleProbabilities(probabilities, options = {}) {
     totalCount: probabilities.length,
   };
 }
+
+// 측정 샘플링: 이론 확률 분포에서 shots번 뽑아 각 기저의 관측 횟수를 반환한다(순수 함수).
+//  - probabilities[i].probability(퍼센트)를 |amp|²로 보고 누적분포(CDF)를 만든다.
+//  - 확률 합이 부동소수점 오차로 100이 아닐 수 있어 합으로 나눠 정규화하고, 마지막 CDF=1로 고정.
+//  - 균등난수 rng()∈[0,1)로 이진 탐색해 구간을 고른다. 반환: counts[i] (probabilities[i]에 정렬).
+//  - rng를 주입하면 결정론적(테스트용). 기본은 Math.random.
+export function sampleCounts(probabilities, shots, rng = Math.random) {
+  const n = probabilities.length;
+  const counts = new Array(n).fill(0);
+  if (n === 0 || shots <= 0) return counts;
+
+  let total = 0;
+  for (let i = 0; i < n; i++) total += Math.max(0, probabilities[i].probability);
+  if (total <= 0) return counts; // 방어: 정상 상태벡터라면 발생하지 않음
+
+  const cdf = new Array(n);
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    acc += Math.max(0, probabilities[i].probability) / total;
+    cdf[i] = acc;
+  }
+  cdf[n - 1] = 1; // 부동소수점 보정: 마지막 경계는 정확히 1
+
+  for (let s = 0; s < shots; s++) {
+    const r = rng();
+    // r < cdf[k]인 가장 작은 k (이진 탐색). 확률 0 구간은 cdf가 앞과 같아 절대 선택되지 않는다.
+    let lo = 0;
+    let hi = n - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (r < cdf[mid]) hi = mid;
+      else lo = mid + 1;
+    }
+    counts[lo]++;
+  }
+  return counts;
+}

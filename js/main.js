@@ -1,6 +1,6 @@
 import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
-import { GATE_INFO, computeVisibleProbabilities } from "./quantum.js";
+import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
 import { createCityscapeScene } from "./cityscape.js";
@@ -135,6 +135,10 @@ const dmPartToggle = document.getElementById("dm-part-toggle");
 const probHideToggle = document.getElementById("prob-hide-toggle");
 const probHideZeros = document.getElementById("prob-hide-zeros");
 const probFooter = document.getElementById("prob-footer");
+const probSampling = document.getElementById("prob-sampling");
+const shotsInput = document.getElementById("shots-input");
+const runBtn = document.getElementById("run-btn");
+const resetShotsBtn = document.getElementById("reset-shots-btn");
 
 const gateButtons = [];
 
@@ -197,6 +201,65 @@ probHideZeros.addEventListener("change", () => {
   renderProbabilities(circuit.getSnapshot());
 });
 
+// ---------- 측정 샘플링 ----------
+// 현재 표시 분포에서 shots번 샘플링한 결과. { counts:number[], shots, signature } | null.
+let sampleResult = null;
+let sampling = false; // 실행 중 플래그
+const SAMPLE_CHUNK = 10000; // 이 이상이면 청크로 나눠 비동기 처리(UI 프리즈 방지)
+
+// 표시 분포를 결정하는 서명. 이게 바뀌면(회로 편집/스텝/큐비트수) 기존 샘플은 무효.
+function probSignature(snapshot) {
+  return snapshot.qubitCount + "|" + snapshot.probabilities.map((p) => Math.round(p.probability * 1000)).join(",");
+}
+function clampShots(v) {
+  if (!Number.isFinite(v)) return 1024;
+  return Math.max(1, Math.min(100000, Math.floor(v)));
+}
+// shots가 크면 청크 단위로 나눠 사이에 이벤트 루프에 양보(비동기).
+async function sampleAsync(probabilities, shots) {
+  if (shots <= SAMPLE_CHUNK) return sampleCounts(probabilities, shots);
+  const total = new Array(probabilities.length).fill(0);
+  let done = 0;
+  while (done < shots) {
+    const c = Math.min(SAMPLE_CHUNK, shots - done);
+    const partial = sampleCounts(probabilities, c);
+    for (let i = 0; i < total.length; i++) total[i] += partial[i];
+    done += c;
+    if (done < shots) await new Promise((r) => setTimeout(r, 0));
+  }
+  return total;
+}
+async function runSampling() {
+  if (sampling) return;
+  const snap = circuit.getSnapshot();
+  const shots = clampShots(parseInt(shotsInput.value, 10));
+  shotsInput.value = String(shots);
+  sampling = true;
+  runBtn.disabled = true;
+  runBtn.textContent = "Running…";
+  try {
+    const counts = await sampleAsync(snap.probabilities, shots);
+    // 샘플링 도중 회로가 바뀌지 않았을 때만 반영(경합 방지)
+    if (probSignature(circuit.getSnapshot()) === probSignature(snap)) {
+      sampleResult = { counts, shots, signature: probSignature(snap) };
+    }
+  } finally {
+    sampling = false;
+    runBtn.disabled = false;
+    runBtn.textContent = "Run";
+    renderProbabilities(circuit.getSnapshot());
+  }
+}
+function resetSampling() {
+  sampleResult = null;
+  renderProbabilities(circuit.getSnapshot());
+}
+runBtn.addEventListener("click", runSampling);
+resetShotsBtn.addEventListener("click", resetSampling);
+shotsInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runSampling(); }
+});
+
 probModeToggle.addEventListener("click", () => {
   probMode = probMode === "chart" ? "cityscape" : "chart";
   const isCityscape = probMode === "cityscape";
@@ -207,6 +270,7 @@ probModeToggle.addEventListener("click", () => {
   cityscapeContainer.classList.toggle("hidden", !isCityscape);
   dmPartToggle.classList.toggle("hidden", !isCityscape);
   probHideToggle.classList.toggle("hidden", isCityscape); // 확률 필터는 밀도행렬 뷰에선 무의미
+  probSampling.classList.toggle("hidden", isCityscape);   // 샘플링도 확률 차트 전용
   probFooter.classList.toggle("hidden", isCityscape);
   if (isCityscape) {
     if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
@@ -643,6 +707,13 @@ function renderProbabilities(snapshot) {
   probList.innerHTML = "";
   probFooter.innerHTML = "";
 
+  const sampled = sampleResult !== null;
+  // 관측된 기저(count>0)는 어떤 필터로도 숨기지 않는다.
+  const observed = new Set();
+  if (sampled) {
+    for (let i = 0; i < sampleResult.counts.length; i++) if (sampleResult.counts[i] > 0) observed.add(i);
+  }
+
   const { visible, hiddenZeroCount, hiddenZeroProb, capActive } = computeVisibleProbabilities(
     snapshot.probabilities,
     {
@@ -650,30 +721,44 @@ function renderProbabilities(snapshot) {
       qubitCount: snapshot.qubitCount,
       topN: PROB_TOP_N,
       showAll: probShowAll,
-      // 샘플링 관측 상태는 어떤 필터로도 숨기지 않는다(현재 샘플링 미구현 → 빈 집합).
-      observed: snapshot.observedStates ?? new Set(),
+      observed,
     }
   );
+
+  probList.classList.toggle("sampled", sampled);
+  resetShotsBtn.classList.toggle("hidden", !sampled);
 
   for (const entry of visible) {
     const col = document.createElement("div");
     col.className = "prob-bar-col";
+    const obsCount = sampled ? (sampleResult.counts[entry.index] ?? 0) : 0;
+    const obsPct = sampled ? (obsCount / sampleResult.shots) * 100 : 0;
 
     const value = document.createElement("span");
     value.className = "prob-bar-value";
-    value.textContent = `${Math.round(entry.probability)}%`;
+    // 샘플링 시 관측 횟수("261/1024"), 아니면 이론 확률(%)
+    value.textContent = sampled ? `${obsCount}/${sampleResult.shots}` : `${Math.round(entry.probability)}%`;
 
     const track = document.createElement("div");
-    track.className = "prob-bar-track-v";
-    const fill = document.createElement("div");
+    track.className = "prob-bar-track-v" + (sampled ? " sampled" : "");
+    const fill = document.createElement("div"); // 이론값(샘플링 시 연한색)
     fill.className = "prob-bar-fill-v";
     fill.style.height = `${entry.probability}%`;
     track.appendChild(fill);
+    if (sampled) {
+      const obs = document.createElement("div"); // 관측값(진한색, 앞에 겹침)
+      obs.className = "prob-bar-fill-obs";
+      obs.style.height = `${obsPct}%`;
+      track.appendChild(obs);
+    }
 
     const label = document.createElement("span");
     label.className = "prob-bar-label";
     label.textContent = `|${entry.label}⟩`;
 
+    if (sampled) {
+      col.title = `theory ${entry.probability.toFixed(1)}% · observed ${obsCount}/${sampleResult.shots} (${obsPct.toFixed(1)}%)`;
+    }
     col.append(value, track, label);
     probList.appendChild(col);
   }
@@ -768,6 +853,9 @@ function renderStateFormula(snapshot) {
 // ---------- 메인 렌더 ----------
 
 function render(snapshot) {
+  // 표시 분포가 바뀌면(회로 편집/스텝/큐비트수) 이전 샘플링 결과는 무효화한다.
+  if (sampleResult && sampleResult.signature !== probSignature(snapshot)) sampleResult = null;
+
   scene.setVectorInstant(snapshot.bloch);
   if (sphereMode === "qsphere") scene.setQSphereData(snapshot.probabilities, snapshot.qubitCount);
   applySphereModeUI(snapshot);
@@ -784,6 +872,7 @@ function render(snapshot) {
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
+  runBtn.disabled = busy || sampling; // 재생/애니메이션 중엔 샘플링 비활성
   undoBtn.disabled = busy || !snapshot.canUndo;
   redoBtn.disabled = busy || !snapshot.canRedo;
   qubitMinusBtn.disabled = busy || !snapshot.canRemoveQubit;

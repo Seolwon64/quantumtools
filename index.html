@@ -123,6 +123,11 @@
             <span class="endian-label" id="prob-endian"></span>
           </div>
           <div class="prob-toolbar-right">
+            <div class="prob-sampling" id="prob-sampling">
+              <input class="shots-input" id="shots-input" type="number" min="1" max="100000" value="1024" title="Shots (1–100000)" aria-label="Shots">
+              <button class="prob-run-btn" id="run-btn" title="Sample the distribution (measurement)">Run</button>
+              <button class="prob-reset-btn hidden" id="reset-shots-btn" title="Clear sampling results">Reset</button>
+            </div>
             <label class="prob-hide-toggle" id="prob-hide-toggle" title="Hide basis states with ~zero probability">
               <input type="checkbox" id="prob-hide-zeros" checked>
               <span>Hide 0%</span>

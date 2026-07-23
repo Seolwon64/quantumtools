@@ -862,6 +862,88 @@ html, body {
   color: var(--primary);
 }
 
+/* 측정 샘플링 컨트롤 (shots 입력 + Run + Reset) */
+.prob-sampling {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.prob-sampling.hidden {
+  display: none;
+}
+.shots-input {
+  width: 64px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.prob-run-btn {
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+.prob-run-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.prob-reset-btn {
+  border: none;
+  background: var(--bg);
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.prob-reset-btn:hover {
+  background: var(--primary-dim);
+  color: var(--primary);
+}
+.prob-reset-btn.hidden {
+  display: none;
+}
+
+/* 샘플링 시 이론(연한 막대) 위에 관측(진한 막대)을 겹쳐 그린다 */
+.prob-bar-track-v.sampled {
+  position: relative;
+}
+.prob-bar-track-v.sampled .prob-bar-fill-v {
+  background: rgba(49, 130, 246, 0.28); /* 이론값 = 연한 파랑 */
+}
+.prob-bar-fill-obs {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  border-radius: 6px;
+  background: var(--primary); /* 관측값 = 진한 파랑 */
+  transition: height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* 관측 횟수 텍스트가 길어 열 폭을 내용에 맞게(가로 스크롤은 .prob-chart가 처리) */
+.prob-chart.sampled .prob-bar-col {
+  width: auto;
+  min-width: 46px;
+}
+.prob-chart.sampled .prob-bar-value {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
 .cityscape-container {
   flex: 1;
   min-height: 0;
