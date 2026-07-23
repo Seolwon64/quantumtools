@@ -494,6 +494,14 @@ html, body {
   background: var(--bg);
 }
 
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.icon-btn:disabled:hover {
+  background: transparent;
+}
+
 .tool-icon-btn {
   display: flex;
   align-items: center;

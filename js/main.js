@@ -100,6 +100,8 @@ const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
 const clearBtn = document.getElementById("clear-btn");
+const undoBtn = document.getElementById("undo-btn");
+const redoBtn = document.getElementById("redo-btn");
 const resetBtn = document.getElementById("reset-btn");
 const stepBackBtn = document.getElementById("step-back-btn");
 const playBtn = document.getElementById("play-btn");
@@ -782,6 +784,8 @@ function render(snapshot) {
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
+  undoBtn.disabled = busy || !snapshot.canUndo;
+  redoBtn.disabled = busy || !snapshot.canRedo;
   qubitMinusBtn.disabled = busy || !snapshot.canRemoveQubit;
   qubitPlusBtn.disabled = busy || !snapshot.canAddQubit;
 
@@ -825,6 +829,29 @@ clearBtn.addEventListener("click", () => {
   scene.clearTrail();
   closePlacePopover();
   circuit.clear();
+});
+undoBtn.addEventListener("click", () => {
+  scene.clearTrail();
+  closePlacePopover();
+  circuit.undo();
+});
+redoBtn.addEventListener("click", () => {
+  scene.clearTrail();
+  closePlacePopover();
+  circuit.redo();
+});
+
+// 단축키: Ctrl+Z 실행취소 / Ctrl+Shift+Z 다시실행 (Mac은 Cmd).
+// 입력 필드(텍스트 편집)에 포커스가 있을 때는 가로채지 않는다.
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+  e.preventDefault();
+  scene.clearTrail();
+  closePlacePopover();
+  if (e.shiftKey) circuit.redo();
+  else circuit.undo();
 });
 resetBtn.addEventListener("click", () => {
   scene.clearTrail();

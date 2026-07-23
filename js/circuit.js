@@ -186,6 +186,8 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
       isAnimating,
       canAddQubit: qubitCount < MAX_QUBITS,
       canRemoveQubit: qubitCount > MIN_QUBITS,
+      canUndo: undoStack.length > 0,
+      canRedo: redoStack.length > 0,
       bloch: qubitBlochVector(state, selectedQubit),
       probabilities: basisProbabilities(state, qubitCount),
       densityMatrix: densityMatrix(state),
@@ -195,6 +197,55 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
   function notify() {
     save(qubitCount, grid);
     onChange(snapshot());
+  }
+
+  // ---------- Undo/Redo 히스토리 ----------
+  // 회로가 작으므로 전체 스냅샷({qubitCount, grid})을 저장한다(diff 없음). 최대 50단계.
+  const MAX_HISTORY = 50;
+  const undoStack = [];
+  const redoStack = [];
+
+  function cloneGrid(g) {
+    return g.map((col) =>
+      col.map((cell) =>
+        cell
+          ? {
+              gate: cell.gate,
+              targets: [...cell.targets],
+              controls: [...(cell.controls ?? [])],
+              params: { ...(cell.params ?? {}) },
+            }
+          : null
+      )
+    );
+  }
+  function captureState() {
+    return { qubitCount, grid: cloneGrid(grid) };
+  }
+  // 회로 변경 직전에 호출: 현재 상태를 undo 스택에 넣고 redo 스택을 비운다(새 분기).
+  function pushUndo() {
+    undoStack.push(captureState());
+    if (undoStack.length > MAX_HISTORY) undoStack.shift(); // 오래된 것부터 버림
+    redoStack.length = 0;
+  }
+  function restoreState(snap) {
+    qubitCount = snap.qubitCount;
+    grid = cloneGrid(snap.grid);
+    if (selectedQubit >= qubitCount) selectedQubit = qubitCount - 1;
+    stepIndex = Math.min(stepIndex, usedColumnCount(grid));
+  }
+  function undo() {
+    if (isAnimating || isPlaying || undoStack.length === 0) return;
+    redoStack.push(captureState());
+    restoreState(undoStack.pop());
+    notify();
+  }
+  function redo() {
+    if (isAnimating || isPlaying || redoStack.length === 0) return;
+    undoStack.push(captureState());
+    if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    restoreState(redoStack.pop());
+    notify();
   }
 
   // UI는 팔레트 게이트명(CNOT/CCX/CZ/SWAP/RXX/…) + params(controls/partner/theta…)를 그대로 넘긴다.
@@ -217,6 +268,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
       const occupant = occupantTarget(column, q);
       if (occupant !== -1 && occupant !== home) return;
     }
+    pushUndo();
     grid[column][home] = cell;
     stepIndex = usedColumnCount(grid);
     notify();
@@ -227,6 +279,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     if (!grid[column]) return;
     const target = occupantTarget(column, qubit);
     if (target === -1) return;
+    pushUndo();
     grid[column][target] = null;
     stepIndex = Math.min(stepIndex, usedColumnCount(grid));
     notify();
@@ -251,6 +304,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control` };
     const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
     if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
+    pushUndo();
     grid[column][home] = newCell;
     stepIndex = usedColumnCount(grid);
     notify();
@@ -265,6 +319,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     for (let t = 0; t < qubitCount; t++) {
       const cell = grid[column][t];
       if (cell && (cell.controls ?? []).includes(controlQubit)) {
+        pushUndo();
         grid[column][t] = { ...cell, controls: cell.controls.filter((c) => c !== controlQubit) };
         stepIndex = Math.min(stepIndex, usedColumnCount(grid));
         notify();
@@ -276,6 +331,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
 
   function clear() {
     if (isAnimating || isPlaying) return;
+    pushUndo(); // Clear all은 undo로 되돌릴 수 있어야 한다(이 기능의 주 목적)
     grid = emptyGrid(qubitCount);
     stepIndex = 0;
     notify();
@@ -284,6 +340,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
   function setQubitCount(next) {
     if (isAnimating || isPlaying) return;
     if (next < MIN_QUBITS || next > MAX_QUBITS || next === qubitCount) return;
+    pushUndo();
     const newGrid = emptyGrid(next);
     for (let col = 0; col < MAX_COLUMNS; col++) {
       for (let q = 0; q < Math.min(qubitCount, next); q++) {
@@ -375,6 +432,8 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     removeControl,
     clear,
     setQubitCount,
+    undo,
+    redo,
     selectQubit,
     reset,
     stepForward,
