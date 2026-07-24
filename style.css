@@ -958,16 +958,103 @@ html, body {
 .prob-chart {
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 4px 4px 2px;
+  position: relative;
+  overflow: hidden;
 }
 
 .prob-chart.hidden {
   display: none;
+}
+
+/* SVG 축 막대 차트 */
+.prob-svg {
+  display: block;
+}
+.prob-axis-num {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.prob-axis-title {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text-faint);
+}
+.prob-xlabel {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+.prob-xtick {
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.prob-hit {
+  cursor: pointer;
+}
+.prob-hit:hover {
+  fill: rgba(49, 130, 246, 0.08);
+}
+
+/* [2] 이론/관측 범례 */
+.prob-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-body);
+}
+.prob-legend .lg-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.prob-legend .lg-sw {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+.prob-legend .lg-theory {
+  background: #7fb0f7;
+}
+.prob-legend .lg-observed {
+  background: var(--primary);
+}
+
+/* 리치 차트 툴팁 (기저·이론·관측·진폭·위상) */
+.chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  background: var(--text-title);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 8px 11px;
+  border-radius: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(25, 31, 40, 0.28);
+}
+.chart-tooltip.hidden {
+  display: none;
+}
+.chart-tooltip .tt-title {
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.chart-tooltip .tt-dim {
+  color: #b0b8c1;
+  font-weight: 500;
+}
+.chart-tooltip b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .prob-bar-col {

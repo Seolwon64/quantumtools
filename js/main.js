@@ -1,6 +1,7 @@
 import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
+import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
 import { createCityscapeScene } from "./cityscape.js";
@@ -293,6 +294,8 @@ probModeToggle.addEventListener("click", () => {
   if (isCityscape) {
     if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
     cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
+  } else {
+    renderProbabilities(circuit.getSnapshot()); // 차트로 복귀 시 즉시 다시 그림
   }
 });
 
@@ -721,9 +724,58 @@ function buildQubitTabs(snapshot) {
   }
 }
 
+// ---------- 확률 SVG 막대 차트 ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+const CHART = {
+  grid: "#e6e9ec", axis: "#c4c9d0", tick: "#8b95a1", label: "#4e5968",
+  theorySolid: "#3182f6", theoryLight: "#7fb0f7", observed: "#3182f6",
+};
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+// 윗변만 둥근 막대 path (밑변은 축에 붙음). x=좌, topY=상단, w/h=폭/높이.
+function topRoundedRect(x, topY, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h));
+  const b = topY + h;
+  return `M${x},${b} L${x},${topY + r} Q${x},${topY} ${x + r},${topY} L${x + w - r},${topY} Q${x + w},${topY} ${x + w},${topY + r} L${x + w},${b} Z`;
+}
+
+// 리치 툴팁 (기저·이론확률·관측·진폭·위상)
+const chartTooltip = document.createElement("div");
+chartTooltip.className = "chart-tooltip hidden";
+document.body.appendChild(chartTooltip);
+function showChartTooltip(anchorEl, html) {
+  chartTooltip.innerHTML = html;
+  chartTooltip.classList.remove("hidden");
+  const a = anchorEl.getBoundingClientRect();
+  const t = chartTooltip.getBoundingClientRect();
+  const left = Math.min(Math.max(8, a.left + a.width / 2 - t.width / 2), window.innerWidth - t.width - 8);
+  const top = a.top - t.height - 8;
+  chartTooltip.style.left = `${left}px`;
+  chartTooltip.style.top = `${top < 8 ? a.bottom + 8 : top}px`;
+}
+function hideChartTooltip() {
+  chartTooltip.classList.add("hidden");
+}
+function barTooltipHTML(entry, sampled) {
+  const ph = phaseInfo(entry.re, entry.im);
+  const amp = `${entry.re.toFixed(3)} ${entry.im >= 0 ? "+" : "−"} ${Math.abs(entry.im).toFixed(3)}i`;
+  const rows = [`<div class="tt-title">|${entry.label}⟩ <span class="tt-dim">· index ${entry.index}</span></div>`];
+  rows.push(`<div>Theoretical: <b>${entry.probability.toFixed(2)}%</b></div>`);
+  if (sampled) {
+    const c = sampleResult.counts[entry.index] ?? 0;
+    rows.push(`<div>Observed: <b>${c} / ${sampleResult.shots}</b> (${((c / sampleResult.shots) * 100).toFixed(2)}%)</div>`);
+  }
+  rows.push(`<div>Amplitude: <b>${amp}</b></div>`);
+  rows.push(`<div>Phase: <b>${ph.defined ? `${ph.deg.toFixed(1)}° (${ph.rad.toFixed(2)} rad)` : "—"}</b></div>`);
+  return rows.join("");
+}
+
 function renderProbabilities(snapshot) {
-  probList.innerHTML = "";
   probFooter.innerHTML = "";
+  hideChartTooltip();
 
   const sampled = sampleResult !== null;
   // 관측된 기저(count>0)는 어떤 필터로도 숨기지 않는다.
@@ -734,54 +786,20 @@ function renderProbabilities(snapshot) {
 
   const { visible, hiddenZeroCount, hiddenZeroProb, capActive } = computeVisibleProbabilities(
     snapshot.probabilities,
-    {
-      hideZero: hideZeroProb,
-      qubitCount: snapshot.qubitCount,
-      topN: PROB_TOP_N,
-      showAll: probShowAll,
-      observed,
-    }
+    { hideZero: hideZeroProb, qubitCount: snapshot.qubitCount, topN: PROB_TOP_N, showAll: probShowAll, observed }
   );
 
-  probList.classList.toggle("sampled", sampled);
   resetShotsBtn.classList.toggle("hidden", !sampled);
 
-  for (const entry of visible) {
-    const col = document.createElement("div");
-    col.className = "prob-bar-col";
-    const obsCount = sampled ? (sampleResult.counts[entry.index] ?? 0) : 0;
-    const obsPct = sampled ? (obsCount / sampleResult.shots) * 100 : 0;
-
-    const value = document.createElement("span");
-    value.className = "prob-bar-value";
-    // 샘플링 시 관측 횟수("261/1024"), 아니면 이론 확률(%)
-    value.textContent = sampled ? `${obsCount}/${sampleResult.shots}` : `${Math.round(entry.probability)}%`;
-
-    const track = document.createElement("div");
-    track.className = "prob-bar-track-v" + (sampled ? " sampled" : "");
-    const fill = document.createElement("div"); // 이론값(샘플링 시 연한색)
-    fill.className = "prob-bar-fill-v";
-    fill.style.height = `${entry.probability}%`;
-    track.appendChild(fill);
-    if (sampled) {
-      const obs = document.createElement("div"); // 관측값(진한색, 앞에 겹침)
-      obs.className = "prob-bar-fill-obs";
-      obs.style.height = `${obsPct}%`;
-      track.appendChild(obs);
-    }
-
-    const label = document.createElement("span");
-    label.className = "prob-bar-label";
-    label.textContent = `|${entry.label}⟩`;
-
-    if (sampled) {
-      col.title = `theory ${entry.probability.toFixed(1)}% · observed ${obsCount}/${sampleResult.shots} (${obsPct.toFixed(1)}%)`;
-    }
-    col.append(value, track, label);
-    probList.appendChild(col);
+  // [2] 범례 (샘플링 시), [4] 숨긴 개수, Show all/접기 — 모두 푸터에
+  if (sampled) {
+    const legend = document.createElement("div");
+    legend.className = "prob-legend";
+    legend.innerHTML =
+      '<span class="lg-item"><span class="lg-sw lg-theory"></span>Theoretical</span>' +
+      '<span class="lg-item"><span class="lg-sw lg-observed"></span>Sampled</span>';
+    probFooter.appendChild(legend);
   }
-
-  // 푸터: 숨긴 개수 안내 + (큐비트 많을 때) Show all / 접기
   if (hiddenZeroCount > 0) {
     const note = document.createElement("span");
     note.className = "prob-hidden-note";
@@ -793,6 +811,119 @@ function renderProbabilities(snapshot) {
   } else if (probShowAll && snapshot.qubitCount >= 6 && visible.length > PROB_TOP_N) {
     probFooter.appendChild(makeShowAllButton(`Show top ${PROB_TOP_N}`, false));
   }
+
+  // 숨김/미측정(크기 0)이면 SVG 생략 — 다시 보일 때 ResizeObserver가 그린다.
+  const W = probList.clientWidth;
+  const H = probList.clientHeight;
+  probList.innerHTML = "";
+  if (W < 40 || H < 40 || visible.length === 0) return;
+  probList.appendChild(buildProbChart(visible, snapshot, sampled, W, H));
+}
+
+function buildProbChart(visible, snapshot, sampled, W, H) {
+  const n = visible.length;
+  const M = { top: 12, right: 10, left: 42 };
+  const plotW = W - M.left - M.right;
+  const bandW = plotW / n;
+  const labelChars = snapshot.qubitCount + 2; // "|" + bits + "⟩"
+  const mode = pickLabelMode(n, bandW, labelChars * 6.2);
+  const bottom = mode === "rot45" ? 46 : 24;
+  const plotH = H - M.top - bottom;
+  const px0 = M.left;
+  const px1 = W - M.right;
+  const py0 = M.top;
+  const py1 = M.top + plotH; // 0% 기준선
+  const yFor = (pct) => py1 - (pct / 100) * plotH;
+
+  const svg = svgEl("svg", { width: "100%", height: "100%", viewBox: `0 0 ${W} ${H}` });
+  svg.classList.add("prob-svg");
+
+  // 가로 그리드선 + Y 눈금 (0/20/40/60/80/100)
+  for (let pct = 0; pct <= 100; pct += 20) {
+    const y = yFor(pct);
+    svg.appendChild(svgEl("line", {
+      x1: px0, y1: y, x2: px1, y2: y,
+      stroke: pct === 0 ? CHART.axis : CHART.grid, "stroke-width": pct === 0 ? 1.5 : 1,
+    }));
+    const t = svgEl("text", { x: px0 - 6, y: y + 3.5, "text-anchor": "end", class: "prob-axis-num" });
+    t.textContent = String(pct);
+    svg.appendChild(t);
+  }
+  // Y축 제목
+  const yTitle = svgEl("text", {
+    x: 12, y: (py0 + py1) / 2, "text-anchor": "middle",
+    transform: `rotate(-90, 12, ${(py0 + py1) / 2})`, class: "prob-axis-title",
+  });
+  yTitle.textContent = "Probability (%)";
+  svg.appendChild(yTitle);
+
+  // 막대 + hover 히트영역 + 라벨
+  const barW = Math.min(bandW - 2, 46);
+  const tickStep = mode === "sparse" ? niceTickStep(bandW, 40) : 1;
+  let lastLabelX = -Infinity; // sparse에서 상단 라벨 겹침 방지
+  const labelPx = labelChars * 6.2;
+
+  visible.forEach((entry, i) => {
+    const bandX = px0 + i * bandW;
+    const cx = bandX + bandW / 2;
+    const bx = cx - barW / 2;
+    const th = (entry.probability / 100) * plotH;
+
+    // 이론값 막대(샘플링 시 연한색+테두리로 relief, 아니면 진한색)
+    if (th > 0.5) {
+      const p = { d: topRoundedRect(bx, py1 - th, barW, th, 4), fill: sampled ? CHART.theoryLight : CHART.theorySolid };
+      if (sampled) { p.stroke = CHART.theorySolid; p["stroke-width"] = 1; p["stroke-opacity"] = 0.45; }
+      svg.appendChild(svgEl("path", p));
+    }
+    // 관측값 막대(진한색, 좁게 겹침)
+    if (sampled) {
+      const obsCount = sampleResult.counts[entry.index] ?? 0;
+      const obh = (obsCount / sampleResult.shots) * plotH;
+      if (obh > 0.5) {
+        const ow = Math.max(3, barW * 0.5);
+        svg.appendChild(svgEl("path", {
+          d: topRoundedRect(cx - ow / 2, py1 - obh, ow, obh, 3),
+          fill: CHART.observed,
+        }));
+      }
+    }
+
+    // X 라벨
+    if (mode === "horizontal") {
+      const t = svgEl("text", { x: cx, y: py1 + 15, "text-anchor": "middle", class: "prob-xlabel" });
+      t.textContent = `|${entry.label}⟩`;
+      svg.appendChild(t);
+    } else if (mode === "rot45") {
+      const t = svgEl("text", {
+        x: cx, y: py1 + 12, "text-anchor": "end",
+        transform: `rotate(-45, ${cx}, ${py1 + 12})`, class: "prob-xlabel",
+      });
+      t.textContent = `|${entry.label}⟩`;
+      svg.appendChild(t);
+    } else {
+      // sparse: 인덱스 눈금 + 임계값(1%) 이상 막대에 상단 라벨(겹치지 않게)
+      if (i % tickStep === 0) {
+        svg.appendChild(svgEl("line", { x1: cx, y1: py1, x2: cx, y2: py1 + 4, stroke: CHART.axis, "stroke-width": 1 }));
+        const t = svgEl("text", { x: cx, y: py1 + 15, "text-anchor": "middle", class: "prob-xtick" });
+        t.textContent = String(entry.index);
+        svg.appendChild(t);
+      }
+      if (entry.probability >= 1 && cx - lastLabelX >= labelPx + 4) {
+        const t = svgEl("text", { x: cx, y: py1 - th - 4, "text-anchor": "middle", class: "prob-xlabel" });
+        t.textContent = `|${entry.label}⟩`;
+        svg.appendChild(t);
+        lastLabelX = cx;
+      }
+    }
+
+    // hover 히트영역(밴드 전체 높이) — 마크보다 큰 타겟
+    const hit = svgEl("rect", { x: bandX, y: py0, width: bandW, height: plotH, fill: "transparent", class: "prob-hit" });
+    hit.addEventListener("mouseenter", () => showChartTooltip(hit, barTooltipHTML(entry, sampled)));
+    hit.addEventListener("mouseleave", hideChartTooltip);
+    svg.appendChild(hit);
+  });
+
+  return svg;
 }
 
 // Show all / 접기 토글 버튼 생성
@@ -924,6 +1055,11 @@ const circuit = createCircuitController({
 
 // 기본 뷰: 큐비트 1개면 Bloch, 2개 이상이면 Q-sphere (컨트롤러 생성 후 최초 1회 적용).
 setSphereMode(circuit.getSnapshot().qubitCount === 1 ? "bloch" : "qsphere");
+
+// 확률 차트는 패널 크기에 맞춰 반응형으로 다시 그린다(레이아웃 리사이즈·숨김→표시 전환 포함).
+new ResizeObserver(() => {
+  if (probMode === "chart") renderProbabilities(circuit.getSnapshot());
+}).observe(probList);
 
 qubitMinusBtn.addEventListener("click", () => {
   scene.clearTrail();
