@@ -134,18 +134,20 @@
               <input type="checkbox" id="prob-hide-zeros" checked>
               <span>Hide 0%</span>
             </label>
-            <div class="segmented hidden" id="dm-part-toggle">
-              <button class="segmented-btn active" data-part="re">Re</button>
-              <button class="segmented-btn" data-part="im">Im</button>
-            </div>
-            <button class="mode-toggle mode-toggle-sm" id="prob-mode-toggle" title="Switch to Density Matrix Cityscape" aria-pressed="false">
-              <span class="mode-toggle-track"><span class="mode-toggle-knob"></span></span>
-            </button>
           </div>
         </div>
-        <div class="prob-chart" id="prob-list"></div>
-        <div class="prob-footer" id="prob-footer"></div>
-        <div class="cityscape-container hidden" id="cityscape-container"></div>
+        <div class="prob-split">
+          <div class="prob-left">
+            <div class="prob-chart" id="prob-list"></div>
+            <div class="prob-footer" id="prob-footer"></div>
+          </div>
+          <div class="prob-right" id="dm-view">
+            <div class="dm-header">Reduced density matrix</div>
+            <div class="dm-qubit-tabs" id="dm-qubit-tabs"></div>
+            <div class="dm-matrix" id="dm-matrix"></div>
+            <div class="dm-metrics" id="dm-metrics"></div>
+          </div>
+        </div>
       </section>
       </div>
     </div>

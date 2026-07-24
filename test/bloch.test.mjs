@@ -2,7 +2,7 @@
 // 실행: node --test test/*.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { qubitBlochVector } from "../js/quantum.js";
+import { qubitBlochVector } from "../js/density.js";
 
 // 진폭 리스트 → 상태벡터. 항목은 숫자(실수) 또는 [re, im].
 function st(...amps) {

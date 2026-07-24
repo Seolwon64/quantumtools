@@ -10,11 +10,10 @@
 import {
   initialState,
   applyPlacement,
-  qubitBlochVector,
   basisProbabilities,
-  densityMatrix,
   GATE_INFO,
 } from "./quantum.js";
+import { qubitBlochVector } from "./density.js";
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
@@ -190,7 +189,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
       canRedo: redoStack.length > 0,
       bloch: qubitBlochVector(state, selectedQubit),
       probabilities: basisProbabilities(state, qubitCount),
-      densityMatrix: densityMatrix(state),
+      state, // DM 뷰가 선택 큐비트의 축소 밀도행렬을 계산할 원본 상태벡터
     };
   }
 

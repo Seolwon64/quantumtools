@@ -364,49 +364,7 @@ export function applyReset(state, q) {
   );
 }
 
-// 큐비트 q의 2x2 축약밀도행렬 (다른 큐비트를 partial trace)
-export function reducedDensityMatrix(state, q) {
-  const bit = 1 << q;
-  const rho = [
-    [c(0), c(0)],
-    [c(0), c(0)],
-  ];
-  for (let i = 0; i < state.length; i++) {
-    if (i & bit) continue;
-    const amp = [state[i], state[i | bit]];
-    for (let a = 0; a < 2; a++) {
-      for (let b = 0; b < 2; b++) {
-        rho[a][b] = cAdd(rho[a][b], cMul(amp[a], cConj(amp[b])));
-      }
-    }
-  }
-  return rho;
-}
-
-export function blochVectorFromRho(rho) {
-  return {
-    x: 2 * rho[0][1].re,
-    y: -2 * rho[0][1].im,
-    z: rho[0][0].re - rho[1][1].re,
-  };
-}
-
-export function qubitBlochVector(state, q) {
-  return blochVectorFromRho(reducedDensityMatrix(state, q));
-}
-
-// 전역 상태의 밀도행렬 ρ = |ψ⟩⟨ψ| (rho[i][j] = amp_i * conj(amp_j)).
-// Density Matrix Cityscape 시각화용 — 순수 상태이므로 대각원소는 basisProbabilities와 일치한다.
-export function densityMatrix(state) {
-  const n = state.length;
-  const rho = Array.from({ length: n }, () => new Array(n));
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      rho[i][j] = cMul(state[i], cConj(state[j]));
-    }
-  }
-  return rho;
-}
+// 축소 밀도행렬·블로흐·순도 계산은 js/density.js로 분리했다(DM 뷰와 Bloch sphere가 공유).
 
 // 모든 계산기저에 대한 확률(%). label은 상위 큐비트가 왼쪽에 오는 이진 문자열.
 export function basisProbabilities(state, qubitCount) {

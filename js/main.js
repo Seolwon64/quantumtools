@@ -2,9 +2,9 @@ import { createBlochScene } from "./scene.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
+import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
-import { createCityscapeScene } from "./cityscape.js";
 
 initResizableLayout();
 
@@ -120,9 +120,10 @@ const blochMixedPct = document.getElementById("bloch-mixed-pct");
 const sphereCaption = document.getElementById("sphere-caption");
 const menuBtn = document.getElementById("menu-btn");
 const menuPanel = document.getElementById("menu-panel");
-const probPanelTitle = document.getElementById("prob-panel-title");
 const probEndian = document.getElementById("prob-endian");
-const probModeToggle = document.getElementById("prob-mode-toggle");
+const dmQubitTabs = document.getElementById("dm-qubit-tabs");
+const dmMatrix = document.getElementById("dm-matrix");
+const dmMetrics = document.getElementById("dm-metrics");
 
 // 비트 순서(엔디언) 라벨: little-endian(q0이 오른쪽 끝) 표기를 명시한다.
 const ENDIAN_TOOLTIP = "Little-endian: q0 is the rightmost bit (Qiskit convention)";
@@ -133,9 +134,6 @@ function endianLabelText(n) {
 }
 probEndian.addEventListener("mouseenter", () => showTooltip(probEndian, ENDIAN_TOOLTIP));
 probEndian.addEventListener("mouseleave", hideTooltip);
-const probChart = document.getElementById("prob-list");
-const cityscapeContainer = document.getElementById("cityscape-container");
-const dmPartToggle = document.getElementById("dm-part-toggle");
 const probHideToggle = document.getElementById("prob-hide-toggle");
 const probHideZeros = document.getElementById("prob-hide-zeros");
 const probFooter = document.getElementById("prob-footer");
@@ -206,10 +204,7 @@ function updateBlochInfo(snapshot) {
   sphereCaption.classList.toggle("hidden", !maximallyMixed);
 }
 
-// ---------- Probabilities / Density Matrix Cityscape ----------
-let probMode = "chart";
-let dmPart = "re"; // 밀도행렬 Re/Im 성분 선택
-let cityscape = null; // 처음 전환할 때 생성 (숨겨진 컨테이너는 크기가 0이라 미리 만들면 카메라 비율이 깨짐)
+// ---------- Probabilities (좌: 차트 / 우: 축소 밀도행렬) ----------
 let hideZeroProb = true; // "Hide 0%" 토글 (기본 켜짐)
 let probShowAll = false; // 큐비트 많을 때 상위 N개 제한을 사용자가 펼쳤는지
 const PROB_TOP_N = 32; // 6큐비트 이상에서 기본으로 표시하는 상위 상태 개수
@@ -277,36 +272,6 @@ runBtn.addEventListener("click", runSampling);
 resetShotsBtn.addEventListener("click", resetSampling);
 shotsInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); runSampling(); }
-});
-
-probModeToggle.addEventListener("click", () => {
-  probMode = probMode === "chart" ? "cityscape" : "chart";
-  const isCityscape = probMode === "cityscape";
-  probModeToggle.setAttribute("aria-pressed", String(isCityscape));
-  probModeToggle.title = isCityscape ? "Switch to probability chart" : "Switch to Density Matrix Cityscape";
-  probPanelTitle.textContent = isCityscape ? "Density Matrix" : "Probabilities";
-  probChart.classList.toggle("hidden", isCityscape);
-  cityscapeContainer.classList.toggle("hidden", !isCityscape);
-  dmPartToggle.classList.toggle("hidden", !isCityscape);
-  probHideToggle.classList.toggle("hidden", isCityscape); // 확률 필터는 밀도행렬 뷰에선 무의미
-  probSampling.classList.toggle("hidden", isCityscape);   // 샘플링도 확률 차트 전용
-  probFooter.classList.toggle("hidden", isCityscape);
-  if (isCityscape) {
-    if (!cityscape) cityscape = createCityscapeScene(cityscapeContainer);
-    cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
-  } else {
-    renderProbabilities(circuit.getSnapshot()); // 차트로 복귀 시 즉시 다시 그림
-  }
-});
-
-dmPartToggle.addEventListener("click", (e) => {
-  const btn = e.target.closest(".segmented-btn");
-  if (!btn) return;
-  dmPart = btn.dataset.part;
-  for (const b of dmPartToggle.querySelectorAll(".segmented-btn")) {
-    b.classList.toggle("active", b === btn);
-  }
-  if (cityscape) cityscape.setData(circuit.getSnapshot().densityMatrix, dmPart);
 });
 
 // ---------- 배치 팝오버 (각도/컨트롤/파트너 선택) ----------
@@ -724,6 +689,70 @@ function buildQubitTabs(snapshot) {
   }
 }
 
+// ---------- 축소 밀도행렬 뷰 (확률 패널 오른쪽) ----------
+const fmt3 = (v) => (Math.abs(v) < 5e-4 ? 0 : v).toFixed(3);
+const fmtComplexCell = (z) => `${fmt3(z.re)} ${z.im >= 0 ? "+" : "−"} ${fmt3(Math.abs(z.im))}i`;
+
+function buildDmQubitTabs(snapshot) {
+  dmQubitTabs.innerHTML = "";
+  for (let q = 0; q < snapshot.qubitCount; q++) {
+    const tab = document.createElement("button");
+    tab.className = "qubit-tab" + (q === snapshot.selectedQubit ? " active" : "");
+    tab.textContent = `q[${q}]`;
+    tab.addEventListener("click", () => {
+      scene.clearTrail();
+      circuit.selectQubit(q); // 선택은 전역(Bloch sphere와 공유)
+    });
+    dmQubitTabs.appendChild(tab);
+  }
+}
+
+// 선택 큐비트의 2×2 축소 밀도행렬 + Purity/Mixedness/Bloch. density.js를 재사용(전체 행렬 안 만듦).
+function renderDensityMatrix(snapshot) {
+  buildDmQubitTabs(snapshot);
+  const info = reducedDensityInfo(snapshot.state, snapshot.selectedQubit);
+  const rho = info.rho;
+  const mag = (z) => Math.hypot(z.re, z.im);
+  let maxMag = 0;
+  for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) maxMag = Math.max(maxMag, mag(rho[a][b]));
+  if (maxMag < 1e-9) maxMag = 1;
+
+  // 2×2 행렬 (셀 배경 = |값|/max 로 옅게 → 대각/비대각 구조가 보임)
+  dmMatrix.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "dm-grid";
+  const addLabel = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; grid.appendChild(s); };
+  addLabel("dm-corner", "ρ");
+  addLabel("dm-collabel", "|0⟩");
+  addLabel("dm-collabel", "|1⟩");
+  for (let a = 0; a < 2; a++) {
+    addLabel("dm-rowlabel", `⟨${a}|`);
+    for (let b = 0; b < 2; b++) {
+      const z = rho[a][b];
+      const cell = document.createElement("div");
+      cell.className = "dm-cell" + (a === b ? " dm-diag" : "");
+      cell.style.background = `rgba(49, 130, 246, ${(mag(z) / maxMag) * 0.5})`;
+      cell.textContent = a === b ? fmt3(z.re) : fmtComplexCell(z); // 대각=실수, 비대각=복소수
+      grid.appendChild(cell);
+    }
+  }
+  dmMatrix.appendChild(grid);
+
+  // 지표 (부동소수점 오차로 순도가 살짝 1을 넘거나 mixedness가 음수가 될 수 있어 클램프)
+  const b = info.bloch;
+  const mixed = Math.max(0, Math.min(1, info.mixedness));
+  const caption = info.purity >= 0.999 ? "Pure — not entangled with other qubits"
+    : info.purity <= 0.501 ? "Maximally mixed — maximally entangled"
+    : "Partially mixed — partially entangled";
+  dmMetrics.innerHTML =
+    `<div class="dm-stat">Purity <b>${info.purity.toFixed(3)}</b></div>` +
+    `<div class="dm-stat dm-mixed"><span class="dm-mixed-label">Mixedness</span>` +
+      `<span class="dm-mixed-bar"><span class="dm-mixed-fill" style="width:${mixed * 100}%"></span></span>` +
+      `<b>${Math.round(mixed * 100)}%</b></div>` +
+    `<div class="dm-stat dm-bloch">r = (<b>${b.x.toFixed(2)}</b>, <b>${b.y.toFixed(2)}</b>, <b>${b.z.toFixed(2)}</b>) &middot; |r| = <b>${info.r.toFixed(3)}</b></div>` +
+    `<div class="dm-caption">${caption}</div>`;
+}
+
 // ---------- 확률 SVG 막대 차트 ----------
 const SVGNS = "http://www.w3.org/2000/svg";
 const CHART = {
@@ -1008,7 +1037,6 @@ function render(snapshot) {
   scene.setVectorInstant(snapshot.bloch);
   if (sphereMode === "qsphere") scene.setQSphereData(snapshot.probabilities, snapshot.qubitCount);
   applySphereModeUI(snapshot);
-  if (probMode === "cityscape" && cityscape) cityscape.setData(snapshot.densityMatrix, dmPart);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
   probEndian.textContent = endianLabelText(snapshot.qubitCount);
@@ -1017,6 +1045,7 @@ function render(snapshot) {
   buildCircuitGrid(snapshot);
   buildQubitTabs(snapshot);
   renderProbabilities(snapshot);
+  renderDensityMatrix(snapshot);
   renderStateFormula(snapshot);
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
@@ -1058,7 +1087,7 @@ setSphereMode(circuit.getSnapshot().qubitCount === 1 ? "bloch" : "qsphere");
 
 // 확률 차트는 패널 크기에 맞춰 반응형으로 다시 그린다(레이아웃 리사이즈·숨김→표시 전환 포함).
 new ResizeObserver(() => {
-  if (probMode === "chart") renderProbabilities(circuit.getSnapshot());
+  renderProbabilities(circuit.getSnapshot());
 }).observe(probList);
 
 qubitMinusBtn.addEventListener("click", () => {
