@@ -136,7 +136,7 @@ function usedColumnCount(grid) {
 
 // onChange(snapshot), onAnimateStep(fromBloch, toBloch) => Promise<void>
 // initial: 공유 URL에서 디코딩한 {qubitCount, grid}(이미 canonical) — 있으면 localStorage보다 우선.
-export function createCircuitController({ onChange, onAnimateStep, initial }) {
+export function createCircuitController({ onChange, onAnimateStep, onStepPause, initial }) {
   let qubitCount = DEFAULT_QUBITS;
   let grid = emptyGrid(qubitCount);
 
@@ -390,14 +390,28 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     notify();
   }
 
+  // 전환 애니메이션에 넘길 데이터. 중간 프레임은 시각적 트윈일 뿐이라 이전/다음 스텝의
+  // 정확한 값(확률·블로흐·스텝열)을 함께 주고, 보간은 렌더 쪽(main.js)에서 한다.
+  function transitionData(fromIdx, toIdx) {
+    const fs = stateAt(fromIdx);
+    const ts = stateAt(toIdx);
+    return {
+      fromBloch: qubitBlochVector(fs, selectedQubit),
+      toBloch: qubitBlochVector(ts, selectedQubit),
+      fromProbs: basisProbabilities(fs, qubitCount),
+      toProbs: basisProbabilities(ts, qubitCount),
+      fromStep: fromIdx,
+      toStep: toIdx,
+      qubitCount,
+    };
+  }
+
   async function stepForward() {
     const totalSteps = usedColumnCount(grid);
     if (isAnimating || isPlaying || stepIndex >= totalSteps) return;
     isAnimating = true;
     notify();
-    const from = qubitBlochVector(stateAt(stepIndex), selectedQubit);
-    const to = qubitBlochVector(stateAt(stepIndex + 1), selectedQubit);
-    await onAnimateStep(from, to);
+    await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
     stepIndex += 1;
     isAnimating = false;
     notify();
@@ -407,9 +421,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     if (isAnimating || isPlaying || stepIndex <= 0) return;
     isAnimating = true;
     notify();
-    const from = qubitBlochVector(stateAt(stepIndex), selectedQubit);
-    const to = qubitBlochVector(stateAt(stepIndex - 1), selectedQubit);
-    await onAnimateStep(from, to);
+    await onAnimateStep(transitionData(stepIndex, stepIndex - 1));
     stepIndex -= 1;
     isAnimating = false;
     notify();
@@ -425,12 +437,12 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
       if (!isPlaying) break;
       isAnimating = true;
       notify();
-      const from = qubitBlochVector(stateAt(stepIndex), selectedQubit);
-      const to = qubitBlochVector(stateAt(stepIndex + 1), selectedQubit);
-      await onAnimateStep(from, to);
+      await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
       stepIndex += 1;
       isAnimating = false;
-      notify();
+      notify(); // [1] 정확한 상태는 전환이 끝난 뒤에만 표시
+      // 정확한 상태 위에서 잠깐 정지 후 다음 스텝
+      if (isPlaying && stepIndex < totalSteps && onStepPause) await onStepPause();
     }
     isPlaying = false;
     notify();

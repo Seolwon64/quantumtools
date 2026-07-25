@@ -614,6 +614,16 @@ function buildCircuitGrid(snapshot) {
       circuitGrid.appendChild(line);
     }
   }
+
+  // [5] 스텝 인디케이터(현재 재생 위치). innerHTML 재구성으로 매번 새로 만들고 현재 스텝에 둔다.
+  highlightedCol = -1; // 셀이 새로 만들어져 하이라이트 클래스는 사라짐
+  const ind = document.createElement("div");
+  ind.className = "step-indicator";
+  ind.style.height = `${snapshot.qubitCount * ROW_PITCH - 8}px`;
+  ind.style.transform = `translateX(${stepIndicatorX(snapshot.stepIndex)}px)`;
+  ind.classList.toggle("hidden", snapshot.totalSteps === 0);
+  circuitGrid.appendChild(ind);
+  stepIndicatorEl = ind;
 }
 
 circuitGrid.addEventListener("dragover", (e) => {
@@ -956,6 +966,150 @@ function buildProbChart(visible, snapshot, sampled, W, H) {
   return svg;
 }
 
+// ---------- 스텝 재생 전환 애니메이션 ([1] 시각적 트윈만, U^t 미사용) ----------
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// [4] 스텝당 전환/정지 시간. 기본 Normal ≈ 1초/스텝(현재 500ms보다 느림).
+const SPEEDS = {
+  slow: { duration: 1000, pause: 400 },
+  normal: { duration: 700, pause: 300 },
+  fast: { duration: 350, pause: 120 },
+};
+let playSpeed = "normal";
+const stepDuration = () => (reducedMotion ? 0 : SPEEDS[playSpeed].duration);
+const stepPause = () => SPEEDS[playSpeed].pause;
+
+// [2] 확률 막대 트윈용 차트: from/to에서 보이는 상태의 합집합을 한 번 그리고, 매 프레임
+// 막대 높이(path d)만 갱신한다(재구성 없음 → 성능). 0%↔값 막대도 자연스럽게 생성/소멸.
+function buildProbTween(fromProbs, toProbs, qubitCount, W, H) {
+  const opts = { hideZero: hideZeroProb, qubitCount, topN: PROB_TOP_N, showAll: probShowAll, observed: new Set() };
+  const fromVis = computeVisibleProbabilities(fromProbs, opts).visible;
+  const toVis = computeVisibleProbabilities(toProbs, opts).visible;
+  const idxSet = new Set();
+  for (const e of fromVis) idxSet.add(e.index);
+  for (const e of toVis) idxSet.add(e.index);
+  const indices = [...idxSet].sort((a, b) => a - b);
+  const n = indices.length;
+  if (n === 0) return null;
+
+  const M = { top: 12, right: 10, left: 42 };
+  const plotW = W - M.left - M.right;
+  const bandW = plotW / n;
+  const labelChars = qubitCount + 2;
+  const labelPx = labelChars * 6.2;
+  const mode = pickLabelMode(n, bandW, labelPx);
+  const bottom = mode === "rot45" ? 46 : 24;
+  const plotH = H - M.top - bottom;
+  const px0 = M.left, px1 = W - M.right, py0 = M.top, py1 = M.top + plotH;
+  const barW = Math.min(bandW - 2, 46);
+
+  const svg = svgEl("svg", { width: "100%", height: "100%", viewBox: `0 0 ${W} ${H}` });
+  svg.classList.add("prob-svg");
+  for (let pct = 0; pct <= 100; pct += 20) {
+    const y = py1 - (pct / 100) * plotH;
+    svg.appendChild(svgEl("line", { x1: px0, y1: y, x2: px1, y2: y, stroke: pct === 0 ? CHART.axis : CHART.grid, "stroke-width": pct === 0 ? 1.5 : 1 }));
+    const t = svgEl("text", { x: px0 - 6, y: y + 3.5, "text-anchor": "end", class: "prob-axis-num" });
+    t.textContent = String(pct); svg.appendChild(t);
+  }
+  const cyT = (py0 + py1) / 2;
+  const yTitle = svgEl("text", { x: 12, y: cyT, "text-anchor": "middle", transform: `rotate(-90, 12, ${cyT})`, class: "prob-axis-title" });
+  yTitle.textContent = "Probability (%)"; svg.appendChild(yTitle);
+
+  const bars = [];
+  const tickStep = mode === "sparse" ? niceTickStep(bandW, 40) : 1;
+  let lastLabelX = -Infinity;
+  indices.forEach((idx, i) => {
+    const cx = px0 + i * bandW + bandW / 2;
+    const bx = cx - barW / 2;
+    const fromP = fromProbs[idx].probability;
+    const toP = toProbs[idx].probability;
+    const path = svgEl("path", { d: "", fill: CHART.theorySolid });
+    svg.appendChild(path);
+    bars.push({ path, bx, fromP, toP });
+    const label = `|${fromProbs[idx].label}⟩`;
+    if (mode === "horizontal") {
+      const t = svgEl("text", { x: cx, y: py1 + 15, "text-anchor": "middle", class: "prob-xlabel" }); t.textContent = label; svg.appendChild(t);
+    } else if (mode === "rot45") {
+      const t = svgEl("text", { x: cx, y: py1 + 12, "text-anchor": "end", transform: `rotate(-45, ${cx}, ${py1 + 12})`, class: "prob-xlabel" }); t.textContent = label; svg.appendChild(t);
+    } else {
+      if (i % tickStep === 0) {
+        svg.appendChild(svgEl("line", { x1: cx, y1: py1, x2: cx, y2: py1 + 4, stroke: CHART.axis, "stroke-width": 1 }));
+        const t = svgEl("text", { x: cx, y: py1 + 15, "text-anchor": "middle", class: "prob-xtick" }); t.textContent = String(idx); svg.appendChild(t);
+      }
+      const peak = Math.max(fromP, toP);
+      if (peak >= 1 && cx - lastLabelX >= labelPx + 4) {
+        const t = svgEl("text", { x: cx, y: py1 - (peak / 100) * plotH - 4, "text-anchor": "middle", class: "prob-xlabel" }); t.textContent = label; svg.appendChild(t); lastLabelX = cx;
+      }
+    }
+  });
+
+  function update(e) {
+    for (const b of bars) {
+      const p = b.fromP + (b.toP - b.fromP) * e;
+      const th = (p / 100) * plotH;
+      b.path.setAttribute("d", th > 0.5 ? topRoundedRect(b.bx, py1 - th, barW, th, 4) : "");
+    }
+  }
+  return { svg, update };
+}
+
+// [5] 스텝 인디케이터: 스텝 k = 적용된 열 k → 열 k의 왼쪽 경계 x.
+let stepIndicatorEl = null;
+let highlightedCol = -1;
+function stepIndicatorX(step) {
+  return GRID_PAD_LEFT + LABEL_WIDTH + step * COL_PITCH - 2;
+}
+function setStepIndicator(x) {
+  if (stepIndicatorEl) stepIndicatorEl.style.transform = `translateX(${x}px)`;
+}
+function highlightColumn(col) {
+  if (col === highlightedCol) return;
+  if (highlightedCol >= 0) {
+    for (const c of circuitGrid.querySelectorAll(`.grid-cell[data-col="${highlightedCol}"]`)) c.classList.remove("step-col-active");
+  }
+  if (col >= 0) {
+    for (const c of circuitGrid.querySelectorAll(`.grid-cell[data-col="${col}"]`)) c.classList.add("step-col-active");
+  }
+  highlightedCol = col;
+}
+
+// 한 스텝 전환을 rAF로 트윈한다([6]). 확률 막대 + 스텝 인디케이터 + (모드에 따라) 블로흐/ Q-sphere.
+function runStepTransition(tr) {
+  const duration = stepDuration();
+  const W = probList.clientWidth, H = probList.clientHeight;
+  const tween = (W > 40 && H > 40) ? buildProbTween(tr.fromProbs, tr.toProbs, tr.qubitCount, W, H) : null;
+  if (tween) { probList.innerHTML = ""; probList.appendChild(tween.svg); }
+
+  // 구/노드: Bloch 모드는 화살표 트윈, Q-sphere 모드는 짧은 크로스페이드([3], 위치·색 보간 없음)
+  if (sphereMode === "bloch") {
+    if (duration <= 0) scene.setVectorInstant(tr.toBloch);
+    else scene.animateVectorTo(tr.fromBloch, tr.toBloch, duration);
+  } else {
+    scene.crossfadeQSphere(tr.toProbs, tr.qubitCount, duration <= 0 ? 0 : Math.min(200, duration));
+  }
+
+  const fromX = stepIndicatorX(tr.fromStep);
+  const toX = stepIndicatorX(tr.toStep);
+  highlightColumn(Math.min(tr.fromStep, tr.toStep)); // 적용 중인 열 강조
+
+  return new Promise((resolve) => {
+    const finish = () => { if (tween) tween.update(1); setStepIndicator(toX); resolve(); };
+    if (duration <= 0) { finish(); return; }
+    const start = performance.now();
+    function frame(now) {
+      const raw = Math.min(1, (now - start) / duration);
+      const e = easeInOutCubic(raw);
+      if (tween) tween.update(e);
+      setStepIndicator(fromX + (toX - fromX) * e);
+      if (raw < 1) requestAnimationFrame(frame);
+      else finish();
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
 // Show all / 접기 토글 버튼 생성
 function makeShowAllButton(text, expand) {
   const btn = document.createElement("button");
@@ -1079,7 +1233,8 @@ if (sharedCircuit) {
 
 const circuit = createCircuitController({
   onChange: render,
-  onAnimateStep: (from, to) => scene.animateVectorTo(from, to, 500),
+  onAnimateStep: (transition) => runStepTransition(transition),
+  onStepPause: () => delay(stepPause()),
   initial: sharedCircuit ?? undefined,
 });
 
@@ -1146,6 +1301,15 @@ playBtn.addEventListener("click", () => {
 });
 
 resetViewBtn.addEventListener("click", () => scene.resetView());
+
+// [4] 재생 속도 (Slow / Normal / Fast)
+const speedToggle = document.getElementById("speed-toggle");
+speedToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".segmented-btn");
+  if (!btn) return;
+  playSpeed = btn.dataset.speed;
+  for (const b of speedToggle.querySelectorAll(".segmented-btn")) b.classList.toggle("active", b === btn);
+});
 
 // ---------- 공유 / 내보내기 ----------
 

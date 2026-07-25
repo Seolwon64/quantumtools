@@ -499,11 +499,11 @@ export function createBlochScene(container) {
     }
   }
 
-  function setQSphereData(probabilities, qubitCount) {
-    clearGroup(qsphereStateGroup);
-    clearGroup(qspherePhaseGroup);
-    rebuildQSphereRings(qubitCount);
-    if (!qubitCount) return;
+  // 확률 분포에 대한 Q-sphere 노드(마커·스템·라벨)를 그룹에 추가한다(그룹을 비우지 않음).
+  // 반환: { material, base } 목록 — 크로스페이드에서 opacity를 개별 제어하기 위함.
+  function addQSphereNodes(probabilities, qubitCount) {
+    const nodes = [];
+    if (!qubitCount) return nodes;
     const byWeight = new Map();
     for (const entry of probabilities) {
       const w = popcount(entry.index);
@@ -526,26 +526,65 @@ export function createBlochScene(container) {
         const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
         const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 });
         qspherePhaseGroup.add(new THREE.Line(stemGeo, stemMat));
+        nodes.push({ material: stemMat, base: 0.8 });
 
         const radius = 0.035 + 0.09 * Math.sqrt(entry.probability / 100);
         // 광택 구슬: 환경맵/조명을 받아 유리 구 안에서 빛나는 노드처럼 보이게 한다.
         const markerMat = new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.3,
-          metalness: 0.0,
-          emissive: color,
-          emissiveIntensity: 0.28,
+          color, roughness: 0.3, metalness: 0.0, emissive: color, emissiveIntensity: 0.28, transparent: true,
         });
         const marker = new THREE.Mesh(qsphereMarkerGeo, markerMat);
         marker.position.copy(pos);
         marker.scale.setScalar(radius);
         qsphereStateGroup.add(marker);
+        nodes.push({ material: markerMat, base: 1 });
 
         const label = makeWideLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
         label.position.copy(pos).multiplyScalar(1.18);
         qsphereStateGroup.add(label);
+        nodes.push({ material: label.material, base: label.material.opacity });
       });
     }
+    return nodes;
+  }
+
+  function setQSphereData(probabilities, qubitCount) {
+    clearGroup(qsphereStateGroup);
+    clearGroup(qspherePhaseGroup);
+    rebuildQSphereRings(qubitCount);
+    addQSphereNodes(probabilities, qubitCount);
+  }
+
+  // [3] 스텝 전환: 위치·색 보간 없이 짧은 크로스페이드. 이전 노드는 제자리에서 투명해지고,
+  // 새 노드는 제자리에서 나타난다. slerp/hue 보간 없음.
+  let qsCrossfadeRAF = null;
+  function crossfadeQSphere(toProbs, qubitCount, duration) {
+    if (qsCrossfadeRAF) { cancelAnimationFrame(qsCrossfadeRAF); qsCrossfadeRAF = null; }
+    if (duration <= 0) { setQSphereData(toProbs, qubitCount); return; }
+    // 현재 노드를 old로 캡처
+    const oldNodes = [];
+    for (const g of [qsphereStateGroup, qspherePhaseGroup]) {
+      for (const child of g.children) {
+        const mat = child.material;
+        if (mat && mat.opacity !== undefined) {
+          mat.transparent = true;
+          oldNodes.push({ material: mat, base: mat.opacity, obj: child, group: g });
+        }
+      }
+    }
+    const newNodes = addQSphereNodes(toProbs, qubitCount); // 그룹에 추가(비우지 않음)
+    for (const nn of newNodes) nn.material.opacity = 0;
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      for (const on of oldNodes) on.material.opacity = on.base * (1 - t);
+      for (const nn of newNodes) nn.material.opacity = nn.base * t;
+      if (t < 1) { qsCrossfadeRAF = requestAnimationFrame(step); return; }
+      for (const on of oldNodes) { on.group.remove(on.obj); on.obj.geometry?.dispose?.(); on.material.dispose?.(); }
+      for (const nn of newNodes) nn.material.opacity = nn.base;
+      qsCrossfadeRAF = null;
+    };
+    qsCrossfadeRAF = requestAnimationFrame(step);
   }
 
   function setMode(nextMode) {
@@ -581,5 +620,6 @@ export function createBlochScene(container) {
     clearTrail,
     setMode,
     setQSphereData,
+    crossfadeQSphere,
   };
 }

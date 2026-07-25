@@ -620,6 +620,27 @@ html, body {
   pointer-events: none;
 }
 
+/* [5] 스텝 재생 인디케이터 (현재 재생 위치를 나타내는 세로 점선). transform으로 부드럽게 이동. */
+.step-indicator {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 0;
+  border-left: 2px dashed var(--primary);
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform;
+}
+.step-indicator.hidden {
+  display: none;
+}
+/* 현재 적용 중인 열 강조(하이라이트 밴드) */
+.grid-cell.step-col-active {
+  background: var(--primary-dim);
+  border-radius: 8px;
+}
+
 .ctrl-dot {
   width: 12px;
   height: 12px;
@@ -709,6 +730,24 @@ html, body {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
+}
+
+/* [4] 재생 속도 세그먼트 (오른쪽 정렬) */
+.speed-toggle {
+  margin-left: auto;
+  padding: 2px;
+}
+.speed-toggle .segmented-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+/* [6] 모션 최소화 선호 시 CSS 전환/애니메이션도 사실상 끈다(자바스크립트 트윈은 별도 처리). */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
 
 .round-btn {
