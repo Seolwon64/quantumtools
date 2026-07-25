@@ -49,16 +49,7 @@ It's a personal project, so it started as "let me really *see* what a Bell state
 ## 🚀 Try it
 
 - **Online (easiest):** just open the [**live demo**](https://seolwon64.github.io/quantumtools/).
-- **Locally:** it's a static site with no build step — clone and serve the folder with any static server:
 
-  ```bash
-  git clone https://github.com/Seolwon64/quantumtools.git
-  cd quantumtools
-  python -m http.server 8000    # or: npx serve .
-  # then open http://localhost:8000
-  ```
-
-  (Three.js is loaded from a CDN via an import map, so you do need to serve over `http://` rather than opening the file directly.)
 
 ## 🧪 Tests
 
