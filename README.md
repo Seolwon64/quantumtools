@@ -49,16 +49,7 @@ It's a personal project, so it started as "let me really *see* what a Bell state
 ## 🚀 Try it
 
 - **Online (easiest):** just open the [**live demo**](https://seolwon64.github.io/quantumtools/).
-- **Locally:** it's a static site with no build step — clone and serve the folder with any static server:
 
-  ```bash
-  git clone https://github.com/Seolwon64/quantumtools.git
-  cd quantumtools
-  python -m http.server 8000    # or: npx serve .
-  # then open http://localhost:8000
-  ```
-
-  (Three.js is loaded from a CDN via an import map, so you do need to serve over `http://` rather than opening the file directly.)
 
 ## 🧪 Tests
 
@@ -92,7 +83,7 @@ The header already says *"More tools coming soon"* — some ideas on the list:
 
 ## 📖 About — my learning journey
 
-I'm a physics student teaching myself quantum computing **independently during my military service in South Korea (2025–2027)**. This app grew out of that self-study — it's basically the "I want to *see* it" companion to the math I was working through. (Computer access is weekends only, so… slow and steady. Keep hustlin'! 💪)
+I'm a physics student teaching myself quantum computing **independently during my military service in South Korea (2025–2027)**. This app grew out of that self-study — it's basically the "I want to *see* it" companion to the math I was working through. (Computer access is weekends only, so… slow and steady. Keep hustlin'!)
 
 **Learning resources**
 - IBM Qiskit learning courses, textbook & docs
@@ -101,13 +92,7 @@ I'm a physics student teaching myself quantum computing **independently during m
 **Study log (highlights)**
 - **2026-05:** Bell states + first visualizations; Qiskit environment
 - **2026-06:** Statevectors & operators, multi-qubit systems, partial measurement, teleportation, the CHSH game
-- **2026-07:** Running on real IBM hardware, Hamiltonian simulation, and building this — a quantum coin / statevector visualizer on the Bloch sphere ✨
-
-**Theory foundation (in parallel)**
-- Griffiths, *Introduction to Quantum Mechanics* — ongoing
-- Susskind, *The Theoretical Minimum* — done
-- Feynman, *Lectures on Physics* — done
-- Strang, *Introduction to Linear Algebra* — ongoing
+- **2026-07:** Running on real IBM hardware, Hamiltonian simulation, and building this — a quantum coin / statevector visualizer on the Bloch sphere 
 
 *Concepts along the way:* wave–particle duality, wavefunctions & normalization, the Schrödinger equation (time-independent & dependent), the quantum harmonic oscillator.
 
