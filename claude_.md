@@ -4,6 +4,7 @@
 - **목표:** 양자 큐비트 상태(Bloch Sphere)를 토스(Toss) 앱처럼 직관적이고 친근하며 극도로 미니멀한 UI/UX로 시각화하는 인터랙티브 웹앱 구현.
 - **핵심 기술 스택:** HTML5, CSS3, JavaScript (Three.js 기반 3D 렌더링).
 - **플랫폼:** 데스크톱(PC) 웹 전용. 모바일 웹 대응은 고려하지 않는다.
+- **배포/문서:** 라이브 `https://seolwon64.github.io/quantumtools/`(GitHub Pages, main). `README.md`는 앱 쇼케이스(영어·캐주얼 톤, 기능 하이라이트 + 하단에 학습 여정), 스크린샷은 `docs/screenshots/`(hero/bloch/qsphere/sampling/playback). `LICENSE`는 MIT. 스크린샷은 Playwright(SwiftShader)로 재생성 가능.
 
 ## 2. 토스(Toss) 스타일 UI/UX 디자인 원칙
 AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토스 디자인 시스템(TDS) 특징을 엄격히 준수해야 합니다.
