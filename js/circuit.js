@@ -336,6 +336,28 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     notify();
   }
 
+  // 프리셋/공유 회로 로드: 현재 회로를 통째로 교체한다. 큐비트 수도 자동 설정.
+  // pushUndo로 반드시 undo 스택에 기록 → 실수로 눌러도 Undo로 되돌릴 수 있다.
+  function loadCircuit(nextQubitCount, nextGrid) {
+    if (isAnimating || isPlaying) return;
+    const n = Math.max(MIN_QUBITS, Math.min(MAX_QUBITS, nextQubitCount | 0));
+    pushUndo();
+    const ng = emptyGrid(n);
+    for (let col = 0; col < Math.min(MAX_COLUMNS, nextGrid.length); col++) {
+      for (let q = 0; q < n; q++) {
+        const raw = nextGrid[col]?.[q];
+        if (!raw) continue;
+        const cell = migrateCell(raw, q); // 이미 canonical이면 정규화만
+        if (isValidPlacement(cell, n)) ng[col][cell.targets[0]] = cell;
+      }
+    }
+    qubitCount = n;
+    grid = ng;
+    if (selectedQubit >= qubitCount) selectedQubit = qubitCount - 1;
+    stepIndex = usedColumnCount(grid);
+    notify();
+  }
+
   function setQubitCount(next) {
     if (isAnimating || isPlaying) return;
     if (next < MIN_QUBITS || next > MAX_QUBITS || next === qubitCount) return;
@@ -430,6 +452,7 @@ export function createCircuitController({ onChange, onAnimateStep, initial }) {
     addControl,
     removeControl,
     clear,
+    loadCircuit,
     setQubitCount,
     undo,
     redo,

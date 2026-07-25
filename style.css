@@ -402,6 +402,51 @@ html, body {
   color: var(--primary);
 }
 
+/* 프리셋 드롭다운 (이름 + 한 줄 설명) */
+.presets-menu {
+  position: fixed;
+  z-index: 55;
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 250px;
+  max-width: 320px;
+}
+.presets-menu.hidden {
+  display: none;
+}
+.preset-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.preset-item:hover {
+  background: var(--primary-dim);
+}
+.preset-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-title);
+}
+.preset-item:hover .preset-name {
+  color: var(--primary);
+}
+.preset-desc {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
 .toast {
   position: fixed;
   z-index: 70;

@@ -4,7 +4,8 @@ import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
 import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
-import { parseShareHash, buildShareUrl, toQASM, toQiskit } from "./export.js";
+import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
+import { PRESETS } from "./presets.js";
 
 initResizableLayout();
 
@@ -1204,4 +1205,55 @@ document.getElementById("export-qiskit").addEventListener("click", () => {
   const snap = circuit.getSnapshot();
   copyText(toQiskit(snap.qubitCount, snap.grid), "Qiskit code");
   exportMenu.classList.add("hidden");
+});
+
+// ---------- 회로 프리셋 드롭다운 ----------
+const presetsBtn = document.getElementById("presets-btn");
+const presetsMenu = document.getElementById("presets-menu");
+
+function closePresetsMenu() {
+  presetsMenu.classList.add("hidden");
+  presetsBtn.setAttribute("aria-expanded", "false");
+}
+
+// 프리셋 로드: 문자열을 디코드해 회로를 통째 교체(loadCircuit이 Undo 스택에 기록 → 되돌리기 가능).
+for (const preset of PRESETS) {
+  const item = document.createElement("button");
+  item.className = "preset-item";
+  const name = document.createElement("span");
+  name.className = "preset-name";
+  name.textContent = preset.name;
+  const desc = document.createElement("span");
+  desc.className = "preset-desc";
+  desc.textContent = preset.description;
+  item.append(name, desc);
+  item.addEventListener("click", () => {
+    const dec = decodeCircuit(preset.circuit);
+    closePresetsMenu();
+    if (!dec) { showToast("Preset failed to load"); return; }
+    scene.clearTrail();
+    closePlacePopover();
+    circuit.loadCircuit(dec.qubitCount, dec.grid);
+    showToast(`Loaded "${preset.name}" — Undo (Ctrl+Z) to revert`);
+  });
+  presetsMenu.appendChild(item);
+}
+
+presetsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const willOpen = presetsMenu.classList.contains("hidden");
+  presetsMenu.classList.toggle("hidden", !willOpen);
+  presetsBtn.setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) {
+    const rect = presetsBtn.getBoundingClientRect();
+    const menuRect = presetsMenu.getBoundingClientRect();
+    presetsMenu.style.left = `${Math.min(rect.left, window.innerWidth - menuRect.width - 8)}px`;
+    presetsMenu.style.top = `${rect.bottom + 6}px`;
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!presetsMenu.classList.contains("hidden") && !presetsMenu.contains(e.target) && e.target !== presetsBtn) {
+    closePresetsMenu();
+  }
 });
