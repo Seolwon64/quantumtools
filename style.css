@@ -17,15 +17,17 @@
   --palette-cat-gap: 4px;       /* 헤더 ↔ 그리드 간격 */
   --palette-section-gap: 9px;   /* 섹션 사이 간격 */
 
-  /* 게이트 카테고리 색상 — 한 곳에서만 정의. 저채도 파스텔 배경 + 진한 텍스트로
-     WCAG AA(≥4.5:1) 대비를 만족한다. 게이트 버튼은 카테고리 클래스만 참조한다. */
-  --cat-pauli-bg: #e7f0fd;        --cat-pauli-fg: #1554b8;        /* Pauli & Clifford */
-  --cat-phase-bg: #e2f4ed;        --cat-phase-fg: #0d6b4e;        /* Phase / T */
-  --cat-rotation-bg: #f0e9fc;     --cat-rotation-fg: #6b28c9;     /* Rotations */
-  --cat-multi-bg: #fbeede;        --cat-multi-fg: #8f5008;        /* Multi-qubit */
-  --cat-interaction-bg: #fce7f0;  --cat-interaction-fg: #a8175a;  /* Interaction */
-  --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary (gray) */
-  --cat-advanced-bg: #fdecea;     --cat-advanced-fg: #b3341a;     /* Advanced · relative phase (경고 톤, ≥4.5:1) */
+  /* 게이트 카테고리 색상 — 한 곳에서만 정의(변수 값만 교체, 개별 버튼 X). Qiskit Composer 계열
+     저채도 파스텔 배경 + 진한 텍스트로 WCAG AA(≥4.5:1) 대비 만족. 게이트 버튼은 클래스만 참조.
+     대비(계산): pauli 5.38 · phase 5.48 · rotation 6.41 · multi 7.37 · interaction 4.89 ·
+     structural 6.62 · advanced 8.23 (모두 ≥4.5:1). */
+  --cat-pauli-bg: #fce8e8;        --cat-pauli-fg: #b52a22;        /* Pauli & Clifford — 빨강/분홍 */
+  --cat-phase-bg: #e6f3fd;        --cat-phase-fg: #0b63ac;        /* Phase / T — 하늘색 */
+  --cat-rotation-bg: #f0e9fc;     --cat-rotation-fg: #6b28c9;     /* Rotations — 보라 */
+  --cat-multi-bg: #d5e0fa;        --cat-multi-fg: #1f3d94;        /* Multi-qubit / control — 진한 파랑 */
+  --cat-interaction-bg: #d9f2ee;  --cat-interaction-fg: #0b7365;  /* Interaction — 청록(teal) */
+  --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary — 회색 */
+  --cat-advanced-bg: #dcd8e0;     --cat-advanced-fg: #3d3646;     /* Advanced · relative phase — 어두운 톤(+점선 테두리) */
 }
 
 * {

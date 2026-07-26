@@ -50,7 +50,7 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
   - Interaction: RXX, RYY, RZZ  (세 pair-param 게이트는 한 세트)
   - Non-unitary(회색): Measure, Reset, Barrier
   - **Advanced · relative phase**: RCCX, RC3X — 상대위상 Toffoli(Margolus) 변형. 정확한 CCX/C3X가 **아니므로** 초심자가 혼동하지 않게 별도 카테고리로 분리하고, 경고 톤 배경 + 점선 테두리(`cat-advanced`)로 시각 구분한다.
-- **색상 규칙:** 카테고리 색은 `style.css`의 `:root --cat-*` 변수 한 곳에서만 정의하고, 게이트 버튼과 캔버스 칩은 `cat-<id>` 클래스로 카테고리만 참조한다(버튼별 하드코딩 금지). 저채도 파스텔 배경 + 진한 텍스트로 WCAG AA(≥4.5:1) 대비를 만족한다. gate→카테고리 매핑은 `main.js`의 `GATE_CATEGORY`가 담당(quantum.js의 게이트 정의/시뮬레이션은 건드리지 않음).
+- **색상 규칙:** 카테고리 색은 `style.css`의 `:root --cat-*` 변수 한 곳에서만 정의하고, 게이트 버튼과 캔버스 칩은 `cat-<id>` 클래스로 카테고리만 참조한다(버튼별 하드코딩 금지). **Qiskit Composer 계열 색조**(Pauli/Clifford=빨강, Phase/T=하늘색, Rotations=보라, Multi-qubit=진한 파랑, Interaction=청록, Non-unitary=회색, Advanced=어두운 톤)로, 저채도 파스텔 배경 + 진한 텍스트로 WCAG AA(≥4.5:1) 대비를 만족한다(값 교체 시 대비 재계산). gate→카테고리 매핑은 `main.js`의 `GATE_CATEGORY`가 담당(quantum.js의 게이트 정의/시뮬레이션은 건드리지 않음).
 - **X 아이콘:** 팔레트의 단독 X 버튼은 문자 "X"로 표시한다(Y·Z와 동일 폰트/크기). ⊕ 기호는 CNOT/CCX 팔레트 버튼의 controlled-NOT 타깃 표시, 그리고 회로 캔버스의 controlled-X·RCCX·RC3X 타깃(quantum.js `targetLabel`)에 쓰인다 — RCCX/RC3X 타깃은 `placed-advanced`(점선 테두리)로 CCX와 시각 구분한다.
 - **if 블록:** 미구현이므로 `main.js`의 `GATE_ENABLED = { IF: false }` 피처 플래그로 렌더링에서만 제외한다(GATE_INFO 정의/엔진 코드는 유지).
 - **게이트 툴팁:** 팔레트 칩에 마우스를 올리면 게이트 이름/설명이 커스텀 툴팁으로 표시된다. 툴팁 설명 문구는 모두 영어로 작성한다 (예: H → "Hadamard — creates superposition"). 스크롤 컨테이너에 잘리지 않도록 body에 고정 배치.
