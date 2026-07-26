@@ -55,7 +55,7 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **if 블록:** 미구현이므로 `main.js`의 `GATE_ENABLED = { IF: false }` 피처 플래그로 렌더링에서만 제외한다(GATE_INFO 정의/엔진 코드는 유지).
 - **게이트 툴팁:** 팔레트 칩에 마우스를 올리면 게이트 이름/설명이 커스텀 툴팁으로 표시된다. 툴팁 설명 문구는 모두 영어로 작성한다 (예: H → "Hadamard — creates superposition"). 스크롤 컨테이너에 잘리지 않도록 body에 고정 배치.
 - **Measure 아이콘:** Qiskit과 동일한 게이지(반원+바늘+z) SVG 아이콘을 팔레트와 회로 칩 양쪽에 사용한다.
-- **버튼 치수:** 버튼 한 변/간격/폰트는 `:root`의 `--gate-size`(56px)·`--gate-gap`·`--gate-font` 변수 한 곳에서 정의하고 나머지는 참조한다(버튼별 하드코딩 금지). 그리드 열은 고정하지 않고 `repeat(auto-fill, minmax(var(--gate-size), 1fr))`로 컨테이너 폭에 맞춰 자동으로 채운다. 긴 라벨(√X†, RCCX)은 `white-space: nowrap`으로 줄바꿈을 막고, 넘칠 경우 폰트가 아니라 `--gate-size`를 키운다. 카테고리 헤더 폰트/여백도 버튼에 맞춰 작게(`--palette-cat-font` 등) 유지한다.
+- **버튼 치수(조밀, Quirk 수준):** 버튼 한 변/간격/폰트는 `:root`의 `--gate-size`(**40px**, 모바일 `@media (max-width:640px)`에서 44px 터치 타깃)·`--gate-gap`(4px)·`--gate-font`(12px, 긴 라벨용 `--gate-font-sm` 10px) 변수 한 곳에서 정의하고 나머지는 참조한다(버튼별 하드코딩 금지). 그리드는 `repeat(auto-fill, var(--gate-size))` 고정폭 + `justify-content:start` — 폭이 좁아진 만큼 열이 더 들어가고 버튼은 늘어나지 않아 **정확한 40px 정사각형**(우측은 ragged). 긴 라벨(√X†, RCCX/RC3X)은 `white-space: nowrap`으로 줄바꿈을 막고, 12px에서 다 들어감을 Playwright로 확인(넘치면 그 게이트만 `--gate-font-sm` 적용). 카테고리 헤더 폰트/여백(`--palette-cat-font` 8px·`--palette-cat-gap` 2px·`--palette-section-gap` 4px)도 조여 전체를 조밀하게 — 1600px+ 폭 화면에서 스크롤 없이 한 화면에 들어간다(짧은 창은 팔레트가 구 패널과 세로를 나눠 약간 스크롤될 수 있음).
 - CZ는 팔레트에서 제외(엔진은 유지). 마지막 파이 아이콘은 확률 표시 위젯이라 자체 Probabilities 패널로 대체.
 - **비트 순서(endianness) 라벨:** 상태벡터/확률 표기는 little-endian(q0이 오른쪽 끝, Qiskit 관례)이다. 이를 명시하기 위해 Probabilities 패널 제목 옆과 상태벡터 수식(|ψ⟩=…) 아래에 `|q(n-1) … q1 q0⟩` 형태의 작은 회색 라벨을 표시한다(큐비트 수에 따라 자동 갱신, hover 시 "Little-endian: q0 is the rightmost bit (Qiskit convention)" 툴팁). `main.js`의 `endianLabelText(n)`가 생성.
 - **단일 큐비트:**

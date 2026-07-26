@@ -9,13 +9,14 @@
   --radius: 20px;
   --radius-sm: 12px;
 
-  /* 팔레트 버튼 치수/간격/폰트 — 한 곳에서만 정의(나머지는 참조). */
-  --gate-size: 56px;   /* 버튼 최소 한 변 */
-  --gate-gap: 6px;     /* 버튼 사이 간격 */
-  --gate-font: 14px;   /* 라벨 폰트 크기 */
-  --palette-cat-font: 9px;      /* 카테고리 헤더 폰트 */
-  --palette-cat-gap: 4px;       /* 헤더 ↔ 그리드 간격 */
-  --palette-section-gap: 9px;   /* 섹션 사이 간격 */
+  /* 팔레트 버튼 치수/간격/폰트 — 한 곳에서만 정의(나머지는 참조). Quirk 수준 조밀함 목표. */
+  --gate-size: 40px;   /* 버튼 최소 한 변 (데스크톱; 모바일은 미디어쿼리로 44px) */
+  --gate-gap: 4px;     /* 버튼 사이 간격 */
+  --gate-font: 12px;   /* 라벨 폰트 크기 */
+  --gate-font-sm: 10px; /* 긴 라벨(√X†, RCCX/RC3X)이 넘칠 때 한 단계 작게 */
+  --palette-cat-font: 8px;      /* 카테고리 헤더 폰트 */
+  --palette-cat-gap: 2px;       /* 헤더 ↔ 그리드 간격 */
+  --palette-section-gap: 4px;   /* 섹션 사이 간격 */
 
   /* 게이트 카테고리 색상 — 한 곳에서만 정의(변수 값만 교체, 개별 버튼 X). Qiskit Composer 계열
      저채도 파스텔 배경 + 진한 텍스트로 WCAG AA(≥4.5:1) 대비 만족. 게이트 버튼은 클래스만 참조.
@@ -266,12 +267,13 @@ html, body {
   letter-spacing: 0.04em;
 }
 
-/* 열 개수 고정 대신 컨테이너 폭에 맞춰 자동으로 채운다 */
+/* 폭에 맞춰 auto-fill. 버튼은 var(--gate-size) 고정폭이라 늘어나지 않고 정확한 정사각형(더 조밀). */
 .palette-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--gate-size), 1fr));
+  grid-template-columns: repeat(auto-fill, var(--gate-size));
   gap: var(--gate-gap);
   align-content: start;
+  justify-content: start;
 }
 
 .gate-chip {
@@ -295,6 +297,11 @@ html, body {
 .gate-chip[data-ready="false"] {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* 모바일/좁은 뷰포트: 터치 타깃 최소 44px (변수만 조정) */
+@media (max-width: 640px) {
+  :root { --gate-size: 44px; }
 }
 
 /* 팔레트 칩 글리프 (CNOT/CCX/SWAP의 점-선 스택, 측정 게이지) */
