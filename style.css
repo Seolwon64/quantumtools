@@ -29,6 +29,18 @@
   --cat-interaction-bg: #d9f2ee;  --cat-interaction-fg: #0b7365;  /* Interaction — 청록(teal) */
   --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary — 회색 */
   --cat-advanced-bg: #dcd8e0;     --cat-advanced-fg: #3d3646;     /* Advanced · relative phase — 어두운 톤(+점선 테두리) */
+
+  /* 회로 캔버스(canvas) 전용 2단계 색 — 팔레트(파스텔 배경)와 같은 색 계열이되 채도·명도를 높인
+     진한 solid. 회로 블록은 이 색으로 불투명하게 채우고 글자는 흰색(WCAG AA). ⊕·× 기호는 이 색을
+     글리프 색으로 쓴다. 각 색은 흰색 대비 ≥4.5:1(계산): pauli 5.62 · phase 5.75 · rotation 8.20 ·
+     multi 10.39 · interaction 5.75 · structural 5.40 · advanced 10.57. 팔레트 버튼 색은 불변. */
+  --cat-pauli-c: #c62828;
+  --cat-phase-c: #1565c0;
+  --cat-rotation-c: #7b1fa2;
+  --cat-multi-c: #283593;
+  --cat-interaction-c: #0b7365;
+  --cat-structural-c: #546e7a;
+  --cat-advanced-c: #453a54;
 }
 
 * {
@@ -616,6 +628,9 @@ html, body {
 
 .circuit-grid {
   position: relative;
+  /* [1] 자체 쌓임 맥락을 만들어 연결선(z-index:-1)이 그리드 배경 위·게이트 셀 아래 레이어에
+     그려지게 한다 → 박스형 게이트가 선의 끝을 덮어 경계에서 끊긴 것처럼 보인다. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -623,13 +638,18 @@ html, body {
   width: max-content;
 }
 
+/* [1] 제어 연결선. 셀보다 아래 레이어(z-index:-1)에 그린다:
+   - 박스형 게이트(H,X,Y,…): 불투명 박스가 선을 덮어 경계에서 자연히 끊긴다.
+   - ⊕(CNOT 타깃)·×(SWAP): .placed-symbol 칩을 배경 투명으로 두어 선이 기호 중심까지 관통해 보인다.
+   - 제어점(•): 채운 점이 선 위에 얹혀 중심에서 시작·종료하는 것처럼 보인다. */
 .gate-connector {
   position: absolute;
   width: 2px;
-  background: var(--text-body);
-  opacity: 0.55;
+  background: var(--text-title);
+  opacity: 0.7;
   border-radius: 999px;
   pointer-events: none;
+  z-index: -1;
 }
 
 /* [5] 스텝 재생 인디케이터 (현재 재생 위치를 나타내는 세로 점선). transform으로 부드럽게 이동. */
@@ -647,15 +667,15 @@ html, body {
 .step-indicator.hidden {
   display: none;
 }
-/* 현재 적용 중인 열 강조(하이라이트 밴드) */
+/* 현재 적용 중인 열 강조(하이라이트 밴드). 반투명이라 아래 레이어의 연결선이 밴드 위로 비쳐 보인다. */
 .grid-cell.step-col-active {
-  background: var(--primary-dim);
+  background: rgba(49, 130, 246, 0.13);
   border-radius: 8px;
 }
 
 .ctrl-dot {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--text-title);
   cursor: pointer;
@@ -664,7 +684,8 @@ html, body {
 .qubit-row {
   display: flex;
   align-items: center;
-  height: 46px;
+  /* 셀(50)과 동일 높이 — 블록은 15~20% 키우되 세로 피치는 조여 4~5큐비트가 세로 스크롤 없이 보이게 한다. */
+  height: 50px;
 }
 
 .qubit-label {
@@ -694,8 +715,8 @@ html, body {
 .grid-cell {
   position: relative;
   flex: none;
-  width: 42px;
-  height: 42px;
+  width: 50px;
+  height: 50px;
   margin-right: 4px;
   display: flex;
   align-items: center;
@@ -709,17 +730,39 @@ html, body {
   outline-offset: -2px;
 }
 
+/* [2] 회로 블록: 팔레트보다 15~20% 크게(34→40) + 진한 solid 배경 + 흰 글자로 대비 강화.
+   --gate-c 는 카테고리별 회로 전용 색(팔레트와 같은 계열, 더 진함). */
 .placed-gate {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.12s ease;
+  background: var(--gate-c, var(--cat-structural-c));
+  color: #fff;
+}
+
+/* 카테고리 → 회로 전용 색 매핑(팔레트 .gate-chip 은 건드리지 않음, .placed-gate 만 재지정) */
+.placed-gate.cat-pauli       { --gate-c: var(--cat-pauli-c); }
+.placed-gate.cat-phase       { --gate-c: var(--cat-phase-c); }
+.placed-gate.cat-rotation    { --gate-c: var(--cat-rotation-c); }
+.placed-gate.cat-multi       { --gate-c: var(--cat-multi-c); }
+.placed-gate.cat-interaction { --gate-c: var(--cat-interaction-c); }
+.placed-gate.cat-structural  { --gate-c: var(--cat-structural-c); }
+.placed-gate.cat-advanced    { --gate-c: var(--cat-advanced-c); }
+
+/* [1] ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 채운 박스가 아니라 와이어 위의 기호 → 배경을 없애 아래의
+   연결선이 기호 중심까지 이어져 보이게 한다. 글리프는 카테고리 색(흰 배경 대비 ≥4.5:1)으로 키운다. */
+.placed-gate.placed-symbol {
+  background: transparent;
+  color: var(--gate-c, var(--text-title));
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .placed-gate:hover {

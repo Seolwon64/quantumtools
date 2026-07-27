@@ -74,6 +74,8 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **구조 게이트:** Barrier·Measure는 상태를 바꾸지 않는 시각 요소(no-op), Reset(|0⟩)은 4.5의 결정론적 사영.
 - **제외:** If(고전 조건부 실행) — 실제 확률적 측정 붕괴 없이는 의미가 성립하지 않아 팔레트에서 제외한다.
 - **다중 큐비트 게이트 렌더링:** placement는 타겟 큐비트 셀에 저장하고, 관여하는 와이어 사이를 세로 연결선으로 잇는다. 컨트롤은 점(●), SWAP 파트너는 ×로 표시. 관여한 아무 칸이나 클릭하면 placement 전체가 삭제된다.
+- **연결선 종점(표준 표기):** `.circuit-grid`는 `isolation:isolate`로 쌓임 맥락을 만들고 `.gate-connector`는 `z-index:-1`로 **셀 아래 레이어**에 그린다 → 박스형 게이트(H,X,Y,…)는 불투명 박스가 선을 덮어 경계에서 끊긴 것처럼 보인다. ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 `.placed-symbol`(배경 투명)이라 선이 기호 중심까지 관통해 보이고, 제어점(●)은 선 위에 얹혀 중심에서 시작·종료한다. 재생 하이라이트(`.step-col-active`)는 반투명이라 연결선이 비쳐 보인다. 연결선 좌표는 `ROW_PITCH/COL_PITCH/CELL_CENTER`(main.js)로 계산하며 셀 높이=행 높이(50)라 세로 오프셋 0.
+- **회로 블록 색/크기(팔레트와 2단계 분리):** 회로 캔버스 칩은 `--cat-*-c`(팔레트 파스텔과 같은 색 계열의 진한 solid, 흰 배경 대비 ≥4.5:1)로 **불투명하게 채우고 흰 글자**를 쓴다(`.placed-gate`가 `--gate-c`로 참조). 팔레트 버튼(`.gate-chip.cat-*`)은 파스텔 그대로 — 두 곳이 같은 색 계열로 연결되되 회로 쪽이 진하다. 블록은 40px(팔레트 대비 +~18%), 셀 50px, 세로 피치는 56으로 조여 4~5큐비트가 세로 스크롤 없이, 7단계가 가로 스크롤 없이 들어간다.
 
 ### 4.3. 회로 편집 방식 / 데이터 모델
 - **정규(canonical) placement 셀:** `{ gate, targets:number[], controls:number[], params:{} }`. 모든 게이트가 임의 개수의 컨트롤을 가질 수 있다. CNOT=`{gate:"X",controls:[c]}`, CCX=`{gate:"X",controls:[c0,c1]}`, CZ=`{gate:"Z",controls:[c]}`, CSWAP=`{gate:"SWAP",targets:[a,b],controls:[c]}`. 셀은 홈 행(=`targets[0]`, `grid[col][targets[0]]`)에만 저장하고 나머지 관여 큐비트는 필드로 기록한다.

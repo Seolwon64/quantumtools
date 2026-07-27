@@ -86,9 +86,9 @@ const PALETTE_GLYPHS = {
 const GRID_PAD_TOP = 4;
 const GRID_PAD_LEFT = 2;
 const LABEL_WIDTH = 38;
-const ROW_PITCH = 52; // 행 높이 46 + gap 6
-const COL_PITCH = 46; // 셀 42 + margin 4
-const CELL_CENTER = 21;
+const ROW_PITCH = 56; // 행 높이 50 + gap 6 (세로는 조여 4~5큐비트 세로 스크롤 방지)
+const COL_PITCH = 54; // 셀 50 + margin 4
+const CELL_CENTER = 25; // 셀(50) 중심. 셀 높이=행 높이라 세로 오프셋 0
 
 const sphereContainer = document.getElementById("sphere-container");
 const scene = createBlochScene(sphereContainer);
@@ -584,8 +584,11 @@ function buildCircuitGrid(snapshot) {
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
           } else {
-            chip.textContent =
-              role.cell.gate === "SWAP" ? "×" : (info.targetLabel ?? info.label);
+            const label = role.cell.gate === "SWAP" ? "×" : (info.targetLabel ?? info.label);
+            chip.textContent = label;
+            // ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 박스가 아니라 와이어 위 기호 → 배경 없이 그려
+            // 아래 레이어의 연결선이 기호 중심까지 이어져 보이게 한다([1] 표준 표기).
+            if (label === "⊕" || label === "×") chip.classList.add("placed-symbol");
           }
           attachGateHover(chip, role.cell);
           cell.appendChild(chip);
@@ -609,7 +612,7 @@ function buildCircuitGrid(snapshot) {
       const line = document.createElement("div");
       line.className = "gate-connector";
       line.style.left = `${GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER - 1}px`;
-      line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER + 2}px`;
+      line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER}px`;
       line.style.height = `${(maxQ - minQ) * ROW_PITCH}px`;
       circuitGrid.appendChild(line);
     }
