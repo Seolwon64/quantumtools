@@ -134,12 +134,14 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **내보내기:** 내보내기 버튼(코드 아이콘) → 메뉴에서 "Copy OpenQASM 2.0" / "Copy Qiskit (Python)" 선택 시 해당 코드가 클립보드에 복사된다. Control(•) 칼럼 수정자는 표준 표현이 없어 내보내지 않고 주석으로 명시한다. RC3X는 Qiskit에서 `rcccx` 메서드로 매핑.
 - 공유/내보내기 버튼은 Circuit 패널 툴바에 두고, 복사 완료는 하단 토스트로 알린다.
 
-### 4.10.1. 회로 프리셋 (`js/presets.js`)
-- Circuit 툴바 "Clear all" 옆 **"Presets ▾" 드롭다운**(팔레트가 아니라 회로 전체 교체이므로 툴바에 둔다). 각 항목은 이름 + 한 줄 설명.
-- **저장 형식([2]):** 프리셋은 별도 자료구조 없이 **공유 URL과 동일한 직렬화 문자열**(`circuit`)로만 갖는다. `{ name, description, qubits, circuit }`. 로드 = `decodeCircuit(circuit)` → `circuit.loadCircuit(qubitCount, grid)`. 큐비트 수는 문자열에 담겨 자동 설정된다.
-- **`loadCircuit`(circuit.js):** 현재 회로를 통째 교체하되 **`pushUndo`로 반드시 Undo 스택에 기록**([1]) → 실수로 눌러도 Ctrl+Z로 복구. 로드 시 "Loaded … — Undo to revert" 토스트. 별도 확인 모달은 없다(항상 되돌릴 수 있으므로).
-- **목록:** Bell(Φ+)·GHZ·**W state**·Phase kickback·Deutsch–Jozsa(balanced)·QFT(3q). 각 `circuit` 문자열은 canonical 그리드→`encodeCircuit`로 만들고 시뮬레이션으로 기대 상태를 대조 검증했다. W state는 표준 게이트로 구성 가능함을 확인 후 포함했다(X + controlled-RY 캐스케이드: `X q0; CRY(2·acos(1/√3)) q1←q0; CNOT q1→q0; CRY(π/2) q2←q1; CNOT q2→q1`). QFT는 H·controlled-P·SWAP로 구성하고 DFT 위상(j=1,2,4)까지 검증.
-- **테스트([4]):** `test/presets.test.mjs`가 각 프리셋 문자열을 디코드→simulate 해 상태벡터를 기대값과 대조한다(Bell/GHZ/W/Phase kickback 정확 진폭, DJ 입력 |11⟩ 확정, QFT|000⟩ 균등, 전부 정규화·큐비트수 일치). 프리셋 인코딩이 깨지면 이 테스트가 잡는다.
+### 4.10.1. 회로 프리셋 / Example Circuits (`js/presets.js`)
+- Circuit 툴바 "Clear all" 옆 **"Examples ▾" 드롭다운**(팔레트가 아니라 회로 전체 교체이므로 툴바에 둔다). Quirk 스타일로 **카테고리 헤더(Basics/Algorithms/Protocols) 아래 이름만 나열**, 항목 hover 시 한 줄 설명을 `showTooltip`으로 표시. `PRESET_CATEGORIES` + 각 프리셋의 `category` 필드로 그룹(UI 메타데이터일 뿐, 회로 저장 구조와 무관).
+- **저장 형식([2]):** 프리셋은 별도 자료구조 없이 **공유 URL과 동일한 직렬화 문자열**(`circuit`)로만 갖는다. `{ name, description, category, qubits, circuit }`. 로드 = `decodeCircuit(circuit)` → `circuit.loadCircuit(qubitCount, grid)`. 큐비트 수는 문자열에 담겨 자동 설정된다.
+- **`loadCircuit`(circuit.js):** 현재 회로를 통째 교체하되 **`pushUndo`로 반드시 Undo 스택에 기록**([1]) → 실수로 눌러도 Ctrl+Z로 복구. 로드 시 "Loaded … — Undo to revert" 토스트. 별도 확인 모달 없음.
+- **목록:** Basics(Bell Φ+·GHZ·**W state**·Phase kickback), Algorithms(Deutsch–Jozsa balanced/constant·Bernstein–Vazirani s=101·Grover 2q·QFT), Protocols(Quantum teleportation·Superdense coding). 각 `circuit`은 canonical 그리드→`encodeCircuit`로 만들고 simulate로 기대 상태를 대조 검증했다.
+  - W state: X + controlled-RY 캐스케이드(`X q0; CRY(2·acos(1/√3)) q1←q0; CNOT q1→q0; CRY(π/2) q2←q1; CNOT q2→q1`). QFT는 H·controlled-P·SWAP + DFT 위상 검증. Grover 2q는 CZ 오라클+diffuser 1회 → |11⟩ 확정. BV는 s=101을 1쿼리로 복원(입력 |101⟩ 확정).
+  - **Teleportation 주의:** 이 앱의 Measure는 **no-op(붕괴 없음)**이라 측정 기반 텔레포테이션을 충실히 시뮬할 수 없다. 그래서 **coherent(deferred-measurement) 버전**(CX/CZ 보정, Measure 미사용)으로 넣었다 — q0의 상태가 q2로 정확히 이동함을 축소밀도행렬로 검증. 측정 기반/CHSH 등은 mid-circuit measurement 기능이 생긴 뒤로 미룸(README Roadmap).
+- **테스트([4], 필수):** `test/presets.test.mjs`가 각 프리셋을 디코드→simulate 해 기대 상태벡터와 대조한다(Bell/GHZ/W/Phase kickback 정확 진폭, DJ balanced→입력 |11⟩·constant→|00⟩, BV→|101⟩, Grover→|11⟩, Superdense→|11⟩, Teleport→q2 bloch=(√2/2,√2/2,0)·purity 1, QFT|000⟩ 균등, 전부 정규화·큐비트수·category 일치). 인코딩이 깨지면 이 테스트가 잡는다.
 
 ### 4.12. 축소 밀도행렬 뷰 (Probabilities 패널 오른쪽)
 - Probabilities 패널은 좌우 분할이다: **왼쪽 = 확률 SVG 차트(4.15), 오른쪽 = 선택 큐비트의 2×2 축소 밀도행렬 뷰**(`#dm-view`). 예전의 전체 2ⁿ×2ⁿ Density Matrix Cityscape(3D)와 그 chart↔cityscape 토글은 제거했다 — 노이즈 없는 시뮬레이터의 상태는 항상 순수라 전체 밀도행렬은 상태벡터와 정보량이 같고(5큐비트면 1024성분) 표시가 무의미하기 때문. (`js/cityscape.js`는 미사용.)

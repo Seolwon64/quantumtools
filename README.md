@@ -23,7 +23,7 @@ It's a personal project, so it started as "let me really *see* what a Bell state
 - **Measurement sampling.** Run *N* shots and see the sampled counts overlaid on the theoretical probabilities (with a legend), CDF-sampled from `|amplitude|²`.
 - **Smooth step-by-step playback.** A playback cursor sweeps the circuit column by column, probability bars tween with ease-in-out, the Q-sphere cross-fades — with Slow / Normal / Fast speeds. Respects `prefers-reduced-motion`.
 - **Reduced density-matrix panel.** The 2×2 ρ for any qubit, shown as complex numbers with cells shaded so the diagonal / off-diagonal structure pops out.
-- **One-click presets.** Bell, GHZ, W, phase kickback, Deutsch–Jozsa, and QFT — every preset circuit is verified against its expected statevector by unit tests.
+- **One-click example circuits.** Bell, GHZ, W, phase kickback, Deutsch–Jozsa (balanced & constant), Bernstein–Vazirani, Grover, QFT, teleportation, superdense coding — grouped by Basics / Algorithms / Protocols, and **every one is verified against its expected statevector by a unit test** (a wrong example teaches the wrong idea).
 - **Export & share.** Copy the circuit as **OpenQASM 2.0** or **Qiskit (Python)**, or share a link — the whole circuit is encoded right in the URL.
 - **30+ gates & flexible controls.** Pauli/Clifford, phase/T, rotations, U, interaction gates (RXX/RYY/RZZ), SWAP/CSWAP, Measure/Reset/Barrier, and the relative-phase Toffolis (RCCX/RC3X). Drop a `•` control onto *any* gate to build CX, CZ, CCX, CSWAP, MCX… Up to 6 qubits.
 - **Quality-of-life:** Undo/Redo (`Ctrl+Z` / `Ctrl+Shift+Z`), "Hide 0%" states, a colorblind-safe chart palette, resizable panels, and a clean light UI.
@@ -75,7 +75,9 @@ node --test test/*.test.mjs
 
 The header already says *"More tools coming soon"* — some ideas on the list:
 
-- More algorithm presets (Grover, phase estimation)
+- **Mid-circuit measurement** (real collapse + classical feedforward) — would unlock measurement-based teleportation and more
+- **Measurement-basis selection** → a proper **CHSH / Bell-inequality** example (needs basis choice + correlation readout)
+- More example circuits that need the above: **Shor period-finding** (needs more qubits), delayed-choice quantum eraser, magic-state distillation
 - Noise / mixed-state playground
 - Circuit import (paste QASM back in)
 

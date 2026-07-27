@@ -5,7 +5,7 @@ import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
 import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
-import { PRESETS } from "./presets.js";
+import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
 
 initResizableLayout();
 
@@ -1380,27 +1380,31 @@ function closePresetsMenu() {
   presetsBtn.setAttribute("aria-expanded", "false");
 }
 
-// 프리셋 로드: 문자열을 디코드해 회로를 통째 교체(loadCircuit이 Undo 스택에 기록 → 되돌리기 가능).
-for (const preset of PRESETS) {
-  const item = document.createElement("button");
-  item.className = "preset-item";
-  const name = document.createElement("span");
-  name.className = "preset-name";
-  name.textContent = preset.name;
-  const desc = document.createElement("span");
-  desc.className = "preset-desc";
-  desc.textContent = preset.description;
-  item.append(name, desc);
-  item.addEventListener("click", () => {
-    const dec = decodeCircuit(preset.circuit);
-    closePresetsMenu();
-    if (!dec) { showToast("Preset failed to load"); return; }
-    scene.clearTrail();
-    closePlacePopover();
-    circuit.loadCircuit(dec.qubitCount, dec.grid);
-    showToast(`Loaded "${preset.name}" — Undo (Ctrl+Z) to revert`);
-  });
-  presetsMenu.appendChild(item);
+// Quirk 스타일 목록: 카테고리(Basics/Algorithms/Protocols) 헤더 아래 이름만 나열, hover 시 설명 툴팁.
+// 클릭 시 문자열을 디코드해 회로를 통째 교체(loadCircuit이 Undo 스택에 기록 → 되돌리기 가능).
+for (const category of PRESET_CATEGORIES) {
+  const header = document.createElement("div");
+  header.className = "preset-cat";
+  header.textContent = category;
+  presetsMenu.appendChild(header);
+  for (const preset of PRESETS.filter((p) => p.category === category)) {
+    const item = document.createElement("button");
+    item.className = "preset-item";
+    item.textContent = preset.name;
+    item.addEventListener("mouseenter", () => showTooltip(item, preset.description));
+    item.addEventListener("mouseleave", hideTooltip);
+    item.addEventListener("click", () => {
+      hideTooltip();
+      const dec = decodeCircuit(preset.circuit);
+      closePresetsMenu();
+      if (!dec) { showToast("Preset failed to load"); return; }
+      scene.clearTrail();
+      closePlacePopover();
+      circuit.loadCircuit(dec.qubitCount, dec.grid);
+      showToast(`Loaded "${preset.name}" — Undo (Ctrl+Z) to revert`);
+    });
+    presetsMenu.appendChild(item);
+  }
 }
 
 presetsBtn.addEventListener("click", (e) => {
