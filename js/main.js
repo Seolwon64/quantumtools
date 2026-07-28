@@ -443,44 +443,54 @@ function openControlPopover(column, qubit, candidates, clientX, clientY) {
   title.textContent = `• → q[${qubit}]`;
   const hint = document.createElement("div");
   hint.className = "place-popover-hint";
-  hint.textContent = "Select control qubit";
+  hint.textContent = "Select control qubit(s)";
   placePopover.append(title, hint);
 
+  const chosen = new Set([candidates[0]]); // 첫 후보를 기본 선택(가장 흔한 단일 선택을 한 번에)
   const row = document.createElement("div");
   row.className = "qpick-row";
   let index = 0;
   const buttons = candidates.map((q, i) => {
     const btn = document.createElement("button");
-    btn.className = "qpick-btn" + (i === 0 ? " selected" : "");
+    btn.className = "qpick-btn" + (chosen.has(q) ? " selected" : "");
     btn.textContent = `q[${q}]`;
     btn.tabIndex = i === 0 ? 0 : -1; // roving tabindex: 방향키로 이동, Tab은 그룹 단위
-    btn.addEventListener("click", () => { select(i); apply(); });
+    btn.addEventListener("click", () => { focusAt(i); toggle(i); });
     row.appendChild(btn);
     return btn;
   });
   placePopover.appendChild(row);
 
-  function select(i) {
+  function focusAt(i) {
     index = i;
-    buttons.forEach((b, j) => {
-      b.classList.toggle("selected", j === i);
-      b.tabIndex = j === i ? 0 : -1;
-    });
+    buttons.forEach((b, j) => { b.tabIndex = j === i ? 0 : -1; });
     buttons[i].focus();
   }
-  // 확정: 취소 경로와 달리 여기서만 컨트롤러를 호출한다.
+  // 다중 선택: 후보를 토글한다(최소 1개는 선택돼 있어야 Apply 활성).
+  function toggle(i) {
+    const q = candidates[i];
+    if (chosen.has(q)) chosen.delete(q); else chosen.add(q);
+    buttons[i].classList.toggle("selected", chosen.has(q));
+    applyBtn.disabled = chosen.size === 0;
+  }
+  // 확정: 취소 경로와 달리 여기서만 컨트롤러를 호출한다. 여러 개라도 undo 한 단계.
   function apply() {
-    const res = circuit.addControlToGate(column, qubit, candidates[index]);
+    if (chosen.size === 0) return;
+    const res = circuit.addControlToGate(column, qubit, [...chosen]);
     closePlacePopover();
     if (!res.ok) showToast(res.reason);
   }
-  // 방향키로 후보 이동(Enter는 포커스된 버튼의 click으로 확정된다).
+  // 방향키로 이동, Space로 토글(버튼 기본 동작), Enter로 확정.
   row.addEventListener("keydown", (e) => {
     const back = e.key === "ArrowLeft" || e.key === "ArrowUp";
     const fwd = e.key === "ArrowRight" || e.key === "ArrowDown";
-    if (!back && !fwd) return;
-    e.preventDefault();
-    select((index + (fwd ? 1 : buttons.length - 1)) % buttons.length);
+    if (back || fwd) {
+      e.preventDefault();
+      focusAt((index + (fwd ? 1 : buttons.length - 1)) % buttons.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault(); // 포커스된 버튼의 click(=토글)으로 새지 않게 하고 확정으로 쓴다
+      apply();
+    }
   });
 
   const actions = document.createElement("div");
@@ -489,7 +499,11 @@ function openControlPopover(column, qubit, candidates, clientX, clientY) {
   cancelBtn.className = "icon-btn";
   cancelBtn.textContent = "Cancel";
   cancelBtn.addEventListener("click", closePlacePopover);
-  actions.appendChild(cancelBtn);
+  const applyBtn = document.createElement("button");
+  applyBtn.className = "pill-btn-primary";
+  applyBtn.textContent = "Apply";
+  applyBtn.addEventListener("click", apply);
+  actions.append(cancelBtn, applyBtn);
   placePopover.appendChild(actions);
 
   showPopoverAt(clientX, clientY);

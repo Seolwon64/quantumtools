@@ -295,12 +295,14 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   // 제어 부착의 **유일한** 변형 지점. 부착 대상 게이트(home)를 호출자가 명시한다.
   // 두 배치 경로(빈 칸 드롭 / 게이트 위 드롭)가 모두 이 함수만 거치므로, 같은 큐비트를 가리키면
   // 결과 셀이 완전히 동일해진다. 시뮬레이션 코드는 건드리지 않고 데이터 모델(controls)만 수정.
-  function attachControlTo(column, home, controlQubit) {
+  // 여러 개를 한 번에 붙여도 **undo는 한 단계**다(한 번의 사용자 동작이므로 pushUndo도 한 번).
+  function attachControlsTo(column, home, controlQubits) {
     const cell = grid[column][home];
     if (!cell) return { ok: false, reason: "No gate in this column to control" };
     const rejection = controlRejection(cell);
     if (rejection) return { ok: false, reason: rejection };
-    const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
+    if (controlQubits.length === 0) return { ok: false, reason: "Select at least one control qubit" };
+    const newCell = { ...cell, controls: [...cell.controls, ...controlQubits] };
     if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
     pushUndo();
     grid[column][home] = newCell;
@@ -308,6 +310,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     notify();
     return { ok: true };
   }
+  const attachControlTo = (column, home, controlQubit) => attachControlsTo(column, home, [controlQubit]);
 
   // "•"를 **빈 칸**에 드롭: controlQubit을 같은 칼럼의 (가장 가까운) 게이트 controls에 추가한다.
   // 최근접 규칙은 기존 동작 그대로 유지한다(제어를 특정 큐비트에 정확히 놓고 싶을 때의 경로).
@@ -348,12 +351,17 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     return { ok: true, home, candidates };
   }
 
-  // 팝오버에서 고른 큐비트로 확정. 후보를 다시 계산해 검증한 뒤 공통 부착 지점에 위임한다.
-  function addControlToGate(column, qubit, controlQubit) {
+  // 팝오버에서 고른 큐비트(들)로 확정. 후보를 다시 계산해 검증한 뒤 공통 부착 지점에 위임한다.
+  // 여러 개를 고를 수 있다 — 한 번에 붙여 undo 한 단계로 묶는다.
+  // 선택 순서와 무관하게 같은 셀이 나오도록 **오름차순으로 정규화**해서 덧붙인다
+  // (기존 controls는 재정렬하지 않는다 — 누적 순서/직렬화 출력이 흔들리지 않게).
+  function addControlToGate(column, qubit, controlQubits) {
+    const picked = (Array.isArray(controlQubits) ? controlQubits : [controlQubits]).slice().sort((a, b) => a - b);
     const opt = controlOptions(column, qubit);
     if (!opt.ok) return opt;
-    if (!opt.candidates.includes(controlQubit)) return { ok: false, reason: "That wire is not free" };
-    return attachControlTo(column, opt.home, controlQubit); // 기존 제어가 있으면 누적된다
+    if (new Set(picked).size !== picked.length) return { ok: false, reason: "Duplicate control qubit" };
+    if (!picked.every((q) => opt.candidates.includes(q))) return { ok: false, reason: "That wire is not free" };
+    return attachControlsTo(column, opt.home, picked); // 기존 제어가 있으면 누적된다
   }
 
   // 제어점 제거: controlQubit이 어떤 게이트의 controls면 그 항목만 뺀다.

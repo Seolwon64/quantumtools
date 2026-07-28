@@ -70,6 +70,49 @@ test("고를 수 없는 큐비트로 확정하면 거부된다", () => {
   assert.deepEqual(cellAt(c, 0, 1).controls, []);
 });
 
+test("다중 선택: 여러 큐비트를 한 번에 제어로 붙인다(CCX)", () => {
+  const c = mk(); // 4큐비트, q3에 X → 후보 [0,1,2] 중 q0·q2 선택
+  c.placeGate(0, 3, "X");
+  assert.deepEqual(c.controlOptions(0, 3).candidates, [0, 1, 2]);
+  assert.equal(c.addControlToGate(0, 3, [0, 2]).ok, true);
+  assert.deepEqual(cellAt(c, 0, 3).controls, [0, 2]);
+  const s = c.getSnapshot();
+  assert.match(toQASM(s.qubitCount, s.grid), /ccx q\[0\],q\[2\],q\[3\];/);
+});
+
+test("다중 선택은 선택 순서와 무관하게 오름차순으로 정규화된다", () => {
+  const a = mk(), b = mk();
+  a.placeGate(0, 3, "X"); b.placeGate(0, 3, "X");
+  a.addControlToGate(0, 3, [2, 0]); // 역순으로 골라도
+  b.addControlToGate(0, 3, [0, 2]);
+  assert.deepEqual(cellAt(a, 0, 3).controls, [0, 2]);
+  assert.deepEqual(cellAt(a, 0, 3), cellAt(b, 0, 3)); // 같은 셀
+});
+
+test("다중 선택도 undo 한 단계로 묶인다", () => {
+  const c = mk();
+  c.placeGate(0, 3, "X");                 // 1단계
+  c.addControlToGate(0, 3, [0, 1, 2]);    // 2단계(3개를 한 번에)
+  assert.deepEqual(cellAt(c, 0, 3).controls, [0, 1, 2]);
+  c.undo();
+  assert.deepEqual(cellAt(c, 0, 3).controls, []); // 한 번에 전부 되돌아간다
+  c.undo();
+  assert.equal(cellAt(c, 0, 3), null);
+  assert.equal(c.getSnapshot().canUndo, false);   // 딱 2단계였다
+});
+
+test("다중 선택 거부: 중복 / 후보 아닌 큐비트가 섞이면 아무것도 붙지 않는다", () => {
+  const c = mk();
+  c.placeGate(0, 3, "X");
+  assert.equal(c.addControlToGate(0, 3, [0, 0]).ok, false);   // 중복
+  assert.equal(c.addControlToGate(0, 3, [0, 3]).ok, false);   // q3는 게이트 자리
+  assert.equal(c.addControlToGate(0, 3, []).ok, false);       // 빈 선택
+  assert.deepEqual(cellAt(c, 0, 3).controls, []);             // 회로 불변
+  assert.equal(c.getSnapshot().canUndo, true);                // 배치 1단계뿐(실패는 안 쌓임)
+  c.undo();
+  assert.equal(c.getSnapshot().canUndo, false);
+});
+
 test("[2] 팝오버 선택과 빈 칸 드롭의 결과 셀·직렬화가 완전히 동일", () => {
   const a = mk(); // (a) 게이트 위에 드롭 → 팝오버에서 q0 선택
   a.placeGate(0, 1, "Y");
