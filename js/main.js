@@ -285,6 +285,15 @@ function closePlacePopover() {
   pendingPlacement = null;
 }
 
+// Esc / 바깥 클릭으로 취소. 취소 경로는 컨트롤러를 전혀 호출하지 않으므로 회로도 undo 스택도 그대로다.
+const popoverOpen = () => !placePopover.classList.contains("hidden");
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && popoverOpen()) closePlacePopover();
+});
+document.addEventListener("click", (e) => {
+  if (popoverOpen() && !placePopover.contains(e.target)) closePlacePopover();
+});
+
 function radToDegRound(rad) {
   return Math.round((rad * 180) / Math.PI);
 }
@@ -410,13 +419,81 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
   actions.append(cancelBtn, confirmBtn);
   placePopover.appendChild(actions);
   updateConfirm();
+  showPopoverAt(clientX, clientY);
+}
 
+// 팝오버를 포인터 위치에 띄우되 화면 밖으로 나가지 않게 보정한다(배치/컨트롤 팝오버 공용).
+function showPopoverAt(clientX, clientY) {
   placePopover.classList.remove("hidden");
   const rect = placePopover.getBoundingClientRect();
   const left = Math.min(clientX, window.innerWidth - rect.width - 16);
   const top = Math.min(clientY, window.innerHeight - rect.height - 16);
   placePopover.style.left = `${Math.max(8, left)}px`;
   placePopover.style.top = `${Math.max(8, top)}px`;
+}
+
+// 게이트 위 "•" 드롭: 제어로 쓸 큐비트를 고른다. 후보가 2개 이상일 때만 열린다(1개면 호출부가 즉시 배치).
+// 기존 배치 팝오버의 DOM/스타일(.place-popover-*, .qpick-row/.qpick-btn)을 그대로 재사용한다.
+function openControlPopover(column, qubit, candidates, clientX, clientY) {
+  closePlacePopover();
+  placePopover.innerHTML = "";
+
+  const title = document.createElement("div");
+  title.className = "place-popover-title";
+  title.textContent = `• → q[${qubit}]`;
+  const hint = document.createElement("div");
+  hint.className = "place-popover-hint";
+  hint.textContent = "Select control qubit";
+  placePopover.append(title, hint);
+
+  const row = document.createElement("div");
+  row.className = "qpick-row";
+  let index = 0;
+  const buttons = candidates.map((q, i) => {
+    const btn = document.createElement("button");
+    btn.className = "qpick-btn" + (i === 0 ? " selected" : "");
+    btn.textContent = `q[${q}]`;
+    btn.tabIndex = i === 0 ? 0 : -1; // roving tabindex: 방향키로 이동, Tab은 그룹 단위
+    btn.addEventListener("click", () => { select(i); apply(); });
+    row.appendChild(btn);
+    return btn;
+  });
+  placePopover.appendChild(row);
+
+  function select(i) {
+    index = i;
+    buttons.forEach((b, j) => {
+      b.classList.toggle("selected", j === i);
+      b.tabIndex = j === i ? 0 : -1;
+    });
+    buttons[i].focus();
+  }
+  // 확정: 취소 경로와 달리 여기서만 컨트롤러를 호출한다.
+  function apply() {
+    const res = circuit.addControlToGate(column, qubit, candidates[index]);
+    closePlacePopover();
+    if (!res.ok) showToast(res.reason);
+  }
+  // 방향키로 후보 이동(Enter는 포커스된 버튼의 click으로 확정된다).
+  row.addEventListener("keydown", (e) => {
+    const back = e.key === "ArrowLeft" || e.key === "ArrowUp";
+    const fwd = e.key === "ArrowRight" || e.key === "ArrowDown";
+    if (!back && !fwd) return;
+    e.preventDefault();
+    select((index + (fwd ? 1 : buttons.length - 1)) % buttons.length);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "place-popover-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "icon-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", closePlacePopover);
+  actions.appendChild(cancelBtn);
+  placePopover.appendChild(actions);
+
+  showPopoverAt(clientX, clientY);
+  buttons[0].focus();
 }
 
 // ---------- 팔레트 ----------
@@ -458,71 +535,6 @@ function attachGateHover(el, cell) {
   el.addEventListener("mouseleave", hideTooltip);
 }
 
-// ---------- 제어점(•) 드래그 이동 ----------
-// 자동 배치된 제어를 같은 열의 다른 빈 와이어로 옮긴다(다른 열은 대상 게이트와 시점이 달라 금지).
-// HTML5 DnD로는 임계값을 제어할 수 없어 Pointer Events를 쓴다: 4px를 넘겨야 드래그로 판정하므로
-// 기존 "클릭하면 제어 제거"와 충돌하지 않는다.
-const DRAG_THRESHOLD = 4;
-let suppressNextClick = false;
-// 드래그가 그리드 밖에서 끝나 click이 오지 않는 경우를 대비해, 새 상호작용이 시작되면 플래그를 푼다.
-document.addEventListener("pointerdown", () => { suppressNextClick = false; }, true);
-
-function attachControlDrag(dot, column, fromQubit) {
-  dot.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    const startX = e.clientX, startY = e.clientY;
-    let dragging = false;
-    let hover = null; // 현재 가리키는 유효 드롭 셀
-
-    const clearMarks = () => {
-      for (const c of circuitGrid.querySelectorAll(".drop-ok, .drag-over")) {
-        c.classList.remove("drop-ok", "drag-over");
-      }
-    };
-
-    const onMove = (ev) => {
-      if (!dragging) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
-        dragging = true;
-        dot.setPointerCapture(ev.pointerId);
-        dot.classList.add("ctrl-dot-dragging");
-        hideTooltip();
-        // 놓을 수 있는 자리 = 같은 열에서 아무도 쓰지 않는 와이어(게이트·다른 제어점 자리는 제외)
-        for (const c of circuitGrid.querySelectorAll(`.grid-cell[data-col="${column}"]`)) {
-          if (!c.dataset.role) c.classList.add("drop-ok");
-        }
-      }
-      // 포인터 캡처 중이라 event.target은 dot으로 고정 → 좌표로 실제 셀을 찾는다.
-      const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".grid-cell");
-      const valid = cell?.classList.contains("drop-ok") ? cell : null;
-      if (valid !== hover) {
-        hover?.classList.remove("drag-over");
-        valid?.classList.add("drag-over");
-        hover = valid;
-      }
-    };
-
-    const onUp = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      document.removeEventListener("pointercancel", onUp);
-      if (!dragging) return; // 4px 미만 → 그냥 클릭(제어 제거)으로 넘긴다
-      const target = hover;
-      clearMarks();
-      dot.classList.remove("ctrl-dot-dragging");
-      suppressNextClick = true; // 드래그 직후 따라오는 click이 제어를 지우지 않게
-      // 유효하지 않은 자리(다른 열·게이트 와이어·다른 제어점)면 아무 것도 하지 않는다 = 원위치
-      if (target) {
-        scene.clearTrail();
-        circuit.moveControl(column, fromQubit, Number(target.dataset.qubit));
-      }
-    };
-
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-    document.addEventListener("pointercancel", onUp);
-  });
-}
 
 function makeGateChip(gateName, categoryId) {
   const info = GATE_INFO[gateName];
@@ -642,8 +654,6 @@ function buildCircuitGrid(snapshot) {
         if (role.type === "control" || (role.type === "target" && controlledZ)) {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
-          // 제어점만 드래그로 옮길 수 있다(CZ의 타깃 점은 제어가 아니므로 제외).
-          if (role.type === "control") attachControlDrag(dot, col, q);
           attachGateHover(dot, role.cell);
           cell.appendChild(dot);
         } else {
@@ -730,10 +740,19 @@ circuitGrid.addEventListener("drop", (e) => {
   //  - 빈 셀 → 같은 열의 최근접 게이트에 그 큐비트를 제어로 부착(기존 경로)
   if (gateName === "CTRL") {
     scene.clearTrail();
-    const res = cell.dataset.role
-      ? circuit.addControlToGate(column, qubit)
-      : circuit.addControl(column, qubit);
-    if (!res.ok) showTransientTip(cell, res.reason);
+    if (!cell.dataset.role) { // 빈 칸: 같은 열의 최근접 게이트에 부착(기존 경로)
+      const res = circuit.addControl(column, qubit);
+      if (!res.ok) showTransientTip(cell, res.reason);
+      return;
+    }
+    const opt = circuit.controlOptions(column, qubit);
+    if (!opt.ok) { showTransientTip(cell, opt.reason); return; } // 팝오버를 띄우기 전에 거부
+    if (opt.candidates.length === 1) { // 선택지가 없는 선택은 불필요한 클릭 → 즉시 배치
+      const res = circuit.addControlToGate(column, qubit, opt.candidates[0]);
+      if (!res.ok) showTransientTip(cell, res.reason);
+      return;
+    }
+    openControlPopover(column, qubit, opt.candidates, e.clientX, e.clientY);
     return;
   }
 
@@ -750,7 +769,6 @@ circuitGrid.addEventListener("drop", (e) => {
 });
 
 circuitGrid.addEventListener("click", (e) => {
-  if (suppressNextClick) { suppressNextClick = false; return; } // 방금 끝난 제어점 드래그
   const cell = e.target.closest(".grid-cell");
   if (!cell) return;
   const column = Number(cell.dataset.col);

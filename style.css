@@ -678,26 +678,7 @@ html, body {
   height: 14px;
   border-radius: 50%;
   background: var(--text-title);
-  cursor: grab;
-  touch-action: none; /* 터치에서 드래그가 스크롤로 가로채이지 않게 */
-}
-
-/* 드래그 중인 제어점 + 놓을 수 있는 자리(같은 열의 빈 와이어) 표시 */
-.ctrl-dot-dragging {
-  cursor: grabbing;
-  transform: scale(1.25);
-  box-shadow: 0 0 0 3px var(--primary-dim);
-}
-
-.grid-cell.drop-ok::after {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px dashed var(--primary);
-  opacity: 0.55;
-  pointer-events: none;
+  cursor: pointer;
 }
 
 .qubit-row {

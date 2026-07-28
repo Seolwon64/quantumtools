@@ -28,6 +28,14 @@ const TARGET_COUNT = { SWAP: 2, RXX: 2, RYY: 2, RZZ: 2, RCCX: 3, RC3X: 4 };
 const NON_CONTROLLABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL"]);
 const FIXED_MULTI = new Set(["RCCX", "RC3X"]); // 컨트롤 부착 거부(분해가 이미 고정)
 
+// 이 게이트에 "•"를 붙일 수 없는 이유(붙일 수 있으면 null). 후보 계산과 실제 부착이 같은 문구를 쓰도록
+// 한 곳에서만 정의한다 — 팝오버를 띄우기 전 검사와 확정 시 검사가 어긋나지 않게.
+function controlRejection(cell) {
+  if (NON_CONTROLLABLE.has(cell.gate)) return `${cell.gate} cannot be controlled`;
+  if (FIXED_MULTI.has(cell.gate)) return `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control`;
+  return null;
+}
+
 function emptyGrid(qubitCount) {
   return Array.from({ length: MAX_COLUMNS }, () => new Array(qubitCount).fill(null));
 }
@@ -290,8 +298,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   function attachControlTo(column, home, controlQubit) {
     const cell = grid[column][home];
     if (!cell) return { ok: false, reason: "No gate in this column to control" };
-    if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be controlled` };
-    if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control` };
+    const rejection = controlRejection(cell);
+    if (rejection) return { ok: false, reason: rejection };
     const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
     if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
     pushUndo();
@@ -317,11 +325,13 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     return attachControlTo(column, homes[0], controlQubit);
   }
 
-  // "•"를 **게이트 위**에 드롭: 그 게이트를 제어형으로 바꾸고 제어 큐비트는 자동 배치한다.
+  // "•"를 **게이트 위**에 드롭했을 때: 팝오버를 띄우기 전에 검사하고 제어 후보 큐비트를 모은다.
+  // 회로도 undo 스택도 건드리지 않는다(취소해도 아무 흔적이 남지 않는 근거).
   // 드롭 지점이 타깃이든 제어점이든 똑같이 "이 게이트에 제어 추가"로 처리한다 — CZ는 •—•로 그려져
   // 두 점이 화면상 구별 불가능하고, CCZ는 세 큐비트에 대칭이라 어느 점에 붙여도 결과가 같다.
-  // 빈 와이어 탐색이 드롭 큐비트가 아니라 **게이트의 span** 기준이므로 어느 점에 드롭해도 동일한 셀이 된다.
-  function addControlToGate(column, qubit) {
+  // 후보는 드롭한 큐비트가 아니라 **열 전체** 기준이므로 어느 점에 드롭해도 동일한 목록이 나온다.
+  // 반환: { ok:true, home, candidates:[q…] } | { ok:false, reason }
+  function controlOptions(column, qubit) {
     if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
     if (column < 0 || column >= MAX_COLUMNS) return { ok: false, reason: "Invalid column" };
     const home = occupantTarget(column, qubit);
@@ -329,40 +339,21 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     const cell = grid[column][home];
     // 대상 게이트 없이 놓인 순수 CTRL 점에는 제어를 붙일 수 없다.
     if (cell.gate === "CTRL") return { ok: false, reason: "A control cannot be controlled" };
-    // 빈 와이어 자동 배치: 게이트 span 바깥을 위쪽부터, 없으면 아래쪽으로 탐색한다.
-    const span = involvedQubits(cell);
-    const free = firstFreeWire(column, Math.min(...span), Math.max(...span));
-    if (free === -1) return { ok: false, reason: "No free wire in this column for a control" };
-    return attachControlTo(column, home, free); // 기존 제어가 있으면 누적된다(덮어쓰지 않음)
+    const rejection = controlRejection(cell);
+    if (rejection) return { ok: false, reason: rejection };
+    // 후보 = 같은 열에서 아무도 쓰지 않는 와이어 전부(오름차순). span 안/바깥을 구분하지 않는다.
+    const candidates = [];
+    for (let q = 0; q < qubitCount; q++) if (occupantTarget(column, q) === -1) candidates.push(q);
+    if (candidates.length === 0) return { ok: false, reason: "No free wire in this column for a control" };
+    return { ok: true, home, candidates };
   }
 
-  // 게이트 span(top~bottom) 바깥에서 첫 빈 와이어: 위쪽(top-1→0) 우선, 없으면 아래쪽(bottom+1→끝).
-  function firstFreeWire(column, top, bottom) {
-    for (let q = top - 1; q >= 0; q--) if (occupantTarget(column, q) === -1) return q;
-    for (let q = bottom + 1; q < qubitCount; q++) if (occupantTarget(column, q) === -1) return q;
-    return -1;
-  }
-
-  // 제어점 드래그 이동: 같은 칼럼의 다른 빈 와이어로만 옮길 수 있다(대상 게이트/다른 제어점 자리는 거부).
-  // 반환: 이동했으면 true. 실패 시 false → 호출부(UI)가 원위치로 되돌린다.
-  function moveControl(column, fromQubit, toQubit) {
-    if (isAnimating || isPlaying) return false;
-    if (!grid[column]) return false;
-    if (fromQubit === toQubit) return false; // no-op: 회로가 안 바뀌므로 undo 스택에 남기지 않는다
-    if (toQubit < 0 || toQubit >= qubitCount) return false;
-    if (occupantTarget(column, toQubit) !== -1) return false; // 게이트·다른 제어점이 이미 쓰는 와이어
-    for (let t = 0; t < qubitCount; t++) {
-      const cell = grid[column][t];
-      if (!cell || !(cell.controls ?? []).includes(fromQubit)) continue;
-      // 제자리 치환으로 controls 순서를 보존한다(export/직렬화 출력이 흔들리지 않게).
-      const newCell = { ...cell, controls: cell.controls.map((c) => (c === fromQubit ? toQubit : c)) };
-      if (!isValidPlacement(newCell, qubitCount)) return false;
-      pushUndo();
-      grid[column][t] = newCell;
-      notify();
-      return true;
-    }
-    return false;
+  // 팝오버에서 고른 큐비트로 확정. 후보를 다시 계산해 검증한 뒤 공통 부착 지점에 위임한다.
+  function addControlToGate(column, qubit, controlQubit) {
+    const opt = controlOptions(column, qubit);
+    if (!opt.ok) return opt;
+    if (!opt.candidates.includes(controlQubit)) return { ok: false, reason: "That wire is not free" };
+    return attachControlTo(column, opt.home, controlQubit); // 기존 제어가 있으면 누적된다
   }
 
   // 제어점 제거: controlQubit이 어떤 게이트의 controls면 그 항목만 뺀다.
@@ -517,8 +508,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     placeGate,
     removeGate,
     addControl,
+    controlOptions,
     addControlToGate,
-    moveControl,
     removeControl,
     clear,
     loadCircuit,
