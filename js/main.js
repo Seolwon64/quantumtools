@@ -458,6 +458,72 @@ function attachGateHover(el, cell) {
   el.addEventListener("mouseleave", hideTooltip);
 }
 
+// ---------- 제어점(•) 드래그 이동 ----------
+// 자동 배치된 제어를 같은 열의 다른 빈 와이어로 옮긴다(다른 열은 대상 게이트와 시점이 달라 금지).
+// HTML5 DnD로는 임계값을 제어할 수 없어 Pointer Events를 쓴다: 4px를 넘겨야 드래그로 판정하므로
+// 기존 "클릭하면 제어 제거"와 충돌하지 않는다.
+const DRAG_THRESHOLD = 4;
+let suppressNextClick = false;
+// 드래그가 그리드 밖에서 끝나 click이 오지 않는 경우를 대비해, 새 상호작용이 시작되면 플래그를 푼다.
+document.addEventListener("pointerdown", () => { suppressNextClick = false; }, true);
+
+function attachControlDrag(dot, column, fromQubit) {
+  dot.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX, startY = e.clientY;
+    let dragging = false;
+    let hover = null; // 현재 가리키는 유효 드롭 셀
+
+    const clearMarks = () => {
+      for (const c of circuitGrid.querySelectorAll(".drop-ok, .drag-over")) {
+        c.classList.remove("drop-ok", "drag-over");
+      }
+    };
+
+    const onMove = (ev) => {
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        dot.setPointerCapture(ev.pointerId);
+        dot.classList.add("ctrl-dot-dragging");
+        hideTooltip();
+        // 놓을 수 있는 자리 = 같은 열에서 아무도 쓰지 않는 와이어(게이트·다른 제어점 자리는 제외)
+        for (const c of circuitGrid.querySelectorAll(`.grid-cell[data-col="${column}"]`)) {
+          if (!c.dataset.role) c.classList.add("drop-ok");
+        }
+      }
+      // 포인터 캡처 중이라 event.target은 dot으로 고정 → 좌표로 실제 셀을 찾는다.
+      const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".grid-cell");
+      const valid = cell?.classList.contains("drop-ok") ? cell : null;
+      if (valid !== hover) {
+        hover?.classList.remove("drag-over");
+        valid?.classList.add("drag-over");
+        hover = valid;
+      }
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      if (!dragging) return; // 4px 미만 → 그냥 클릭(제어 제거)으로 넘긴다
+      const target = hover;
+      clearMarks();
+      dot.classList.remove("ctrl-dot-dragging");
+      suppressNextClick = true; // 드래그 직후 따라오는 click이 제어를 지우지 않게
+      // 유효하지 않은 자리(다른 열·게이트 와이어·다른 제어점)면 아무 것도 하지 않는다 = 원위치
+      if (target) {
+        scene.clearTrail();
+        circuit.moveControl(column, fromQubit, Number(target.dataset.qubit));
+      }
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  });
+}
+
 function makeGateChip(gateName, categoryId) {
   const info = GATE_INFO[gateName];
   const btn = document.createElement("button");
@@ -571,9 +637,13 @@ function buildCircuitGrid(snapshot) {
         const info = GATE_INFO[role.cell.gate];
         // controlled-Z는 CZ 표준 표기(•—•)라 타깃도 채운 점으로 그린다.
         const controlledZ = role.cell.gate === "Z" && (role.cell.controls?.length ?? 0) > 0;
+        // 셀의 역할을 DOM에 기록: 드롭 분기(게이트 위 vs 빈 칸)와 제어점 드래그가 참조한다.
+        cell.dataset.role = role.type;
         if (role.type === "control" || (role.type === "target" && controlledZ)) {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
+          // 제어점만 드래그로 옮길 수 있다(CZ의 타깃 점은 제어가 아니므로 제외).
+          if (role.type === "control") attachControlDrag(dot, col, q);
           attachGateHover(dot, role.cell);
           cell.appendChild(dot);
         } else {
@@ -655,10 +725,14 @@ circuitGrid.addEventListener("drop", (e) => {
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
 
-  // "•"(Control) 드롭: 같은 열 게이트의 controls에 이 큐비트를 부착한다.
+  // "•"(Control) 드롭. 두 경로 모두 컨트롤러의 같은 부착 로직을 거쳐 동일한 셀을 만든다:
+  //  - 게이트가 있는 셀 위 → 그 게이트를 제어형으로 변환(제어 큐비트는 빈 와이어에 자동 배치)
+  //  - 빈 셀 → 같은 열의 최근접 게이트에 그 큐비트를 제어로 부착(기존 경로)
   if (gateName === "CTRL") {
     scene.clearTrail();
-    const res = circuit.addControl(column, qubit);
+    const res = cell.dataset.role
+      ? circuit.addControlToGate(column, qubit)
+      : circuit.addControl(column, qubit);
     if (!res.ok) showTransientTip(cell, res.reason);
     return;
   }
@@ -676,6 +750,7 @@ circuitGrid.addEventListener("drop", (e) => {
 });
 
 circuitGrid.addEventListener("click", (e) => {
+  if (suppressNextClick) { suppressNextClick = false; return; } // 방금 끝난 제어점 드래그
   const cell = e.target.closest(".grid-cell");
   if (!cell) return;
   const column = Number(cell.dataset.col);

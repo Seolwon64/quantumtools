@@ -284,8 +284,25 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     notify();
   }
 
-  // "•" 부착: controlQubit을 같은 칼럼의 (가장 가까운) 게이트 controls 배열에 추가한다.
-  // 시뮬레이션 코드는 건드리지 않고 데이터 모델(controls)만 수정한다.
+  // 제어 부착의 **유일한** 변형 지점. 부착 대상 게이트(home)를 호출자가 명시한다.
+  // 두 배치 경로(빈 칸 드롭 / 게이트 위 드롭)가 모두 이 함수만 거치므로, 같은 큐비트를 가리키면
+  // 결과 셀이 완전히 동일해진다. 시뮬레이션 코드는 건드리지 않고 데이터 모델(controls)만 수정.
+  function attachControlTo(column, home, controlQubit) {
+    const cell = grid[column][home];
+    if (!cell) return { ok: false, reason: "No gate in this column to control" };
+    if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be controlled` };
+    if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control` };
+    const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
+    if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
+    pushUndo();
+    grid[column][home] = newCell;
+    stepIndex = usedColumnCount(grid);
+    notify();
+    return { ok: true };
+  }
+
+  // "•"를 **빈 칸**에 드롭: controlQubit을 같은 칼럼의 (가장 가까운) 게이트 controls에 추가한다.
+  // 최근접 규칙은 기존 동작 그대로 유지한다(제어를 특정 큐비트에 정확히 놓고 싶을 때의 경로).
   // 반환: { ok, reason } — 실패 시 이유를 UI 툴팁으로 표시할 수 있게 한다.
   function addControl(column, controlQubit) {
     if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
@@ -297,17 +314,55 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     }
     if (homes.length === 0) return { ok: false, reason: "No gate in this column to control" };
     homes.sort((a, b) => Math.abs(a - controlQubit) - Math.abs(b - controlQubit));
-    const home = homes[0];
+    return attachControlTo(column, homes[0], controlQubit);
+  }
+
+  // "•"를 **게이트 위**에 드롭: 그 게이트를 제어형으로 바꾸고 제어 큐비트는 자동 배치한다.
+  // 드롭 지점이 타깃이든 제어점이든 똑같이 "이 게이트에 제어 추가"로 처리한다 — CZ는 •—•로 그려져
+  // 두 점이 화면상 구별 불가능하고, CCZ는 세 큐비트에 대칭이라 어느 점에 붙여도 결과가 같다.
+  // 빈 와이어 탐색이 드롭 큐비트가 아니라 **게이트의 span** 기준이므로 어느 점에 드롭해도 동일한 셀이 된다.
+  function addControlToGate(column, qubit) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    if (column < 0 || column >= MAX_COLUMNS) return { ok: false, reason: "Invalid column" };
+    const home = occupantTarget(column, qubit);
+    if (home === -1) return { ok: false, reason: "No gate here" };
     const cell = grid[column][home];
-    if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be controlled` };
-    if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control` };
-    const newCell = { ...cell, controls: [...cell.controls, controlQubit] };
-    if (!isValidPlacement(newCell, qubitCount)) return { ok: false, reason: "Invalid placement" };
-    pushUndo();
-    grid[column][home] = newCell;
-    stepIndex = usedColumnCount(grid);
-    notify();
-    return { ok: true };
+    // 대상 게이트 없이 놓인 순수 CTRL 점에는 제어를 붙일 수 없다.
+    if (cell.gate === "CTRL") return { ok: false, reason: "A control cannot be controlled" };
+    // 빈 와이어 자동 배치: 게이트 span 바깥을 위쪽부터, 없으면 아래쪽으로 탐색한다.
+    const span = involvedQubits(cell);
+    const free = firstFreeWire(column, Math.min(...span), Math.max(...span));
+    if (free === -1) return { ok: false, reason: "No free wire in this column for a control" };
+    return attachControlTo(column, home, free); // 기존 제어가 있으면 누적된다(덮어쓰지 않음)
+  }
+
+  // 게이트 span(top~bottom) 바깥에서 첫 빈 와이어: 위쪽(top-1→0) 우선, 없으면 아래쪽(bottom+1→끝).
+  function firstFreeWire(column, top, bottom) {
+    for (let q = top - 1; q >= 0; q--) if (occupantTarget(column, q) === -1) return q;
+    for (let q = bottom + 1; q < qubitCount; q++) if (occupantTarget(column, q) === -1) return q;
+    return -1;
+  }
+
+  // 제어점 드래그 이동: 같은 칼럼의 다른 빈 와이어로만 옮길 수 있다(대상 게이트/다른 제어점 자리는 거부).
+  // 반환: 이동했으면 true. 실패 시 false → 호출부(UI)가 원위치로 되돌린다.
+  function moveControl(column, fromQubit, toQubit) {
+    if (isAnimating || isPlaying) return false;
+    if (!grid[column]) return false;
+    if (fromQubit === toQubit) return false; // no-op: 회로가 안 바뀌므로 undo 스택에 남기지 않는다
+    if (toQubit < 0 || toQubit >= qubitCount) return false;
+    if (occupantTarget(column, toQubit) !== -1) return false; // 게이트·다른 제어점이 이미 쓰는 와이어
+    for (let t = 0; t < qubitCount; t++) {
+      const cell = grid[column][t];
+      if (!cell || !(cell.controls ?? []).includes(fromQubit)) continue;
+      // 제자리 치환으로 controls 순서를 보존한다(export/직렬화 출력이 흔들리지 않게).
+      const newCell = { ...cell, controls: cell.controls.map((c) => (c === fromQubit ? toQubit : c)) };
+      if (!isValidPlacement(newCell, qubitCount)) return false;
+      pushUndo();
+      grid[column][t] = newCell;
+      notify();
+      return true;
+    }
+    return false;
   }
 
   // 제어점 제거: controlQubit이 어떤 게이트의 controls면 그 항목만 뺀다.
@@ -462,6 +517,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     placeGate,
     removeGate,
     addControl,
+    addControlToGate,
+    moveControl,
     removeControl,
     clear,
     loadCircuit,
