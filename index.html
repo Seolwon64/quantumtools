@@ -106,7 +106,10 @@
           <div class="circuit-scroll">
             <div class="circuit-grid" id="circuit-grid"></div>
           </div>
-          <div class="circuit-formula" id="state-formula"></div>
+          <div class="circuit-side">
+            <div class="circuit-formula" id="state-formula"></div>
+            <div class="gate-info hidden" id="gate-info"></div>
+          </div>
         </div>
         <div class="playback-controls">
           <button class="round-btn" id="reset-btn" title="To start">⏮</button>
@@ -167,6 +170,8 @@
   </div>
 
   <div class="presets-menu hidden" id="presets-menu"></div>
+
+  <div class="gate-menu hidden" id="gate-menu" role="menu"></div>
 
   <div class="toast" id="toast"></div>
 

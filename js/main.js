@@ -6,6 +6,7 @@ import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
+import { gateMatrix, formatComplex, symbolicComplex, gateDescription, decompositionSteps } from "./gatematrix.js";
 
 initResizableLayout();
 
@@ -111,6 +112,8 @@ const stepFwdBtn = document.getElementById("step-fwd-btn");
 const playbackStatus = document.getElementById("playback-status");
 const resetViewBtn = document.getElementById("reset-view-btn");
 const placePopover = document.getElementById("place-popover");
+const gateInfoEl = document.getElementById("gate-info");
+const gateMenu = document.getElementById("gate-menu");
 const viewToggle = document.getElementById("view-toggle");
 const sphereModeTitle = document.getElementById("sphere-mode-title");
 const qsphereLegend = document.getElementById("qsphere-legend");
@@ -298,6 +301,34 @@ function radToDegRound(rad) {
   return Math.round((rad * 180) / Math.PI);
 }
 
+// θ/φ/λ 각도 슬라이더 행을 팝오버에 붙이고 input 요소들을 돌려준다.
+// 배치 팝오버와 "Edit parameters" 편집 팝오버가 같은 UI를 쓰도록 공용화한 부분.
+function buildSliderRows(names, initialDegrees) {
+  const inputs = [];
+  names.forEach((name, i) => {
+    const row = document.createElement("div");
+    row.className = "slider-row";
+    const label = document.createElement("span");
+    label.className = "slider-label";
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "slider-value";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "360";
+    slider.step = "1";
+    const deg = ((initialDegrees[i] ?? 0) % 360 + 360) % 360;
+    slider.value = String(deg);
+    label.textContent = name;
+    valueSpan.textContent = `${deg}°`;
+    slider.addEventListener("input", () => { valueSpan.textContent = `${slider.value}°`; });
+    row.append(label, slider, valueSpan);
+    placePopover.appendChild(row);
+    inputs.push(slider);
+  });
+  return inputs;
+}
+
 function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount) {
   const info = GATE_INFO[gateName];
   // controlled(CNOT/CCX/…)·decomposed(RCCX/RC3X)·cswap는 컨트롤을 고른다.
@@ -367,30 +398,10 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
     buildPicker("control", needControls, `Select ${needControls} control qubit${needControls > 1 ? "s" : ""}`);
   }
 
-  const sliderInputs = [];
-  for (const name of sliderNames) {
-    const row = document.createElement("div");
-    row.className = "slider-row";
-    const label = document.createElement("span");
-    label.className = "slider-label";
-    const valueSpan = document.createElement("span");
-    valueSpan.className = "slider-value";
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.min = "0";
-    slider.max = "360";
-    slider.step = "1";
-    const defaultDeg = name === "θ" ? radToDegRound(info.defaultTheta ?? Math.PI / 2) : 0;
-    slider.value = String(defaultDeg);
-    label.textContent = name;
-    valueSpan.textContent = `${defaultDeg}°`;
-    slider.addEventListener("input", () => {
-      valueSpan.textContent = `${slider.value}°`;
-    });
-    row.append(label, slider, valueSpan);
-    placePopover.appendChild(row);
-    sliderInputs.push(slider);
-  }
+  const sliderInputs = buildSliderRows(
+    sliderNames,
+    sliderNames.map((name) => (name === "θ" ? radToDegRound(info.defaultTheta ?? Math.PI / 2) : 0))
+  );
 
   const actions = document.createElement("div");
   actions.className = "place-popover-actions";
@@ -510,6 +521,366 @@ function openControlPopover(column, qubit, candidates, clientX, clientY) {
   buttons[0].focus();
 }
 
+// ---------- [2] 선택한 게이트 정보 (상태벡터 아래 패널) ----------
+
+// 선택은 셀의 홈 좌표로 들고 있는다. 회로가 바뀌면 render에서 유효성을 다시 확인한다.
+let selectedGate = null; // { column, home }
+
+function cellAtHome(snapshot, sel) {
+  if (!sel) return null;
+  return snapshot.grid[sel.column]?.[sel.home] ?? null;
+}
+
+function selectGate(column, qubit) {
+  const snapshot = circuit.getSnapshot();
+  const home = homeOf(snapshot, column, qubit);
+  selectedGate = home === -1 ? null : { column, home };
+  renderGateInfo(snapshot);
+  markSelection();
+}
+
+// 열에서 qubit을 점유한 placement의 홈 행 (컨트롤러 밖에서도 필요해 여기서 다시 계산)
+function homeOf(snapshot, column, qubit) {
+  for (let t = 0; t < snapshot.qubitCount; t++) {
+    const cell = snapshot.grid[column]?.[t];
+    if (cell && involvedQubits(cell).includes(qubit)) return t;
+  }
+  return -1;
+}
+
+function markSelection() {
+  for (const el of circuitGrid.querySelectorAll(".selected")) el.classList.remove("selected");
+  if (!selectedGate) return;
+  const { column, home } = selectedGate;
+  const snapshot = circuit.getSnapshot();
+  const cell = snapshot.grid[column]?.[home];
+  if (!cell) return;
+  for (const q of involvedQubits(cell)) {
+    const el = circuitGrid.querySelector(`.grid-cell[data-col="${column}"][data-qubit="${q}"] > *`);
+    if (el) el.classList.add("selected");
+  }
+}
+
+const radToDeg = (rad) => (rad * 180) / Math.PI;
+// θ/φ/λ를 "π/2 (90°)" 처럼 라디안+도로 함께 보여준다.
+const PI_FRACTIONS = [
+  [Math.PI, "π"], [Math.PI / 2, "π/2"], [Math.PI / 3, "π/3"], [Math.PI / 4, "π/4"],
+  [Math.PI / 6, "π/6"], [Math.PI * 2, "2π"], [Math.PI * 1.5, "3π/2"], [Math.PI * 0.75, "3π/4"],
+];
+function formatAngle(rad) {
+  const hit = PI_FRACTIONS.find(([v]) => Math.abs(Math.abs(rad) - v) < 1e-6);
+  const sym = hit ? `${rad < 0 ? "−" : ""}${hit[1]}` : `${rad.toFixed(3)} rad`;
+  return `${sym} (${Math.round(radToDeg(rad))}°)`;
+}
+
+// 라벨(위/왼쪽 기저 켓)이 붙은 행렬 그리드. 대각 성분은 옅은 배경으로 구분한다.
+function buildMatrixGrid(m) {
+  const grid = document.createElement("div");
+  grid.className = "mx-grid";
+  grid.style.gridTemplateColumns = `auto repeat(${m.size}, auto)`;
+  const add = (cls, text) => {
+    const el = document.createElement("div");
+    el.className = cls;
+    el.textContent = text;
+    grid.appendChild(el);
+    return el;
+  };
+  add("mx-corner", "");
+  for (const label of m.basisLabels) add("mx-collabel", label); // 열 라벨(위)
+  for (let r = 0; r < m.size; r++) {
+    add("mx-rowlabel", m.basisLabels[r]); // 행 라벨(왼쪽)
+    for (let c2 = 0; c2 < m.size; c2++) {
+      const z = m.rows[r][c2];
+      const cell = add("mx-cell" + (r === c2 ? " mx-diag" : ""), formatComplex(z));
+      if (Math.abs(z.re) < 5e-4 && Math.abs(z.im) < 5e-4) cell.classList.add("mx-zero");
+      const sym = symbolicComplex(z);
+      if (sym) {
+        cell.title = sym; // 알려진 값이면 기호 표기를 병기(툴팁)
+        cell.addEventListener("mouseenter", () => showTooltip(cell, sym));
+        cell.addEventListener("mouseleave", hideTooltip);
+      }
+    }
+  }
+  return grid;
+}
+
+function renderGateInfo(snapshot) {
+  const cell = cellAtHome(snapshot, selectedGate);
+  if (!cell) {
+    gateInfoEl.classList.add("hidden");
+    gateInfoEl.innerHTML = "";
+    return;
+  }
+  gateInfoEl.classList.remove("hidden");
+  gateInfoEl.innerHTML = "";
+  const row = (html) => {
+    const d = document.createElement("div");
+    d.className = "gate-info-row";
+    d.innerHTML = html;
+    gateInfoEl.appendChild(d);
+    return d;
+  };
+
+  const title = document.createElement("div");
+  title.className = "gate-info-title";
+  title.textContent = standardGateName(cell);
+  gateInfoEl.appendChild(title);
+
+  row(gateDescription(cell));
+
+  // 적용 대상
+  const targets = cell.targets ?? [];
+  const controls = cell.controls ?? [];
+  const qList = (arr) => arr.map((q) => `q[${q}]`).join(", ");
+  if (GATE_INFO[cell.gate]?.kind === "decomposed") {
+    row(`<b>Controls</b> ${qList(targets.slice(0, -1))} · <b>Target</b> ${qList(targets.slice(-1))}`);
+  } else {
+    row(`<b>Target</b> ${qList(targets)}${controls.length ? ` · <b>Controls</b> ${qList(controls)}` : ""}`);
+  }
+
+  // 파라미터(라디안 + 도)
+  const params = cell.params ?? {};
+  const names = [["theta", "θ"], ["phi", "φ"], ["lambda", "λ"]];
+  const shown = names.filter(([k]) => params[k] !== undefined);
+  if (shown.length) row(shown.map(([k, sym]) => `<b>${sym}</b> ${formatAngle(params[k])}`).join(" · "));
+
+  // 행렬
+  const m = gateMatrix(cell);
+  if (m.ok) {
+    gateInfoEl.appendChild(buildMatrixGrid(m));
+    const note = document.createElement("div");
+    note.className = "gate-info-note";
+    note.textContent = m.localOrder; // 예: local |c t⟩ = |q0 q1⟩
+    gateInfoEl.appendChild(note);
+  } else if (m.tooLarge) {
+    row(`Matrix is ${m.size}x${m.size} (too large to display)`);
+    const note = document.createElement("div");
+    note.className = "gate-info-note";
+    note.textContent = m.localOrder;
+    gateInfoEl.appendChild(note);
+  } else {
+    row(m.reason);
+  }
+
+  // [4] 분해 표시 + Apply expansion
+  if (expandedInfo && expandedInfo.column === selectedGate.column && expandedInfo.home === selectedGate.home) {
+    const steps = decompositionSteps(cell);
+    if (steps) {
+      const hint = document.createElement("div");
+      hint.className = "gate-info-note";
+      hint.textContent = "Definition (read-only)";
+      gateInfoEl.appendChild(hint);
+      const list = document.createElement("div");
+      list.className = "gate-info-steps";
+      for (const s of steps) {
+        const chip = document.createElement("span");
+        chip.className = "gate-info-step";
+        chip.textContent = s.text;
+        list.appendChild(chip);
+      }
+      gateInfoEl.appendChild(list);
+      const apply = document.createElement("button");
+      apply.className = "pill-btn-primary";
+      apply.textContent = "Apply expansion";
+      apply.addEventListener("click", () => {
+        const { column, home } = selectedGate;
+        const res = circuit.expandGate(column, home);
+        expandedInfo = null;
+        if (!res.ok) showToast(res.reason);
+        else { selectedGate = null; showToast(`Expanded into ${res.columns} steps — Undo (Ctrl+Z) to revert`); }
+      });
+      gateInfoEl.appendChild(apply);
+    }
+  }
+}
+let expandedInfo = null; // { column, home } — "Expand definition"을 누른 셀
+
+// ---------- [3] 컨텍스트 메뉴 ----------
+
+let menuIndex = 0;
+function closeGateMenu() {
+  gateMenu.classList.add("hidden");
+  gateMenu.innerHTML = "";
+}
+const gateMenuOpen = () => !gateMenu.classList.contains("hidden");
+
+function openGateMenu(column, home, clientX, clientY) {
+  closeGateMenu();
+  const snapshot = circuit.getSnapshot();
+  const cell = snapshot.grid[column]?.[home];
+  if (!cell) return;
+  const info = GATE_INFO[cell.gate];
+  const params = cell.params ?? {};
+  const hasParams = ["theta", "phi", "lambda"].some((k) => params[k] !== undefined);
+  const controls = cell.controls ?? [];
+  const steps = decompositionSteps(cell);
+  // 분해가 없는 이유: 진짜 기본 게이트인지, 이 앱에 정의가 없을 뿐인지 구분해 안내한다.
+  const primitive = info?.kind === "fixed" || info?.kind === "param" || info?.kind === "param3";
+  const opts = circuit.controlOptions(column, home);
+
+  const items = [
+    { label: "Show info", run: () => { expandedInfo = null; selectGate(column, home); } },
+    {
+      label: "Edit parameters", enabled: hasParams,
+      why: "This gate has no parameters",
+      run: () => openParamEditor(column, home, cell, clientX, clientY),
+    },
+    {
+      label: "Expand definition", enabled: !!steps,
+      why: primitive ? "This is a primitive gate" : "No decomposition is defined for this gate",
+      run: () => { expandedInfo = { column, home }; selectGate(column, home); },
+    },
+    {
+      label: "Add control", enabled: opts.ok,
+      why: opts.reason,
+      run: () => {
+        if (opts.candidates.length === 1) {
+          const res = circuit.addControlToGate(column, home, opts.candidates[0]);
+          if (!res.ok) showToast(res.reason);
+        } else openControlPopover(column, home, opts.candidates, clientX, clientY);
+      },
+    },
+    {
+      label: "Remove control", enabled: controls.length > 0,
+      why: "This gate has no controls",
+      run: () => {
+        if (controls.length === 1) circuit.removeControl(column, controls[0]);
+        else openRemoveControlPopover(column, controls, clientX, clientY);
+      },
+    },
+    { label: "Delete", run: () => { circuit.removeGate(column, home); selectedGate = null; } },
+  ];
+
+  const buttons = [];
+  items.forEach((item, i) => {
+    if (item.label === "Delete") {
+      const sep = document.createElement("div");
+      sep.className = "gate-menu-sep";
+      gateMenu.appendChild(sep);
+    }
+    const btn = document.createElement("button");
+    btn.className = "gate-menu-item";
+    btn.textContent = item.label;
+    btn.disabled = item.enabled === false;
+    if (btn.disabled && item.why) {
+      // 비활성 사유는 툴팁으로 (disabled 버튼은 mouseenter가 안 와서 래퍼 대신 title도 함께 건다)
+      btn.title = item.why;
+      btn.addEventListener("mousemove", () => showTooltip(btn, item.why));
+      btn.addEventListener("mouseleave", hideTooltip);
+    }
+    btn.addEventListener("click", (e) => {
+      if (btn.disabled) return;
+      // 이 클릭이 document까지 올라가면 "바깥 클릭" 리스너가 방금 연 팝오버를 즉시 닫아버린다.
+      e.stopPropagation();
+      closeGateMenu();
+      scene.clearTrail();
+      item.run();
+    });
+    gateMenu.appendChild(btn);
+    buttons.push(btn);
+  });
+
+  gateMenu.classList.remove("hidden");
+  const rect = gateMenu.getBoundingClientRect();
+  gateMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 12))}px`;
+  gateMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 12))}px`;
+
+  // 방향키 이동 + Enter 선택
+  const enabled = buttons.filter((b) => !b.disabled);
+  menuIndex = 0;
+  const focusAt = (i) => {
+    menuIndex = (i + enabled.length) % enabled.length;
+    enabled.forEach((b, j) => b.classList.toggle("active", j === menuIndex));
+    enabled[menuIndex].focus();
+  };
+  if (enabled.length) focusAt(0);
+  gateMenu.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); focusAt(menuIndex + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); focusAt(menuIndex - 1); }
+  });
+}
+
+// Esc / 바깥 클릭으로 닫기 — 회로는 전혀 바뀌지 않는다.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && gateMenuOpen()) closeGateMenu();
+});
+document.addEventListener("click", (e) => {
+  if (gateMenuOpen() && !gateMenu.contains(e.target)) closeGateMenu();
+});
+
+// 제어가 여럿일 때 어느 것을 제거할지 고른다 (컨트롤 선택 팝오버와 같은 UI).
+function openRemoveControlPopover(column, controls, clientX, clientY) {
+  closePlacePopover();
+  placePopover.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "place-popover-title";
+  title.textContent = "Remove control";
+  const hint = document.createElement("div");
+  hint.className = "place-popover-hint";
+  hint.textContent = "Which control to remove?";
+  placePopover.append(title, hint);
+
+  const row = document.createElement("div");
+  row.className = "qpick-row";
+  controls.forEach((q) => {
+    const btn = document.createElement("button");
+    btn.className = "qpick-btn";
+    btn.textContent = `q[${q}]`;
+    btn.addEventListener("click", () => {
+      circuit.removeControl(column, q);
+      closePlacePopover();
+    });
+    row.appendChild(btn);
+  });
+  placePopover.appendChild(row);
+
+  const actions = document.createElement("div");
+  actions.className = "place-popover-actions";
+  const cancel = document.createElement("button");
+  cancel.className = "icon-btn";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", closePlacePopover);
+  actions.appendChild(cancel);
+  placePopover.appendChild(actions);
+  showPopoverAt(clientX, clientY);
+  row.querySelector(".qpick-btn")?.focus();
+}
+
+// 배치된 게이트의 파라미터 편집 — 배치 팝오버의 슬라이더를 그대로 재사용한다.
+function openParamEditor(column, home, cell, clientX, clientY) {
+  closePlacePopover();
+  placePopover.innerHTML = "";
+  const params = cell.params ?? {};
+  const names = [["theta", "θ"], ["phi", "φ"], ["lambda", "λ"]].filter(([k]) => params[k] !== undefined);
+
+  const title = document.createElement("div");
+  title.className = "place-popover-title";
+  title.textContent = `${standardGateName(cell)} — parameters`;
+  placePopover.appendChild(title);
+
+  const sliders = buildSliderRows(names.map(([, sym]) => sym), names.map(([k]) => radToDegRound(params[k])));
+
+  const actions = document.createElement("div");
+  actions.className = "place-popover-actions";
+  const cancel = document.createElement("button");
+  cancel.className = "icon-btn";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", closePlacePopover);
+  const apply = document.createElement("button");
+  apply.className = "pill-btn-primary";
+  apply.textContent = "Apply";
+  apply.addEventListener("click", () => {
+    const next = { ...params };
+    names.forEach(([k], i) => { next[k] = (Number(sliders[i].value) * Math.PI) / 180; });
+    const res = circuit.setParams(column, home, next);
+    closePlacePopover();
+    if (!res.ok) showToast(res.reason);
+  });
+  actions.append(cancel, apply);
+  placePopover.appendChild(actions);
+  showPopoverAt(clientX, clientY);
+}
+
 // ---------- 팔레트 ----------
 
 // 스크롤 컨테이너에 잘리지 않도록 body에 고정 위치로 띄우는 커스텀 툴팁
@@ -519,6 +890,7 @@ document.body.appendChild(gateTooltip);
 
 function showTooltip(anchor, text) {
   gateTooltip.textContent = text;
+  gateTooltip.classList.toggle("has-matrix", text.includes("\n")); // 행렬 미리보기는 등폭으로
   gateTooltip.classList.remove("hidden");
   const rect = anchor.getBoundingClientRect();
   const tipRect = gateTooltip.getBoundingClientRect();
@@ -544,9 +916,18 @@ function showTransientTip(anchor, text) {
 }
 
 // 배치된 게이트/제어점에 hover하면 표준 이름(CX, CZ, CCX …)을 툴팁으로 보여준다.
+// [2](a) 4x4 이하면 행렬 미리보기를 한 줄씩 덧붙인다(가볍게 — 큰 행렬은 클릭해서 패널로 본다).
 function attachGateHover(el, cell) {
-  el.addEventListener("mouseenter", () => showTooltip(el, standardGateName(cell)));
+  el.addEventListener("mouseenter", () => showTooltip(el, hoverText(cell)));
   el.addEventListener("mouseleave", hideTooltip);
+}
+
+function hoverText(cell) {
+  const name = standardGateName(cell);
+  const m = gateMatrix(cell);
+  if (!m.ok || m.size > 4) return name;
+  const rows = m.rows.map((row) => row.map(formatComplex).join("   ")).join("\n");
+  return `${name}\n${rows}`;
 }
 
 
@@ -788,10 +1169,49 @@ circuitGrid.addEventListener("click", (e) => {
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
   scene.clearTrail();
-  // 제어점을 클릭하면 그 제어만 제거, 타깃/일반 게이트면 게이트 전체 제거
-  if (!circuit.removeControl(column, qubit)) {
-    circuit.removeGate(column, qubit);
+  // [2] 제어점 클릭은 기존대로 그 제어를 제거하고, 게이트 본체 클릭은 정보 패널에 표시한다
+  // (더 이상 삭제하지 않는다 — 삭제는 Delete 키 또는 컨텍스트 메뉴).
+  if (cell.dataset.role === "control") {
+    circuit.removeControl(column, qubit);
+    return;
   }
+  if (cell.dataset.role) {
+    expandedInfo = null;
+    selectGate(column, qubit);
+  } else {
+    selectedGate = null; // 빈 칸 클릭 → 선택 해제
+    renderGateInfo(circuit.getSnapshot());
+    markSelection();
+  }
+});
+
+// [3] 우클릭 → 컨텍스트 메뉴
+circuitGrid.addEventListener("contextmenu", (e) => {
+  const cell = e.target.closest(".grid-cell");
+  if (!cell || !cell.dataset.role) return; // 빈 칸은 브라우저 기본 메뉴를 그대로 둔다
+  e.preventDefault();
+  const column = Number(cell.dataset.col);
+  const qubit = Number(cell.dataset.qubit);
+  const snapshot = circuit.getSnapshot();
+  const home = homeOf(snapshot, column, qubit);
+  if (home === -1) return;
+  hideTooltip();
+  selectGate(column, qubit);
+  openGateMenu(column, home, e.clientX, e.clientY);
+});
+
+// [3] 삭제 빠른 경로: 선택된 게이트를 Delete/Backspace로 제거한다.
+// 컨텍스트 메뉴가 유일한 삭제 경로가 되지 않도록 하는 것이 목적.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Delete" && e.key !== "Backspace") return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+  if (!selectedGate) return;
+  e.preventDefault();
+  scene.clearTrail();
+  closeGateMenu();
+  circuit.removeGate(selectedGate.column, selectedGate.home);
+  selectedGate = null;
 });
 
 // ---------- 큐비트 탭 / 확률 / 수식 ----------
@@ -1312,6 +1732,10 @@ function render(snapshot) {
   renderProbabilities(snapshot);
   renderDensityMatrix(snapshot);
   renderStateFormula(snapshot);
+  // 선택한 게이트가 회로 변경으로 사라졌으면 선택을 해제한다
+  if (selectedGate && !cellAtHome(snapshot, selectedGate)) { selectedGate = null; expandedInfo = null; }
+  renderGateInfo(snapshot);
+  markSelection();
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;

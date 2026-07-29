@@ -380,8 +380,15 @@ html, body {
   font-weight: 600;
   padding: 6px 10px;
   border-radius: 10px;
-  white-space: nowrap;
+  white-space: pre; /* 줄바꿈 유지(행렬 미리보기), 자동 줄바꿈은 없음 */
   pointer-events: none;
+}
+
+/* 행렬 미리보기가 든 툴팁은 등폭으로 자릿수를 맞춘다 */
+.gate-tooltip.has-matrix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .gate-tooltip.hidden {
@@ -598,6 +605,100 @@ html, body {
   overflow: auto;
 }
 
+/* 상태벡터 + 게이트 정보를 세로로 쌓는 오른쪽 열 */
+.circuit-side {
+  flex: none;
+  max-width: 38%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.circuit-side .circuit-formula {
+  max-width: none;
+  overflow: visible;
+}
+
+/* [2](b) 선택한 게이트 정보 — 상태벡터 아래 여백을 쓴다 */
+.gate-info {
+  flex: none;
+  border-top: 1px solid var(--bg);
+  padding: 8px 12px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-body);
+}
+.gate-info.hidden { display: none; }
+.gate-info-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-title);
+}
+.gate-info-row { line-height: 1.45; }
+.gate-info-row b { color: var(--text-title); }
+.gate-info-note {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.gate-info-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.gate-info-step {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 라벨 붙은 유니터리 행렬. .dm-grid(밀도행렬)와 같은 시각 언어를 쓰되 크기를 일반화했다. */
+.mx-grid {
+  display: grid;
+  gap: 3px;
+  width: max-content;
+  max-width: 100%;
+}
+.mx-corner,
+.mx-collabel,
+.mx-rowlabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.mx-rowlabel { justify-content: flex-end; padding-right: 3px; }
+.mx-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 26px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-title);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 대각 성분을 옅은 배경으로 구분해 구조가 눈에 들어오게 한다 */
+.mx-cell.mx-diag {
+  background: var(--primary-dim);
+  font-weight: 800;
+}
+.mx-cell.mx-zero { color: var(--text-faint); }
+
 .circuit-formula {
   flex: none;
   max-width: 38%;
@@ -767,6 +868,56 @@ html, body {
 
 .placed-gate:hover {
   transform: scale(1.08);
+}
+
+/* 선택된 게이트 — Delete/Backspace의 대상이 무엇인지 보이게 한다 */
+.placed-gate.selected,
+.ctrl-dot.selected {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* [3] 게이트 컨텍스트 메뉴 (팝오버와 같은 카드 톤) */
+.gate-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 178px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+.gate-menu.hidden { display: none; }
+.gate-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-title);
+  text-align: left;
+  cursor: pointer;
+}
+.gate-menu-item:hover:not(:disabled),
+.gate-menu-item.active:not(:disabled) {
+  background: var(--primary-dim);
+  color: var(--primary);
+}
+/* 비활성 항목은 숨기지 않고 회색으로 남긴다(왜 못 쓰는지는 툴팁으로) */
+.gate-menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.gate-menu-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: var(--bg);
 }
 
 .placed-partner {

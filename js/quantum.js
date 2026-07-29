@@ -279,37 +279,57 @@ export function applyRZZ(state, a, b, theta, controlQubits = []) {
   });
 }
 
-// RCCX (Margolus): 상대위상 Toffoli. CCX와 상대위상만큼 다르다(정확한 CCX가 아님).
-// targets = [a, b, t]: a,b = 컨트롤, t = 타깃. 8x8 하드코딩 없이 H/T/Tdg/CX 분해로 구현.
+// ---------- 상대위상 게이트의 분해 (데이터) ----------
+// 시뮬레이션(applyRCCX/applyRC3X)과 UI("Expand definition")가 **이 한 정의**를 공유한다.
+// 각 스텝: { gate, on, control? } — on/control은 targets 배열의 인덱스(역할 기호는 아래 ROLE_NAMES).
+// 모든 스텝은 타깃(마지막 targets)에 1큐비트 게이트를 적용하며, control이 있으면 controlled 적용.
 // 분해: H(t),T(t),CX(b,t),Tdg(t),CX(a,t),T(t),CX(b,t),Tdg(t),H(t)
-export function applyRCCX(state, a, b, t) {
-  const H = matrixFor("H"), T = matrixFor("T"), Tdg = matrixFor("Tdg"), X = matrixFor("X");
-  const cx = (s, ctrl) => applyUnitary(s, t, X, [ctrl]);
+export const RCCX_STEPS = [
+  { gate: "H", on: 2 },
+  { gate: "T", on: 2 },
+  { gate: "X", on: 2, control: 1 },
+  { gate: "Tdg", on: 2 },
+  { gate: "X", on: 2, control: 0 },
+  { gate: "T", on: 2 },
+  { gate: "X", on: 2, control: 1 },
+  { gate: "Tdg", on: 2 },
+  { gate: "H", on: 2 },
+];
+
+// RC3X: 상대위상 C3X. targets = [a, b, c, t]. 18-op H/T/Tdg/CX 분해.
+export const RC3X_STEPS = [
+  { gate: "H", on: 3 }, { gate: "T", on: 3 },
+  { gate: "X", on: 3, control: 2 }, { gate: "Tdg", on: 3 }, { gate: "H", on: 3 },
+  { gate: "X", on: 3, control: 0 }, { gate: "T", on: 3 }, { gate: "X", on: 3, control: 1 }, { gate: "Tdg", on: 3 },
+  { gate: "X", on: 3, control: 0 }, { gate: "T", on: 3 }, { gate: "X", on: 3, control: 1 }, { gate: "Tdg", on: 3 },
+  { gate: "H", on: 3 }, { gate: "T", on: 3 },
+  { gate: "X", on: 3, control: 2 }, { gate: "Tdg", on: 3 }, { gate: "H", on: 3 },
+];
+
+// targets 인덱스 → 표시용 역할 이름. RCCX=[a,b,t], RC3X=[a,b,c,t] (타깃은 항상 마지막).
+export const DECOMPOSITIONS = { RCCX: RCCX_STEPS, RC3X: RC3X_STEPS };
+export function decompositionOf(gateName) {
+  return DECOMPOSITIONS[gateName] ?? null;
+}
+
+// 분해 스텝 목록을 실제 큐비트(targets)에 적용한다. UI의 "Apply expansion"도 같은 매핑을 쓴다.
+function applySteps(state, steps, targets) {
   let s = state;
-  s = applyUnitary(s, t, H, []);
-  s = applyUnitary(s, t, T, []);
-  s = cx(s, b);
-  s = applyUnitary(s, t, Tdg, []);
-  s = cx(s, a);
-  s = applyUnitary(s, t, T, []);
-  s = cx(s, b);
-  s = applyUnitary(s, t, Tdg, []);
-  s = applyUnitary(s, t, H, []);
+  for (const step of steps) {
+    const ctrl = step.control === undefined ? [] : [targets[step.control]];
+    s = applyUnitary(s, targets[step.on], matrixFor(step.gate), ctrl);
+  }
   return s;
 }
 
-// RC3X: 상대위상 C3X. targets = [a, b, c, t]. 18-op H/T/Tdg/CX 분해.
+// RCCX (Margolus): 상대위상 Toffoli. CCX와 상대위상만큼 다르다(정확한 CCX가 아님).
+// targets = [a, b, t]: a,b = 컨트롤, t = 타깃. 8x8 하드코딩 없이 위 분해로 구현.
+export function applyRCCX(state, a, b, t) {
+  return applySteps(state, RCCX_STEPS, [a, b, t]);
+}
+
 export function applyRC3X(state, a, b, c, t) {
-  const H = matrixFor("H"), T = matrixFor("T"), Tdg = matrixFor("Tdg"), X = matrixFor("X");
-  const cx = (s, ctrl) => applyUnitary(s, t, X, [ctrl]);
-  let s = state;
-  s = applyUnitary(s, t, H, []); s = applyUnitary(s, t, T, []);
-  s = cx(s, c); s = applyUnitary(s, t, Tdg, []); s = applyUnitary(s, t, H, []);
-  s = cx(s, a); s = applyUnitary(s, t, T, []); s = cx(s, b); s = applyUnitary(s, t, Tdg, []);
-  s = cx(s, a); s = applyUnitary(s, t, T, []); s = cx(s, b); s = applyUnitary(s, t, Tdg, []);
-  s = applyUnitary(s, t, H, []); s = applyUnitary(s, t, T, []);
-  s = cx(s, c); s = applyUnitary(s, t, Tdg, []); s = applyUnitary(s, t, H, []);
-  return s;
+  return applySteps(state, RC3X_STEPS, [a, b, c, t]);
 }
 
 // ---------- 정규(canonical) placement 적용: { gate, targets, controls, params } ----------

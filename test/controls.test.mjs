@@ -218,3 +218,76 @@ test("[4] 세 동작(게이트 위 드롭/빈 칸 드롭/제거)이 각각 undo 
   c.undo(); // 배치 취소
   assert.equal(cellAt(c, 0, 2), null);
 });
+
+// ---------- 컨텍스트 메뉴 편집 동작 (setParams / expandGate) ----------
+
+test("setParams: 파라미터만 바뀌고 targets/controls는 불변, undo 한 단계", () => {
+  const c = mk();
+  c.placeGate(0, 1, "X");                        // 제어 큐비트를 |1>로 → controlled-RX가 실제로 걸린다
+  c.placeGate(1, 0, "RX", { theta: Math.PI / 2 });
+  c.addControl(1, 1);
+  const before = cellAt(c, 1, 0);
+  const probOf = (ct) => {
+    const s = ct.getSnapshot();
+    return simulate(s.qubitCount, s.grid).map((z) => z.re * z.re + z.im * z.im);
+  };
+  const p0 = probOf(c);
+  assert.equal(c.setParams(1, 0, { theta: Math.PI / 6 }).ok, true);
+  const after = cellAt(c, 1, 0);
+  assert.equal(after.params.theta, Math.PI / 6);
+  assert.deepEqual(after.targets, before.targets);
+  assert.deepEqual(after.controls, before.controls);
+  assert.notDeepEqual(probOf(c), p0); // 상태벡터에 반영
+  c.undo();
+  assert.equal(cellAt(c, 1, 0).params.theta, Math.PI / 2);
+  assert.deepEqual(probOf(c), p0);
+});
+
+test("[4] expandGate: 분해로 교체해도 시뮬레이션 결과가 완전히 동일(상대위상 포함)", () => {
+  const c = mk();
+  c.setQubitCount(3);
+  // 세 큐비트를 모두 중첩시켜 상대위상이 드러나게 한다
+  c.placeGate(0, 0, "H"); c.placeGate(0, 1, "H"); c.placeGate(0, 2, "H");
+  c.placeGate(1, 2, "RCCX", { controls: [0, 1] }); // 드롭 큐비트가 타깃, controls는 별개 큐비트
+  assert.ok(cellAt(c, 1, 0), "RCCX가 배치되어야 한다(홈 = targets[0] = 첫 컨트롤)");
+  const s0 = c.getSnapshot();
+  const before = simulate(s0.qubitCount, s0.grid);
+
+  const res = c.expandGate(1, 2); // RCCX의 관여 큐비트 아무 데나
+  assert.equal(res.ok, true, res.reason);
+  assert.equal(res.columns, 9);
+
+  const s1 = c.getSnapshot();
+  const after = simulate(s1.qubitCount, s1.grid);
+  for (let i = 0; i < before.length; i++) {
+    assert.ok(Math.abs(before[i].re - after[i].re) < 1e-9 && Math.abs(before[i].im - after[i].im) < 1e-9,
+      `idx ${i}: ${before[i].re},${before[i].im} → ${after[i].re},${after[i].im}`);
+  }
+  // 회로에 RCCX는 더 이상 없고 분해된 게이트들이 들어있다
+  const gates = s1.grid.flat().filter(Boolean).map((x) => x.gate);
+  assert.ok(!gates.includes("RCCX"));
+  assert.ok(gates.includes("Tdg") && gates.includes("H"));
+
+  c.undo(); // Undo 한 단계로 원래 회로 복원
+  const s2 = c.getSnapshot();
+  assert.ok(s2.grid.flat().filter(Boolean).some((x) => x.gate === "RCCX"));
+  assert.deepEqual(simulate(s2.qubitCount, s2.grid).map((z) => z.re.toFixed(9)), before.map((z) => z.re.toFixed(9)));
+});
+
+test("[4] expandGate 거부: 분해가 없거나 열이 모자라면 회로 불변", () => {
+  const c = mk();
+  c.placeGate(0, 0, "H");
+  const noDecomp = c.expandGate(0, 0);
+  assert.equal(noDecomp.ok, false);
+  assert.match(noDecomp.reason, /No decomposition/);
+
+  // RC3X는 18스텝이라 MAX_COLUMNS(12)에 들어가지 않는다 → 항상 거부
+  const d = mk();
+  d.setQubitCount(4);
+  d.placeGate(0, 3, "RC3X", { controls: [0, 1, 2] });
+  const before = JSON.stringify(d.getSnapshot().grid);
+  const res = d.expandGate(0, 3);
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /columns/);
+  assert.equal(JSON.stringify(d.getSnapshot().grid), before); // 회로 불변
+});

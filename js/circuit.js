@@ -12,6 +12,7 @@ import {
   applyPlacement,
   basisProbabilities,
   GATE_INFO,
+  decompositionOf,
 } from "./quantum.js";
 import { qubitBlochVector } from "./density.js";
 
@@ -364,6 +365,67 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     return attachControlsTo(column, opt.home, picked); // 기존 제어가 있으면 누적된다
   }
 
+  // 배치된 게이트의 파라미터만 교체한다(targets/controls·홈 위치는 그대로).
+  // 컨텍스트 메뉴 "Edit parameters"용. 셀 구조는 바뀌지 않는다.
+  function setParams(column, qubit, params) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    if (!grid[column]) return { ok: false, reason: "Invalid column" };
+    const home = occupantTarget(column, qubit);
+    if (home === -1) return { ok: false, reason: "No gate here" };
+    const cell = grid[column][home];
+    pushUndo();
+    grid[column][home] = { ...cell, params: { ...params } };
+    notify();
+    return { ok: true };
+  }
+
+  // "Apply expansion": 게이트를 코드에 정의된 분해(quantum.js의 STEPS)로 실제 교체한다.
+  // 분해 스텝 하나당 한 열을 쓰고, 뒤 열들은 그만큼 밀린다. pushUndo 한 번 → Undo 한 단계로 복원.
+  function expandGate(column, qubit) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    if (!grid[column]) return { ok: false, reason: "Invalid column" };
+    const home = occupantTarget(column, qubit);
+    if (home === -1) return { ok: false, reason: "No gate here" };
+    const cell = grid[column][home];
+    const steps = decompositionOf(cell.gate);
+    if (!steps) return { ok: false, reason: "No decomposition is defined for this gate" };
+
+    const extra = steps.length - 1; // 원래 열 1개를 steps.length개로 늘린다
+    const used = usedColumnCount(grid);
+    if (used + extra > MAX_COLUMNS) {
+      return { ok: false, reason: `Needs ${steps.length} columns — not enough room` };
+    }
+    const next = emptyGrid(qubitCount);
+    for (let col = 0; col < column; col++) next[col] = grid[col].slice();
+    // 같은 열의 다른 게이트들은 첫 확장 열에 남긴다(분해가 건드리는 큐비트와 겹치지 않는다).
+    for (let t = 0; t < qubitCount; t++) if (t !== home && grid[column][t]) next[column][t] = grid[column][t];
+    // 분해 스텝을 한 열씩 배치. on/control은 cell.targets의 인덱스다.
+    const targets = cell.targets;
+    steps.forEach((s, i) => {
+      const t = targets[s.on];
+      next[column + i][t] = {
+        gate: s.gate,
+        targets: [t],
+        controls: s.control === undefined ? [] : [targets[s.control]],
+        params: {},
+      };
+    });
+    // 뒤 열들을 extra만큼 민다
+    for (let col = column + 1; col < MAX_COLUMNS; col++) {
+      const dest = col + extra;
+      if (dest >= MAX_COLUMNS) {
+        if (grid[col].some(Boolean)) return { ok: false, reason: "Not enough columns to expand" };
+        continue;
+      }
+      next[dest] = grid[col].slice();
+    }
+    pushUndo();
+    grid = next;
+    stepIndex = usedColumnCount(grid);
+    notify();
+    return { ok: true, columns: steps.length };
+  }
+
   // 제어점 제거: controlQubit이 어떤 게이트의 controls면 그 항목만 뺀다.
   // 반환: 제거했으면 true (클릭이 제어점이었음), 아니면 false.
   function removeControl(column, controlQubit) {
@@ -518,6 +580,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     addControl,
     controlOptions,
     addControlToGate,
+    setParams,
+    expandGate,
     removeControl,
     clear,
     loadCircuit,
