@@ -82,10 +82,11 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
   - **로컬 비트 순서 = 실제 큐비트 번호 오름차순**(왼쪽이 작은 번호 = 높은 비트). 역할 순으로 고정하면 RCCX(a,b)와 RCCX(b,a)가 **같은 행렬**이 되어 두 배치의 차이가 사라진다. 큐비트 순이면 컨트롤이 대칭인 CZ·CCX는 그대로, a·b에 비대칭인 RCCX만 달라진다. 이 순서에서 X+컨트롤 1개가 **교과서 CNOT**으로 나온다.
   - **행/열에 기저 켓 라벨**(`basisLabels`)을 붙이고 **대각 성분은 옅은 배경**(`.mx-diag`)으로 구분한다. 밀도행렬 패널의 `.dm-grid` 계열과 같은 시각 언어이되 크기를 일반화한 `.mx-grid`를 쓴다. 라벨이 로컬 기준임을 `localOrder` 캡션(`local |c t⟩ = |q0 q1⟩`)으로 명시한다.
   - **8×8(관여 3큐비트)까지만 렌더링**하고 그 이상은 "Matrix is 16x16 (too large to display)" + 이름·제어 목록·한 줄 설명으로 대체한다(MCX 3제어는 256성분이라 화면에 못 넣는다).
-- **게이트 컨텍스트 메뉴(좌클릭·우클릭 모두):** Show info / Edit parameters / Expand definition / Add control / Remove control / Delete. 메뉴를 열면 그 게이트가 **선택**되고(`.selected` 외곽선) Delete 키의 대상이 된다.
-  - 비활성 항목은 **숨기지 않고 회색 + 사유 툴팁**: "This gate has no parameters (only RX, RY, RZ, P, U have parameters)" / 기본 게이트는 "This is a primitive gate — it has no decomposition" / CCX·CSWAP처럼 분해 정의만 없는 경우 "No decomposition is defined for this gate" / "No free wire in this column for a control" / "This gate has no controls".
-  - **비활성 표현에 `disabled` 속성을 쓰지 않는다** — 브라우저가 disabled 요소의 마우스 이벤트를 막아 **사유 툴팁이 아예 뜨지 않기 때문**. `aria-disabled` + `.is-disabled` 클래스로 표현하고 클릭만 JS에서 막는다.
-  - Esc·바깥 클릭으로 닫고(회로 불변), 방향키+Enter 이동/선택(비활성 항목은 건너뜀). Add control은 **드롭과 같은 경로**(`controlOptions` → 팝오버) 재사용, Remove control은 제어가 여럿이면 어느 것을 지울지 고르게 한다.
+- **게이트 컨텍스트 메뉴 = 가로 아이콘 바(좌클릭·우클릭 모두):** Show info / Edit parameters / Expand definition / Add control / Remove control / Delete를 **34px 아이콘 6개**로 한 줄에 놓는다(바 높이 42px). 관련끼리 묶어 세로 구분선을 넣고(**[정보·편집] | [제어] | [삭제]**) 파괴적인 Delete는 맨 오른쪽에 분리한다(`.is-danger`로 색도 구분). 메뉴를 열면 그 게이트가 **선택**되고(`.selected` 외곽선) Delete 키의 대상이 된다. 위치는 게이트 위쪽에 띄우되 **화면 밖으로 나가지 않게 좌우·상하를 보정**한다(위 공간이 없으면 아래로 뒤집는다).
+  - **아이콘은 인라인 SVG만** 쓴다(이모지는 플랫폼마다 렌더링이 다르고 크기 제어가 안 된다). `svgIcon()` 헬퍼로 24 뷰박스·`stroke-width:1.9`·round 캡을 통일해 한 세트로 보이게 한다. Add/Remove control은 회로 표기 그대로 **•—◯ 연결 + "+"/"−" 배지**로 그린다.
+  - **아이콘만으로는 뜻을 알 수 없으므로 툴팁이 필수다**: 모든 버튼에 hover·focus 시 이름(비활성이면 사유)을 **지연 없이** 띄우고 `aria-label`을 반드시 넣는다. 비활성 사유 문구: "No parameters (only RX, RY, RZ, P, U have parameters)" / 기본 게이트는 "Primitive gate — no decomposition" / 분해 정의만 없으면 "No decomposition defined for this gate" / "No free wire in this column" / "This gate has no controls".
+  - **비활성 표현에 `disabled` 속성을 쓰지 않는다** — 브라우저가 disabled 요소의 마우스 이벤트를 막아 **사유 툴팁이 아예 뜨지 않기 때문**. `aria-disabled` + `.is-disabled`로 표현하고 클릭만 JS에서 막는다.
+  - Esc·바깥 클릭으로 닫고(회로 불변), **좌우 방향키 이동 + Enter/Space 실행**. 비활성 항목도 **건너뛰지 않고 포커스를 받아**(사유 툴팁을 볼 수 있게) 실행만 막힌다 — roving `tabindex`. Add control은 **드롭과 같은 경로**(`controlOptions` → 팝오버) 재사용, Remove control은 제어가 여럿이면 어느 것을 지울지 고르게 한다.
   - **메뉴 항목 클릭은 `stopPropagation`** — 그러지 않으면 그 클릭이 document까지 올라가 방금 연 팝오버/메뉴를 "바깥 클릭"으로 즉시 닫아버린다. 게이트 좌클릭도 같은 이유로 전파를 멈춘다.
 - **클릭 동작 + 삭제 경로:** 게이트 본체 좌클릭은 **메뉴 열기**다(예전의 클릭 삭제는 제거). 제어점(•) 클릭은 기존대로 그 제어만 제거한다. 삭제는 메뉴의 Delete **또는 선택 상태에서 `Delete`/`Backspace`**(메뉴가 열린 상태 포함, 입력 필드 포커스 중엔 미개입, Undo 복원 가능).
 - **Edit parameters:** 배치 팝오버의 슬라이더 생성부를 `buildSliderRows(names, initialDegrees)`로 공용화해 **현재 값을 초기값으로** 띄우고, 확정 시 `circuit.setParams`(targets/controls 불변, Undo 한 단계).

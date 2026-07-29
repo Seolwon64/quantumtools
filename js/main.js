@@ -713,12 +713,33 @@ function renderGateInfo(snapshot) {
 }
 let expandedInfo = null; // { column, home } — "Expand definition"을 누른 셀
 
-// ---------- [3] 컨텍스트 메뉴 ----------
+// ---------- [3] 컨텍스트 메뉴 (가로 아이콘 바) ----------
+
+// 아이콘은 인라인 SVG로만 넣는다 — 이모지는 플랫폼마다 렌더링이 다르고 크기 제어가 안 된다.
+// 한 세트로 보이도록 24 뷰박스 · stroke-width 1.9 · round 캡으로 통일한다.
+const svgIcon = (body) =>
+  `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+
+const MENU_ICONS = {
+  // ⓘ 원 안 i
+  info: svgIcon('<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.8" r="0.9" fill="currentColor" stroke="none"/>'),
+  // ✎ 연필
+  edit: svgIcon('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z"/><line x1="14.5" y1="6.5" x2="17.5" y2="9.5"/>'),
+  // 상자에서 펼쳐지는 형태(⤢): 점선 상자 + 바깥으로 향하는 화살표
+  expand: svgIcon('<path d="M4 9V5h4"/><path d="M20 15v4h-4"/><line x1="5" y1="5.6" x2="10.5" y2="11"/><line x1="19" y1="18.4" x2="13.5" y2="13"/><path d="M15 4.5h4.5V9"/><path d="M9 19.5H4.5V15"/>'),
+  // 제어점(•)—타깃(◯) 연결 + 오른쪽 위 "+" 배지 (회로 표기 그대로 읽히게)
+  ctrlAdd: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/><line x1="17.5" y1="3" x2="17.5" y2="9"/>'),
+  // 같은 표기 + "−" 배지
+  ctrlRemove: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/>'),
+  // 🗑 휴지통
+  trash: svgIcon('<path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.3 1.3 0 0 0 1.3 1.2h6.6a1.3 1.3 0 0 0 1.3-1.2l.9-12.5"/><line x1="10.4" y1="10" x2="10.7" y2="16.8"/><line x1="13.6" y1="10" x2="13.3" y2="16.8"/>'),
+};
 
 let menuIndex = 0;
 function closeGateMenu() {
   gateMenu.classList.add("hidden");
   gateMenu.innerHTML = "";
+  hideTooltip(); // 아이콘 툴팁이 남아 떠 있지 않게
 }
 const gateMenuOpen = () => !gateMenu.classList.contains("hidden");
 
@@ -736,23 +757,22 @@ function openGateMenu(column, home, clientX, clientY) {
   const primitive = info?.kind === "fixed" || info?.kind === "param" || info?.kind === "param3";
   const opts = circuit.controlOptions(column, home);
 
+  // group: 관련 항목끼리 묶어 구분선을 넣는다 — [정보/편집] | [제어] | [삭제]
   const items = [
-    { label: "Show info", run: () => { expandedInfo = null; openGateInfo(column, home); } },
+    { label: "Show info", icon: "info", group: 0, run: () => { expandedInfo = null; openGateInfo(column, home); } },
     {
-      label: "Edit parameters", enabled: hasParams,
-      why: "This gate has no parameters (only RX, RY, RZ, P, U have parameters)",
+      label: "Edit parameters", icon: "edit", group: 0, enabled: hasParams,
+      why: "No parameters (only RX, RY, RZ, P, U have parameters)",
       run: () => openParamEditor(column, home, cell, clientX, clientY),
     },
     {
-      label: "Expand definition", enabled: !!steps,
-      why: primitive
-        ? "This is a primitive gate — it has no decomposition"
-        : "No decomposition is defined for this gate",
+      label: "Expand definition", icon: "expand", group: 0, enabled: !!steps,
+      why: primitive ? "Primitive gate — no decomposition" : "No decomposition defined for this gate",
       run: () => { expandedInfo = { column, home }; openGateInfo(column, home); },
     },
     {
-      label: "Add control", enabled: opts.ok,
-      why: opts.reason,
+      label: "Add control", icon: "ctrlAdd", group: 1, enabled: opts.ok,
+      why: opts.ok ? null : (opts.reason === "No free wire in this column for a control" ? "No free wire in this column" : opts.reason),
       run: () => {
         if (opts.candidates.length === 1) {
           const res = circuit.addControlToGate(column, home, opts.candidates[0]);
@@ -761,39 +781,42 @@ function openGateMenu(column, home, clientX, clientY) {
       },
     },
     {
-      label: "Remove control", enabled: controls.length > 0,
+      label: "Remove control", icon: "ctrlRemove", group: 1, enabled: controls.length > 0,
       why: "This gate has no controls",
       run: () => {
         if (controls.length === 1) circuit.removeControl(column, controls[0]);
         else openRemoveControlPopover(column, controls, clientX, clientY);
       },
     },
-    { label: "Delete", run: () => { circuit.removeGate(column, home); selectedGate = null; infoTarget = null; } },
+    // 파괴적 동작은 맨 오른쪽에 구분선으로 분리한다
+    { label: "Delete", icon: "trash", group: 2, danger: true, run: () => { circuit.removeGate(column, home); selectedGate = null; infoTarget = null; } },
   ];
 
   const buttons = [];
   items.forEach((item, i) => {
-    if (item.label === "Delete") {
+    if (i > 0 && item.group !== items[i - 1].group) {
       const sep = document.createElement("div");
       sep.className = "gate-menu-sep";
       gateMenu.appendChild(sep);
     }
     const btn = document.createElement("button");
-    btn.className = "gate-menu-item";
-    btn.textContent = item.label;
+    btn.className = "gate-menu-item" + (item.danger ? " is-danger" : "");
+    btn.innerHTML = MENU_ICONS[item.icon];
     const off = item.enabled === false;
-    // [4] `disabled` 속성을 쓰지 않는다 — 브라우저가 disabled 요소의 마우스 이벤트를 막아
-    // "왜 못 쓰는지" 툴팁이 아예 뜨지 않기 때문. aria-disabled + 클래스로 표현하고 클릭만 막는다.
+    // `disabled` 속성을 쓰지 않는다 — 브라우저가 disabled 요소의 마우스 이벤트를 막아
+    // "왜 못 쓰는지" 툴팁이 아예 뜨지 않기 때문. aria-disabled로 표현하고 클릭만 막는다.
+    // 라벨이 아이콘으로 바뀌어 사유 툴팁이 더 중요해졌다.
     if (off) {
       btn.classList.add("is-disabled");
       btn.setAttribute("aria-disabled", "true");
-      btn.tabIndex = -1;
     }
-    const tip = off ? item.why : null;
-    if (tip) {
-      btn.addEventListener("mouseenter", () => showTooltip(btn, tip));
-      btn.addEventListener("mouseleave", hideTooltip);
-    }
+    // 아이콘만으로는 의미를 알 수 없으므로 이름(또는 비활성 사유)을 반드시 노출한다.
+    const tip = off ? (item.why ?? item.label) : item.label;
+    btn.setAttribute("aria-label", off && item.why ? `${item.label} — ${item.why}` : item.label);
+    btn.tabIndex = -1; // roving tabindex: 방향키로 이동(비활성도 포커스는 받는다)
+    btn.addEventListener("mouseenter", () => showTooltip(btn, tip));
+    btn.addEventListener("mouseleave", hideTooltip);
+    btn.addEventListener("focus", () => showTooltip(btn, tip));
     btn.addEventListener("click", (e) => {
       e.stopPropagation(); // document로 가면 "바깥 클릭"이 방금 연 팝오버/메뉴를 즉시 닫는다
       if (off) return;
@@ -806,22 +829,28 @@ function openGateMenu(column, home, clientX, clientY) {
   });
 
   gateMenu.classList.remove("hidden");
+  // 선택한 게이트 근처에 띄우되 화면 밖으로 나가지 않게 보정한다(오른쪽 끝 게이트도 잘리지 않게).
   const rect = gateMenu.getBoundingClientRect();
-  gateMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 12))}px`;
-  gateMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 12))}px`;
+  const left = Math.min(Math.max(8, clientX - rect.width / 2), window.innerWidth - rect.width - 8);
+  const above = clientY - rect.height - 12;
+  gateMenu.style.left = `${left}px`;
+  gateMenu.style.top = `${above >= 8 ? above : Math.min(clientY + 16, window.innerHeight - rect.height - 8)}px`;
 
-  // 방향키 이동 + Enter 선택 (비활성 항목은 건너뛴다)
-  const enabled = buttons.filter((b) => !b.classList.contains("is-disabled"));
+  // 좌우 방향키로 이동, Enter/Space로 실행. 비활성 항목도 **건너뛰지 않고** 포커스를 받아
+  // 사유 툴팁을 볼 수 있게 한다(실행만 막힌다).
   menuIndex = 0;
   const focusAt = (i) => {
-    menuIndex = (i + enabled.length) % enabled.length;
-    enabled.forEach((b, j) => b.classList.toggle("active", j === menuIndex));
-    enabled[menuIndex].focus();
+    menuIndex = (i + buttons.length) % buttons.length;
+    buttons.forEach((b, j) => {
+      b.classList.toggle("active", j === menuIndex);
+      b.tabIndex = j === menuIndex ? 0 : -1;
+    });
+    buttons[menuIndex].focus();
   };
-  if (enabled.length) focusAt(0);
+  if (buttons.length) focusAt(0);
   gateMenu.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); focusAt(menuIndex + 1); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); focusAt(menuIndex - 1); }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); focusAt(menuIndex + 1); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); focusAt(menuIndex - 1); }
   });
 }
 

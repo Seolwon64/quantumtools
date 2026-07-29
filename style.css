@@ -873,47 +873,64 @@ html, body {
   outline-offset: 2px;
 }
 
-/* [3] 게이트 컨텍스트 메뉴 (팝오버와 같은 카드 톤) */
+/* [3] 게이트 컨텍스트 메뉴 — 가로 아이콘 바(IBM Composer 스타일). 높이 44px 이내. */
 .gate-menu {
   position: fixed;
   z-index: 60;
-  min-width: 178px;
-  padding: 5px;
+  padding: 4px;
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
   background: var(--card-bg);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
 }
 .gate-menu.hidden { display: none; }
+
 .gate-menu-item {
+  flex: none;
   display: flex;
   align-items: center;
-  padding: 7px 10px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  font-size: 12px;
-  font-weight: 600;
   color: var(--text-title);
-  text-align: left;
   cursor: pointer;
 }
+.gate-menu-item svg { pointer-events: none; }
 .gate-menu-item:hover:not(.is-disabled),
 .gate-menu-item.active:not(.is-disabled) {
   background: var(--primary-dim);
   color: var(--primary);
 }
-/* 비활성 항목은 숨기지 않고 회색으로 남긴다. `disabled` 속성을 쓰면 브라우저가 마우스 이벤트를
+.gate-menu-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+/* 파괴적 동작(Delete)은 색으로도 구분한다 */
+.gate-menu-item.is-danger:hover:not(.is-disabled),
+.gate-menu-item.is-danger.active:not(.is-disabled) {
+  background: var(--cat-pauli-bg);
+  color: var(--cat-pauli-fg);
+}
+/* 비활성 항목은 숨기지 않고 흐리게 남긴다. `disabled` 속성을 쓰면 브라우저가 마우스 이벤트를
    막아 사유 툴팁이 뜨지 않으므로, 클래스로만 표현하고 클릭은 JS에서 막는다. */
 .gate-menu-item.is-disabled {
   color: var(--text-faint);
+  opacity: 0.55;
   cursor: default;
 }
+/* 그룹 사이 얇은 세로 구분선 */
 .gate-menu-sep {
-  height: 1px;
-  margin: 3px 6px;
+  flex: none;
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 3px;
   background: var(--bg);
 }
 
