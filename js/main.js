@@ -113,6 +113,8 @@ const playbackStatus = document.getElementById("playback-status");
 const resetViewBtn = document.getElementById("reset-view-btn");
 const placePopover = document.getElementById("place-popover");
 const gateInfoEl = document.getElementById("gate-info");
+const gateInfoClose = document.getElementById("gate-info-close");
+const paletteTitle = document.getElementById("palette-title");
 const gateMenu = document.getElementById("gate-menu");
 const viewToggle = document.getElementById("view-toggle");
 const sphereModeTitle = document.getElementById("sphere-mode-title");
@@ -531,12 +533,18 @@ function cellAtHome(snapshot, sel) {
   return snapshot.grid[sel.column]?.[sel.home] ?? null;
 }
 
-function selectGate(column, qubit) {
-  const snapshot = circuit.getSnapshot();
-  const home = homeOf(snapshot, column, qubit);
-  selectedGate = home === -1 ? null : { column, home };
-  renderGateInfo(snapshot);
-  markSelection();
+// "Show info"로 정보를 열 때만 설정된다. null이면 Operations 패널은 팔레트를 보여준다.
+let infoTarget = null; // { column, home }
+
+function openGateInfo(column, home) {
+  infoTarget = { column, home };
+  renderGateInfo(circuit.getSnapshot());
+}
+
+function closeGateInfo() {
+  infoTarget = null;
+  expandedInfo = null;
+  renderGateInfo(circuit.getSnapshot());
 }
 
 // 열에서 qubit을 점유한 placement의 홈 행 (컨트롤러 밖에서도 필요해 여기서 다시 계산)
@@ -604,14 +612,22 @@ function buildMatrixGrid(m) {
   return grid;
 }
 
+// Operations 패널의 팔레트 ↔ 게이트 정보 전환. infoTarget이 있을 때만 정보가 보인다.
 function renderGateInfo(snapshot) {
-  const cell = cellAtHome(snapshot, selectedGate);
+  const cell = cellAtHome(snapshot, infoTarget);
   if (!cell) {
+    infoTarget = null;
     gateInfoEl.classList.add("hidden");
     gateInfoEl.innerHTML = "";
+    gatePalette.classList.remove("hidden");
+    gateInfoClose.classList.add("hidden");
+    paletteTitle.textContent = "Operations";
     return;
   }
   gateInfoEl.classList.remove("hidden");
+  gatePalette.classList.add("hidden"); // 표시 중에는 팔레트 대신 정보가 보인다
+  gateInfoClose.classList.remove("hidden");
+  paletteTitle.textContent = "Gate info";
   gateInfoEl.innerHTML = "";
   const row = (html) => {
     const d = document.createElement("div");
@@ -663,7 +679,7 @@ function renderGateInfo(snapshot) {
   }
 
   // [4] 분해 표시 + Apply expansion
-  if (expandedInfo && expandedInfo.column === selectedGate.column && expandedInfo.home === selectedGate.home) {
+  if (expandedInfo && expandedInfo.column === infoTarget.column && expandedInfo.home === infoTarget.home) {
     const steps = decompositionSteps(cell);
     if (steps) {
       const hint = document.createElement("div");
@@ -683,11 +699,13 @@ function renderGateInfo(snapshot) {
       apply.className = "pill-btn-primary";
       apply.textContent = "Apply expansion";
       apply.addEventListener("click", () => {
-        const { column, home } = selectedGate;
+        const { column, home } = infoTarget;
         const res = circuit.expandGate(column, home);
         expandedInfo = null;
-        if (!res.ok) showToast(res.reason);
-        else { selectedGate = null; showToast(`Expanded into ${res.columns} steps — Undo (Ctrl+Z) to revert`); }
+        if (!res.ok) { showToast(res.reason); return; }
+        infoTarget = null; // 원래 게이트가 사라졌으니 정보를 닫고 팔레트로 돌아간다
+        selectedGate = null;
+        showToast(`Expanded into ${res.columns} steps — Undo (Ctrl+Z) to revert`);
       });
       gateInfoEl.appendChild(apply);
     }
@@ -719,16 +737,18 @@ function openGateMenu(column, home, clientX, clientY) {
   const opts = circuit.controlOptions(column, home);
 
   const items = [
-    { label: "Show info", run: () => { expandedInfo = null; selectGate(column, home); } },
+    { label: "Show info", run: () => { expandedInfo = null; openGateInfo(column, home); } },
     {
       label: "Edit parameters", enabled: hasParams,
-      why: "This gate has no parameters",
+      why: "This gate has no parameters (only RX, RY, RZ, P, U have parameters)",
       run: () => openParamEditor(column, home, cell, clientX, clientY),
     },
     {
       label: "Expand definition", enabled: !!steps,
-      why: primitive ? "This is a primitive gate" : "No decomposition is defined for this gate",
-      run: () => { expandedInfo = { column, home }; selectGate(column, home); },
+      why: primitive
+        ? "This is a primitive gate — it has no decomposition"
+        : "No decomposition is defined for this gate",
+      run: () => { expandedInfo = { column, home }; openGateInfo(column, home); },
     },
     {
       label: "Add control", enabled: opts.ok,
@@ -748,7 +768,7 @@ function openGateMenu(column, home, clientX, clientY) {
         else openRemoveControlPopover(column, controls, clientX, clientY);
       },
     },
-    { label: "Delete", run: () => { circuit.removeGate(column, home); selectedGate = null; } },
+    { label: "Delete", run: () => { circuit.removeGate(column, home); selectedGate = null; infoTarget = null; } },
   ];
 
   const buttons = [];
@@ -761,17 +781,22 @@ function openGateMenu(column, home, clientX, clientY) {
     const btn = document.createElement("button");
     btn.className = "gate-menu-item";
     btn.textContent = item.label;
-    btn.disabled = item.enabled === false;
-    if (btn.disabled && item.why) {
-      // 비활성 사유는 툴팁으로 (disabled 버튼은 mouseenter가 안 와서 래퍼 대신 title도 함께 건다)
-      btn.title = item.why;
-      btn.addEventListener("mousemove", () => showTooltip(btn, item.why));
+    const off = item.enabled === false;
+    // [4] `disabled` 속성을 쓰지 않는다 — 브라우저가 disabled 요소의 마우스 이벤트를 막아
+    // "왜 못 쓰는지" 툴팁이 아예 뜨지 않기 때문. aria-disabled + 클래스로 표현하고 클릭만 막는다.
+    if (off) {
+      btn.classList.add("is-disabled");
+      btn.setAttribute("aria-disabled", "true");
+      btn.tabIndex = -1;
+    }
+    const tip = off ? item.why : null;
+    if (tip) {
+      btn.addEventListener("mouseenter", () => showTooltip(btn, tip));
       btn.addEventListener("mouseleave", hideTooltip);
     }
     btn.addEventListener("click", (e) => {
-      if (btn.disabled) return;
-      // 이 클릭이 document까지 올라가면 "바깥 클릭" 리스너가 방금 연 팝오버를 즉시 닫아버린다.
-      e.stopPropagation();
+      e.stopPropagation(); // document로 가면 "바깥 클릭"이 방금 연 팝오버/메뉴를 즉시 닫는다
+      if (off) return;
       closeGateMenu();
       scene.clearTrail();
       item.run();
@@ -785,8 +810,8 @@ function openGateMenu(column, home, clientX, clientY) {
   gateMenu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 12))}px`;
   gateMenu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 12))}px`;
 
-  // 방향키 이동 + Enter 선택
-  const enabled = buttons.filter((b) => !b.disabled);
+  // 방향키 이동 + Enter 선택 (비활성 항목은 건너뛴다)
+  const enabled = buttons.filter((b) => !b.classList.contains("is-disabled"));
   menuIndex = 0;
   const focusAt = (i) => {
     menuIndex = (i + enabled.length) % enabled.length;
@@ -800,9 +825,14 @@ function openGateMenu(column, home, clientX, clientY) {
   });
 }
 
-// Esc / 바깥 클릭으로 닫기 — 회로는 전혀 바뀌지 않는다.
+gateInfoClose.addEventListener("click", closeGateInfo);
+
+// Esc: 메뉴가 열려 있으면 메뉴부터, 아니면 게이트 정보를 닫는다(팔레트로 복귀).
+// 회로는 어느 쪽도 바뀌지 않는다.
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && gateMenuOpen()) closeGateMenu();
+  if (e.key !== "Escape") return;
+  if (gateMenuOpen()) closeGateMenu();
+  else if (infoTarget) closeGateInfo();
 });
 document.addEventListener("click", (e) => {
   if (gateMenuOpen() && !gateMenu.contains(e.target)) closeGateMenu();
@@ -915,19 +945,11 @@ function showTransientTip(anchor, text) {
   transientTipTimer = setTimeout(hideTooltip, 1700);
 }
 
-// 배치된 게이트/제어점에 hover하면 표준 이름(CX, CZ, CCX …)을 툴팁으로 보여준다.
-// [2](a) 4x4 이하면 행렬 미리보기를 한 줄씩 덧붙인다(가볍게 — 큰 행렬은 클릭해서 패널로 본다).
+// 배치된 게이트/제어점에 hover하면 표준 이름(CX, CZ, CCX …)만 툴팁으로 보여준다(식별용).
+// 행렬은 hover가 아니라 컨텍스트 메뉴의 "Show info"로만 본다.
 function attachGateHover(el, cell) {
-  el.addEventListener("mouseenter", () => showTooltip(el, hoverText(cell)));
+  el.addEventListener("mouseenter", () => showTooltip(el, standardGateName(cell)));
   el.addEventListener("mouseleave", hideTooltip);
-}
-
-function hoverText(cell) {
-  const name = standardGateName(cell);
-  const m = gateMatrix(cell);
-  if (!m.ok || m.size > 4) return name;
-  const rows = m.rows.map((row) => row.map(formatComplex).join("   ")).join("\n");
-  return `${name}\n${rows}`;
 }
 
 
@@ -1163,45 +1185,49 @@ circuitGrid.addEventListener("drop", (e) => {
   }
 });
 
+// [1] 게이트 좌클릭 → 컨텍스트 메뉴(우클릭과 동일). 게이트는 삭제되지 않고 정보 패널도
+// 자동으로 뜨지 않는다 — 정보는 메뉴의 "Show info"로만 연다.
+// 제어점(•) 클릭은 기존대로 그 제어만 제거한다.
 circuitGrid.addEventListener("click", (e) => {
   const cell = e.target.closest(".grid-cell");
   if (!cell) return;
   const column = Number(cell.dataset.col);
   const qubit = Number(cell.dataset.qubit);
   scene.clearTrail();
-  // [2] 제어점 클릭은 기존대로 그 제어를 제거하고, 게이트 본체 클릭은 정보 패널에 표시한다
-  // (더 이상 삭제하지 않는다 — 삭제는 Delete 키 또는 컨텍스트 메뉴).
   if (cell.dataset.role === "control") {
     circuit.removeControl(column, qubit);
     return;
   }
   if (cell.dataset.role) {
-    expandedInfo = null;
-    selectGate(column, qubit);
+    e.stopPropagation(); // 이 클릭이 document로 가면 방금 연 메뉴가 바로 닫힌다
+    openMenuForCell(column, qubit, e.clientX, e.clientY);
   } else {
     selectedGate = null; // 빈 칸 클릭 → 선택 해제
-    renderGateInfo(circuit.getSnapshot());
     markSelection();
   }
 });
 
-// [3] 우클릭 → 컨텍스트 메뉴
+// 우클릭도 계속 동작한다
 circuitGrid.addEventListener("contextmenu", (e) => {
   const cell = e.target.closest(".grid-cell");
   if (!cell || !cell.dataset.role) return; // 빈 칸은 브라우저 기본 메뉴를 그대로 둔다
   e.preventDefault();
-  const column = Number(cell.dataset.col);
-  const qubit = Number(cell.dataset.qubit);
+  openMenuForCell(Number(cell.dataset.col), Number(cell.dataset.qubit), e.clientX, e.clientY);
+});
+
+// 게이트를 선택 상태로 만들고(= Delete 키의 대상) 메뉴를 연다. 정보 패널은 건드리지 않는다.
+function openMenuForCell(column, qubit, clientX, clientY) {
   const snapshot = circuit.getSnapshot();
   const home = homeOf(snapshot, column, qubit);
   if (home === -1) return;
   hideTooltip();
-  selectGate(column, qubit);
-  openGateMenu(column, home, e.clientX, e.clientY);
-});
+  selectedGate = { column, home };
+  markSelection();
+  openGateMenu(column, home, clientX, clientY);
+}
 
-// [3] 삭제 빠른 경로: 선택된 게이트를 Delete/Backspace로 제거한다.
-// 컨텍스트 메뉴가 유일한 삭제 경로가 되지 않도록 하는 것이 목적.
+// [6] 삭제 빠른 경로: 선택된 게이트를 Delete/Backspace로 제거한다(메뉴가 열린 상태 포함 —
+// 메뉴를 열면 그 게이트가 선택되므로 그대로 키를 눌러 지울 수 있다). 좌클릭 삭제가 없어진 대신의 경로.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Delete" && e.key !== "Backspace") return;
   const t = e.target;
@@ -1212,6 +1238,7 @@ document.addEventListener("keydown", (e) => {
   closeGateMenu();
   circuit.removeGate(selectedGate.column, selectedGate.home);
   selectedGate = null;
+  infoTarget = null; // 지운 게이트의 정보가 남아 있지 않게
 });
 
 // ---------- 큐비트 탭 / 확률 / 수식 ----------
@@ -1501,15 +1528,12 @@ const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// [4] 스텝당 전환/정지 시간. 기본 Normal ≈ 1초/스텝(현재 500ms보다 느림).
-const SPEEDS = {
-  slow: { duration: 1000, pause: 400 },
-  normal: { duration: 700, pause: 300 },
-  fast: { duration: 350, pause: 120 },
-};
-let playSpeed = "normal";
-const stepDuration = () => (reducedMotion ? 0 : SPEEDS[playSpeed].duration);
-const stepPause = () => SPEEDS[playSpeed].pause;
+// 스텝당 전환/정지 시간. 속도 선택 UI를 없애고 기존 "Normal" 값으로 고정한다
+// (≈1초/스텝 — 예전 500ms보다 느린 이 값을 유지해야 한다).
+const STEP_DURATION = 700;
+const STEP_PAUSE = 300;
+const stepDuration = () => (reducedMotion ? 0 : STEP_DURATION);
+const stepPause = () => STEP_PAUSE;
 
 // [2] 확률 막대 트윈용 차트: from/to에서 보이는 상태의 합집합을 한 번 그리고, 매 프레임
 // 막대 높이(path d)만 갱신한다(재구성 없음 → 성능). 0%↔값 막대도 자연스럽게 생성/소멸.
@@ -1732,8 +1756,9 @@ function render(snapshot) {
   renderProbabilities(snapshot);
   renderDensityMatrix(snapshot);
   renderStateFormula(snapshot);
-  // 선택한 게이트가 회로 변경으로 사라졌으면 선택을 해제한다
-  if (selectedGate && !cellAtHome(snapshot, selectedGate)) { selectedGate = null; expandedInfo = null; }
+  // 선택/정보 대상 게이트가 회로 변경으로 사라졌으면 해제한다(정보 패널은 팔레트로 돌아간다)
+  if (selectedGate && !cellAtHome(snapshot, selectedGate)) selectedGate = null;
+  if (infoTarget && !cellAtHome(snapshot, infoTarget)) { infoTarget = null; expandedInfo = null; }
   renderGateInfo(snapshot);
   markSelection();
 
@@ -1835,15 +1860,6 @@ playBtn.addEventListener("click", () => {
 });
 
 resetViewBtn.addEventListener("click", () => scene.resetView());
-
-// [4] 재생 속도 (Slow / Normal / Fast)
-const speedToggle = document.getElementById("speed-toggle");
-speedToggle.addEventListener("click", (e) => {
-  const btn = e.target.closest(".segmented-btn");
-  if (!btn) return;
-  playSpeed = btn.dataset.speed;
-  for (const b of speedToggle.querySelectorAll(".segmented-btn")) b.classList.toggle("active", b === btn);
-});
 
 // ---------- 공유 / 내보내기 ----------
 

@@ -34,8 +34,14 @@
     <div class="workspace" id="workspace">
       <div class="ws-col ws-left" id="ws-left">
       <section class="panel panel-palette">
-        <h2 class="panel-title">Operations</h2>
+        <div class="palette-header">
+          <h2 class="panel-title" id="palette-title">Operations</h2>
+          <button class="icon-btn tool-icon-btn hidden" id="gate-info-close" title="Close (Esc)" aria-label="Close gate info">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+          </button>
+        </div>
         <div class="palette-body" id="gate-palette"></div>
+        <div class="gate-info hidden" id="gate-info"></div>
       </section>
 
       <div class="row-splitter" id="row-splitter-left"></div>
@@ -106,10 +112,7 @@
           <div class="circuit-scroll">
             <div class="circuit-grid" id="circuit-grid"></div>
           </div>
-          <div class="circuit-side">
-            <div class="circuit-formula" id="state-formula"></div>
-            <div class="gate-info hidden" id="gate-info"></div>
-          </div>
+          <div class="circuit-formula" id="state-formula"></div>
         </div>
         <div class="playback-controls">
           <button class="round-btn" id="reset-btn" title="To start">⏮</button>
@@ -117,11 +120,6 @@
           <button class="round-btn round-btn-primary" id="play-btn" title="Play">▶</button>
           <button class="round-btn" id="step-fwd-btn" title="Step forward">▶|</button>
           <span class="playback-status" id="playback-status">0 / 0 steps</span>
-          <div class="segmented speed-toggle" id="speed-toggle" title="Playback speed">
-            <button class="segmented-btn" data-speed="slow">Slow</button>
-            <button class="segmented-btn active" data-speed="normal">Normal</button>
-            <button class="segmented-btn" data-speed="fast">Fast</button>
-          </div>
         </div>
       </section>
 

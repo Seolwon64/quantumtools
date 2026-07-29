@@ -264,6 +264,9 @@ html, body {
   gap: var(--palette-section-gap);
 }
 
+/* 게이트 정보를 볼 때는 팔레트를 감춘다(같은 영역을 번갈아 쓴다) */
+.palette-body.hidden { display: none; }
+
 .palette-section {
   display: flex;
   flex-direction: column;
@@ -605,27 +608,20 @@ html, body {
   overflow: auto;
 }
 
-/* 상태벡터 + 게이트 정보를 세로로 쌓는 오른쪽 열 */
-.circuit-side {
-  flex: none;
-  max-width: 38%;
-  min-width: 0;
+/* [3] 게이트 정보 — Operations 패널에서 팔레트를 대신해 표시된다("Show info"로만 열림) */
+.palette-header {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  overflow: auto;
 }
+.palette-header .panel-title { flex: 1; min-width: 0; }
+.palette-header .hidden { display: none; }
 
-.circuit-side .circuit-formula {
-  max-width: none;
-  overflow: visible;
-}
-
-/* [2](b) 선택한 게이트 정보 — 상태벡터 아래 여백을 쓴다 */
 .gate-info {
-  flex: none;
-  border-top: 1px solid var(--bg);
-  padding: 8px 12px 2px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 2px 4px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -904,13 +900,14 @@ html, body {
   text-align: left;
   cursor: pointer;
 }
-.gate-menu-item:hover:not(:disabled),
-.gate-menu-item.active:not(:disabled) {
+.gate-menu-item:hover:not(.is-disabled),
+.gate-menu-item.active:not(.is-disabled) {
   background: var(--primary-dim);
   color: var(--primary);
 }
-/* 비활성 항목은 숨기지 않고 회색으로 남긴다(왜 못 쓰는지는 툴팁으로) */
-.gate-menu-item:disabled {
+/* 비활성 항목은 숨기지 않고 회색으로 남긴다. `disabled` 속성을 쓰면 브라우저가 마우스 이벤트를
+   막아 사유 툴팁이 뜨지 않으므로, 클래스로만 표현하고 클릭은 JS에서 막는다. */
+.gate-menu-item.is-disabled {
   color: var(--text-faint);
   cursor: default;
 }
@@ -936,16 +933,6 @@ html, body {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-}
-
-/* [4] 재생 속도 세그먼트 (오른쪽 정렬) */
-.speed-toggle {
-  margin-left: auto;
-  padding: 2px;
-}
-.speed-toggle .segmented-btn {
-  padding: 3px 9px;
-  font-size: 11px;
 }
 
 /* [6] 모션 최소화 선호 시 CSS 전환/애니메이션도 사실상 끈다(자바스크립트 트윈은 별도 처리). */
