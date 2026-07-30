@@ -104,7 +104,12 @@ function isValidPlacement(cell, qubitCount) {
 export function simulate(qubitCount, grid, steps, clbitCount = qubitCount) {
   const resolved = resolveDeferred(qubitCount, clbitCount, grid);
   if (resolved.error) throw new Error(resolved.error);
-  grid = resolved.grid;
+  return simulateResolved(qubitCount, resolved.grid, steps);
+}
+
+// 이미 지연 측정 변환을 마친 그리드를 실행한다. 변환을 두 번 적용하면 조건부 셀에 제어가
+// 중복으로 붙어 잘못된 검증 실패가 나므로, 변환은 딱 한 번만 거치게 분리해 둔다.
+function simulateResolved(qubitCount, grid, steps) {
   const limit = steps === undefined ? usedColumnCount(grid) : steps;
   let state = initialState(qubitCount);
   for (let col = 0; col < limit; col++) {
@@ -187,22 +192,29 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   let stepIndex = usedColumnCount(grid);
   let isPlaying = false;
   let isAnimating = false;
+  let runtimeError = null; // 재생/스텝 중 예상치 못한 예외가 났을 때 사용자에게 보여줄 사유
 
+  // 컨트롤러 내부의 유일한 상태 접근점. **예외를 던지지 않고** { state, error }를 돌려준다
+  // (예상 가능한 실패를 예외로 만들면 호출부마다 try/catch가 필요해지고, 하나라도 빠지면
+  //  재생 루프가 죽어 앱이 조작 불가 상태로 남는다 — 실제로 그 버그가 있었다).
   function stateAt(step) {
-    return simulate(qubitCount, grid, step, clbitCount);
+    const resolved = resolveDeferred(qubitCount, clbitCount, grid);
+    if (resolved.error) return { state: initialState(qubitCount), error: resolved.error };
+    return { state: simulateResolved(qubitCount, resolved.grid, step), error: null };
+  }
+
+  // 회로가 시뮬레이션 가능한지 — addControl/setParams 등과 같은 { ok, reason } 패턴.
+  function validate() {
+    const { error } = resolveDeferred(qubitCount, clbitCount, grid);
+    return error ? { ok: false, reason: error } : { ok: true };
   }
 
   function snapshot() {
     const totalSteps = usedColumnCount(grid);
     // 지연 측정으로 표현할 수 없는 회로는 상태를 계산하지 않고 사유를 올린다.
     // UI가 숫자 대신 사유를 보여주므로 아래 placeholder 상태가 결과로 제시되는 일은 없다.
-    let state, deferredError = null;
-    try {
-      state = stateAt(stepIndex);
-    } catch (err) {
-      deferredError = err.message;
-      state = initialState(qubitCount);
-    }
+    const { state, error } = stateAt(stepIndex);
+    const deferredError = error ?? runtimeError;
     return {
       qubitCount,
       clbitCount,
@@ -225,9 +237,30 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     };
   }
 
+  // 렌더(onChange)에서 터진 예외가 컨트롤러 상태를 오염시키거나 재생 루프를 죽이지 못하게 막는다.
   function notify() {
-    save(qubitCount, clbitCount, grid);
-    onChange(snapshot());
+    try {
+      save(qubitCount, clbitCount, grid);
+      onChange(snapshot());
+    } catch (err) {
+      console.error("Render failed:", err);
+    }
+  }
+
+  // 재생/스텝 실행을 감싸는 안전망. 어떤 예외가 나더라도 finally에서 플래그를 반드시 풀어
+  // UI가 조작 불가 상태로 남지 않게 한다 — 이 수정의 핵심 불변식이다.
+  async function runPlayback(fn) {
+    try {
+      runtimeError = null;
+      await fn();
+    } catch (err) {
+      console.error("Playback stopped:", err);
+      runtimeError = err?.message ?? String(err);
+    } finally {
+      isPlaying = false;
+      isAnimating = false;
+      notify();
+    }
   }
 
   // ---------- Undo/Redo 히스토리 ----------
@@ -605,8 +638,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   // 전환 애니메이션에 넘길 데이터. 중간 프레임은 시각적 트윈일 뿐이라 이전/다음 스텝의
   // 정확한 값(확률·블로흐·스텝열)을 함께 주고, 보간은 렌더 쪽(main.js)에서 한다.
   function transitionData(fromIdx, toIdx) {
-    const fs = stateAt(fromIdx);
-    const ts = stateAt(toIdx);
+    const fs = stateAt(fromIdx).state;
+    const ts = stateAt(toIdx).state;
     return {
       fromBloch: qubitBlochVector(fs, selectedQubit),
       toBloch: qubitBlochVector(ts, selectedQubit),
@@ -621,47 +654,51 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   async function stepForward() {
     const totalSteps = usedColumnCount(grid);
     if (isAnimating || isPlaying || stepIndex >= totalSteps) return;
-    isAnimating = true;
-    notify();
-    await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
-    stepIndex += 1;
-    isAnimating = false;
-    notify();
+    if (!validate().ok) return;
+    return runPlayback(async () => {
+      isAnimating = true;
+      notify();
+      await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
+      stepIndex += 1;
+    });
   }
 
   async function stepBackward() {
     if (isAnimating || isPlaying || stepIndex <= 0) return;
-    isAnimating = true;
-    notify();
-    await onAnimateStep(transitionData(stepIndex, stepIndex - 1));
-    stepIndex -= 1;
-    isAnimating = false;
-    notify();
+    if (!validate().ok) return;
+    return runPlayback(async () => {
+      isAnimating = true;
+      notify();
+      await onAnimateStep(transitionData(stepIndex, stepIndex - 1));
+      stepIndex -= 1;
+    });
   }
 
   async function play() {
     const totalSteps = usedColumnCount(grid);
     if (isAnimating || isPlaying || totalSteps === 0) return;
+    if (!validate().ok) return; // 시뮬레이션할 수 없는 회로는 애초에 재생하지 않는다
     if (stepIndex >= totalSteps) stepIndex = 0;
-    isPlaying = true;
-    notify();
-    while (stepIndex < totalSteps) {
-      if (!isPlaying) break;
-      isAnimating = true;
+    return runPlayback(async () => {
+      isPlaying = true;
       notify();
-      await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
-      stepIndex += 1;
-      isAnimating = false;
-      notify(); // [1] 정확한 상태는 전환이 끝난 뒤에만 표시
-      // 정확한 상태 위에서 잠깐 정지 후 다음 스텝
-      if (isPlaying && stepIndex < totalSteps && onStepPause) await onStepPause();
-    }
-    isPlaying = false;
-    notify();
+      while (stepIndex < totalSteps) {
+        if (!isPlaying) break;
+        isAnimating = true;
+        notify();
+        await onAnimateStep(transitionData(stepIndex, stepIndex + 1));
+        stepIndex += 1;
+        isAnimating = false;
+        notify(); // [1] 정확한 상태는 전환이 끝난 뒤에만 표시
+        // 정확한 상태 위에서 잠깐 정지 후 다음 스텝
+        if (isPlaying && stepIndex < totalSteps && onStepPause) await onStepPause();
+      }
+    });
   }
 
   function pause() {
     isPlaying = false;
+    notify(); // 플래그만 내리고 UI를 갱신하지 않으면 버튼이 "재생 중"으로 남는다
   }
 
   notify();
@@ -671,6 +708,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     MAX_QUBITS,
     MAX_COLUMNS,
     getSnapshot: snapshot,
+    validate,
     placeGate,
     removeGate,
     addControl,

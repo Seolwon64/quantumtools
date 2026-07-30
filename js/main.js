@@ -93,6 +93,8 @@ const LABEL_WIDTH = 38;
 const ROW_PITCH = 56; // 행 높이 50 + gap 6 (세로는 조여 4~5큐비트 세로 스크롤 방지)
 const COL_PITCH = 54; // 셀 50 + margin 4
 const CELL_CENTER = 25; // 셀(50) 중심. 셀 높이=행 높이라 세로 오프셋 0
+// 회로 패널에서 캔버스 말고 나머지가 쓰는 세로 공간(툴바 + 재생 컨트롤 + 패딩)
+const CIRCUIT_CHROME = 132;
 
 const sphereContainer = document.getElementById("sphere-container");
 const scene = createBlochScene(sphereContainer);
@@ -105,6 +107,8 @@ const stateFormula = document.getElementById("state-formula");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
+const workspace = document.getElementById("workspace");
+const circuitPanel = document.querySelector(".panel-circuit");
 const clbitCountLabel = document.getElementById("clbit-count");
 const clbitMinusBtn = document.getElementById("clbit-minus");
 const clbitPlusBtn = document.getElementById("clbit-plus");
@@ -2000,15 +2004,44 @@ function render(snapshot) {
   qubitMinusBtn.disabled = busy || !snapshot.canRemoveQubit;
   qubitPlusBtn.disabled = busy || !snapshot.canAddQubit;
 
-  resetBtn.disabled = busy || snapshot.stepIndex === 0;
-  stepBackBtn.disabled = busy || snapshot.stepIndex === 0;
-  stepFwdBtn.disabled = busy || snapshot.stepIndex >= snapshot.totalSteps;
-
-  playBtn.disabled = snapshot.totalSteps === 0 || (snapshot.isAnimating && !snapshot.isPlaying);
+  // [2] 시뮬레이션할 수 없는 회로는 재생·스텝을 아예 막고 사유를 알려준다.
+  // 검증이 통과하면 deferredError가 사라지므로 다음 렌더에서 즉시 다시 활성화된다.
+  const blocked = snapshot.deferredError;
+  setPlaybackDisabled(resetBtn, busy || snapshot.stepIndex === 0, blocked);
+  setPlaybackDisabled(stepBackBtn, busy || snapshot.stepIndex === 0, blocked);
+  setPlaybackDisabled(stepFwdBtn, busy || snapshot.stepIndex >= snapshot.totalSteps, blocked);
+  setPlaybackDisabled(
+    playBtn,
+    snapshot.totalSteps === 0 || (snapshot.isAnimating && !snapshot.isPlaying),
+    blocked
+  );
   playBtn.textContent = snapshot.isPlaying ? "⏸" : "▶";
   playBtn.title = snapshot.isPlaying ? "Pause" : "Play";
 
   playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} steps`;
+
+  // [4] 고전 와이어까지 들어가도록 회로 패널 최소 높이를 내용에 맞춘다.
+  // (패널 높이가 워크스페이스 비율 고정이라 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
+  const rows = snapshot.qubitCount + (snapshot.clbitCount > 0 ? 1 : 0);
+  const needed = rows * ROW_PITCH + CIRCUIT_CHROME;
+  const cap = Math.round((workspace.clientHeight || 0) * 0.72);
+  circuitPanel.style.minHeight = `${cap > 0 ? Math.min(needed, cap) : needed}px`;
+}
+
+// 재생 버튼 비활성 처리. 사유가 있을 때는 `disabled` 대신 aria-disabled를 쓴다 —
+// 브라우저가 disabled 요소의 마우스 이벤트를 막아 사유 툴팁이 아예 뜨지 않기 때문이다.
+function setPlaybackDisabled(btn, plainDisabled, reason) {
+  if (reason) {
+    btn.disabled = false;
+    btn.classList.add("is-disabled");
+    btn.setAttribute("aria-disabled", "true");
+    btn.dataset.blockReason = reason;
+  } else {
+    btn.classList.remove("is-disabled");
+    btn.removeAttribute("aria-disabled");
+    delete btn.dataset.blockReason;
+    btn.disabled = plainDisabled;
+  }
 }
 
 buildPalette();
@@ -2081,19 +2114,36 @@ document.addEventListener("keydown", (e) => {
   if (e.shiftKey) circuit.redo();
   else circuit.undo();
 });
+// aria-disabled로 막아둔 버튼은 클릭이 실제로 들어오므로 핸들러에서 걸러야 한다.
+// 대신 hover/focus 시 사유를 툴팁으로 보여준다.
+for (const btn of [resetBtn, stepBackBtn, stepFwdBtn, playBtn]) {
+  btn.addEventListener("mouseenter", () => {
+    if (btn.dataset.blockReason) showTooltip(btn, btn.dataset.blockReason);
+  });
+  btn.addEventListener("mouseleave", hideTooltip);
+}
+const playbackBlocked = (btn) => Boolean(btn.dataset.blockReason);
+
 resetBtn.addEventListener("click", () => {
+  if (playbackBlocked(resetBtn)) return;
   scene.clearTrail();
   circuit.reset();
 });
-stepBackBtn.addEventListener("click", () => circuit.stepBackward());
-stepFwdBtn.addEventListener("click", () => circuit.stepForward());
+stepBackBtn.addEventListener("click", () => {
+  if (!playbackBlocked(stepBackBtn)) circuit.stepBackward();
+});
+stepFwdBtn.addEventListener("click", () => {
+  if (!playbackBlocked(stepFwdBtn)) circuit.stepForward();
+});
 
 playBtn.addEventListener("click", () => {
+  if (playbackBlocked(playBtn)) return;
   if (circuit.getSnapshot().isPlaying) {
     circuit.pause();
   } else {
     scene.clearTrail();
-    circuit.play();
+    // 예상치 못한 예외가 나도 unhandled rejection으로 새지 않게 한다(컨트롤러가 복구는 이미 보장).
+    circuit.play()?.catch((err) => console.error("Playback failed:", err));
   }
 });
 

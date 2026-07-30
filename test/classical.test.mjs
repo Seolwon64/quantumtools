@@ -18,6 +18,7 @@ const mk = () => createCircuitController({ onChange: () => {}, onAnimateStep: as
 const near = (a, b, e = 1e-9) => Math.abs(a - b) < e;
 const emptyGrid = (n) => Array.from({ length: MAX_COLUMNS }, () => new Array(n).fill(null));
 const cell = (gate, targets, controls = [], params = {}) => ({ gate, targets, controls, params });
+const cellAt = (c, col, row) => c.getSnapshot().grid[col][row];
 const S = Math.SQRT1_2;
 
 // ---------- [6] 회귀: 측정이 없는 회로는 진폭까지 완전히 동일해야 한다 ----------
@@ -276,4 +277,105 @@ test("Qiskit: c_if와 measure 대상 비트", () => {
   assert.match(code, /QuantumCircuit\(3, 3\)/);
   assert.match(code, /qc\.measure\(2, 1\)/);
   assert.match(code, /qc\.x\(2\)\.c_if\(qc\.cregs\[0\], 2\)/);
+});
+
+// ---------- 재생 루프 예외 격리 (앱이 멈추던 버그) ----------
+// 유효하지 않은 회로에서 재생을 누르면 루프가 예외로 빠져나가며 isPlaying/isAnimating이
+// true로 고정돼 앱 전체가 조작 불가가 됐다. 어떤 경우에도 플래그가 풀려야 한다.
+
+function invalidController() {
+  const c = mk();
+  c.placeGate(0, 1, "X");
+  c.setCondition(0, 1, 0); // c[0]에 아무도 기록하지 않은 조건 → 시뮬레이션 불가
+  return c;
+}
+
+test("유효하지 않은 회로: play() 후에도 isPlaying/isAnimating이 풀려 있다", async () => {
+  const c = invalidController();
+  assert.ok(c.getSnapshot().deferredError, "전제: 검증 실패 상태");
+  await c.play();
+  const s = c.getSnapshot();
+  assert.equal(s.isPlaying, false, "isPlaying이 고정되면 앱이 멈춘다");
+  assert.equal(s.isAnimating, false, "isAnimating이 고정되면 앱이 멈춘다");
+});
+
+test("유효하지 않은 회로: stepForward/stepBackward 후에도 플래그가 풀려 있다", async () => {
+  const c = invalidController();
+  await c.stepForward();
+  await c.stepBackward();
+  const s = c.getSnapshot();
+  assert.equal(s.isPlaying, false);
+  assert.equal(s.isAnimating, false);
+});
+
+test("재생 실패 후에도 배치/삭제/undo가 정상 동작한다", async () => {
+  const c = invalidController();
+  await c.play();
+  c.placeGate(2, 0, "H");
+  assert.ok(cellAt(c, 2, 0), "재생 실패 후 게이트를 놓을 수 있어야 한다");
+  c.removeGate(2, 0);
+  assert.equal(cellAt(c, 2, 0), null);
+  c.undo();
+  assert.ok(cellAt(c, 2, 0), "undo도 동작해야 한다");
+});
+
+test("onAnimateStep이 예외를 던져도 복구된다(예상치 못한 예외 안전망)", async () => {
+  const c = createCircuitController({
+    onChange: () => {},
+    onAnimateStep: async () => { throw new Error("boom"); },
+  });
+  c.placeGate(0, 0, "H"); // 유효한 회로
+  await c.play();
+  const s = c.getSnapshot();
+  assert.equal(s.isPlaying, false);
+  assert.equal(s.isAnimating, false);
+  assert.match(s.deferredError ?? "", /boom/); // 사유가 사용자에게 전달된다
+  c.placeGate(1, 1, "X");
+  assert.ok(cellAt(c, 1, 1), "예외 후에도 조작 가능해야 한다");
+});
+
+test("onChange(렌더)가 예외를 던져도 컨트롤러가 죽지 않는다", () => {
+  let boom = true;
+  const c = createCircuitController({
+    onChange: () => { if (boom) throw new Error("render exploded"); },
+    onAnimateStep: async () => {},
+  });
+  c.placeGate(0, 0, "H"); // notify에서 예외 → 삼켜져야 한다
+  boom = false;
+  assert.ok(c.getSnapshot().grid[0][0], "회로 변경은 반영되어야 한다");
+});
+
+test("validate(): 조건을 지우거나 Measure를 추가하면 즉시 유효해진다", () => {
+  const c = invalidController();
+  const bad = c.validate();
+  assert.equal(bad.ok, false);
+  assert.match(bad.reason, /nothing has measured into c\[0\]/);
+
+  c.setCondition(0, 1, null); // 조건 제거
+  assert.equal(c.validate().ok, true);
+
+  c.setCondition(0, 1, 0);    // 다시 유효하지 않게
+  assert.equal(c.validate().ok, false);
+  c.placeGate(0, 0, "MEASURE"); // 같은 열이라 아직 기록 전 → 여전히 무효
+  assert.equal(c.validate().ok, false);
+  c.removeGate(0, 0);
+  c.placeGate(0, 0, "MEASURE");
+  c.setCondition(0, 1, null);
+  c.placeGate(1, 1, "X");
+  c.setCondition(1, 1, 0);    // 앞 열에서 기록한 c[0] 조건 → 유효
+  assert.equal(c.validate().ok, true);
+});
+
+test("정상 회로의 재생은 예전과 동일하게 끝까지 진행된다", async () => {
+  const c = mk();
+  c.placeGate(0, 0, "H");
+  c.placeGate(1, 1, "X");
+  c.reset();
+  assert.equal(c.getSnapshot().stepIndex, 0);
+  await c.play();
+  const s = c.getSnapshot();
+  assert.equal(s.stepIndex, s.totalSteps, "끝까지 재생");
+  assert.equal(s.isPlaying, false);
+  assert.equal(s.isAnimating, false);
+  assert.equal(s.deferredError, null);
 });
