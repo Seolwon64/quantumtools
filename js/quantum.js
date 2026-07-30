@@ -128,7 +128,7 @@ export const GATE_INFO = {
   BARRIER: { label: "⋮", kind: "noop", group: "structural", ready: true, desc: "Barrier — visual separator (state unchanged)" },
   MEASURE: { label: "M", kind: "noop", group: "structural", ready: true, desc: "Measure — Z-basis measurement (fixes probabilities)" },
   RESET: { label: "|0⟩", kind: "reset", group: "structural", ready: true, desc: "Reset — initializes to |0⟩" },
-  IF: { label: "if", kind: "noop", group: "structural", ready: false, desc: "If — classical conditional (unsupported: no measurement collapse)" },
+  IF: { label: "if", kind: "dot", group: "structural", ready: true, minQubits: 1, desc: "If — drop on a gate to apply it only when a classical bit is 1" },
 };
 
 function cPolar(r, angle) {

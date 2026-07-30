@@ -715,6 +715,38 @@ html, body {
   color: var(--text-body);
 }
 
+/* [5] 지연 측정 안내 — 측정이 있는 회로에서는 반드시 보인다 */
+.deferred-note {
+  flex-basis: 100%;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--cat-pauli-fg);
+}
+.deferred-now {
+  font-weight: 800;
+  color: var(--primary);
+}
+.deferred-note-text {
+  flex-basis: 100%;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* 지연 측정으로 표현할 수 없는 회로 — 숫자 대신 이유를 크게 보여준다 */
+.state-error {
+  flex-basis: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--cat-pauli-bg);
+  color: var(--cat-pauli-fg);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
 .formula-coef {
   color: var(--primary);
 }
@@ -807,6 +839,59 @@ html, body {
   height: 1px;
   background: var(--text-faint);
   opacity: 0.35;
+}
+
+/* 고전 레지스터 와이어 — 표준 표기대로 이중선으로 그린다(위아래 두 줄) */
+.clbit-wire::before {
+  top: calc(50% - 2px);
+}
+.clbit-wire::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + 2px);
+  height: 1px;
+  background: var(--text-faint);
+  opacity: 0.35;
+}
+.clbit-label {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* 게이트 ↔ 고전 와이어 연결(이중선). 연결선과 같은 아래 레이어에 둔다. */
+.cl-connector {
+  position: absolute;
+  width: 4px;
+  border-left: 1px solid var(--text-body);
+  border-right: 1px solid var(--text-body);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 도착점의 기록/조건 대상 비트 번호 */
+.cl-bit-badge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--text-faint);
+  color: var(--text-body);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 조건부(if)는 값을 읽는 쪽이라 색으로 구분 */
+.cl-bit-badge.cl-bit-cond {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .grid-cell {

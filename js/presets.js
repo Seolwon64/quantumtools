@@ -75,11 +75,13 @@ export const PRESETS = [
 
   // ---- Protocols ----
   {
+    // 교과서 형태(중간 측정 + 조건부 보정). 시뮬레이션은 지연 측정 변환으로 처리되며,
+    // 예전 coherent(CX/CZ) 버전과 계산 결과가 동일하다.
     name: "Quantum teleportation",
-    description: "Move q0's state to q2 (coherent / deferred-measurement form)",
+    description: "Measure q0·q1, then conditional X/Z move q0's state to q2",
     category: "Protocols",
     qubits: 3,
-    circuit: "eyJ2IjoyLCJuIjozLCJwIjpbeyJjIjowLCJnIjoiSCIsInRnIjpbMF19LHsiYyI6MCwiZyI6IkgiLCJ0ZyI6WzFdfSx7ImMiOjEsImciOiJUIiwidGciOlswXX0seyJjIjoxLCJnIjoiWCIsInRnIjpbMl0sIngiOlsxXX0seyJjIjoyLCJnIjoiWCIsInRnIjpbMV0sIngiOlswXX0seyJjIjozLCJnIjoiSCIsInRnIjpbMF19LHsiYyI6NCwiZyI6IlgiLCJ0ZyI6WzJdLCJ4IjpbMV19LHsiYyI6NSwiZyI6IloiLCJ0ZyI6WzBdLCJ4IjpbMl19XX0",
+    circuit: "eyJ2IjoyLCJuIjozLCJwIjpbeyJjIjowLCJnIjoiSCIsInRnIjpbMF19LHsiYyI6MCwiZyI6IkgiLCJ0ZyI6WzFdfSx7ImMiOjEsImciOiJUIiwidGciOlswXX0seyJjIjoxLCJnIjoiWCIsInRnIjpbMl0sIngiOlsxXX0seyJjIjoyLCJnIjoiWCIsInRnIjpbMV0sIngiOlswXX0seyJjIjozLCJnIjoiSCIsInRnIjpbMF19LHsiYyI6NCwiZyI6Ik1FQVNVUkUiLCJ0ZyI6WzBdLCJwIjp7ImNiIjowfX0seyJjIjo0LCJnIjoiTUVBU1VSRSIsInRnIjpbMV0sInAiOnsiY2IiOjF9fSx7ImMiOjUsImciOiJYIiwidGciOlsyXSwicCI6eyJjaSI6MX19LHsiYyI6NiwiZyI6IloiLCJ0ZyI6WzJdLCJwIjp7ImNpIjowfX1dfQ",
   },
   {
     name: "Superdense coding",

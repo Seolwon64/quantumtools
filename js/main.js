@@ -7,6 +7,7 @@ import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
 import { gateMatrix, formatComplex, symbolicComplex, gateDescription, decompositionSteps } from "./gatematrix.js";
+import { hasMeasurement, measurementColumns, DEFERRED_NOTE } from "./classical.js";
 
 initResizableLayout();
 
@@ -25,7 +26,9 @@ const PALETTE_CATEGORIES = [
 ];
 
 // 미구현 게이트는 피처 플래그로 렌더링에서만 제외한다 (정의/엔진 코드는 그대로 유지).
-const GATE_ENABLED = { IF: false };
+const GATE_ENABLED = {}; // IF는 고전 레지스터가 생기며 활성화되었다
+// 고전 조건을 붙일 수 없는 게이트(비유니터리 마커 + 분해가 고정된 상대위상 게이트)
+const NON_CONDITIONABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL", "IF", "RCCX", "RC3X"]);
 
 // gate → 카테고리 id (색상 클래스 cat-* 용). 위 정의에서 파생한다.
 const GATE_CATEGORY = {};
@@ -102,6 +105,9 @@ const stateFormula = document.getElementById("state-formula");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
+const clbitCountLabel = document.getElementById("clbit-count");
+const clbitMinusBtn = document.getElementById("clbit-minus");
+const clbitPlusBtn = document.getElementById("clbit-plus");
 const clearBtn = document.getElementById("clear-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
@@ -731,6 +737,8 @@ const MENU_ICONS = {
   ctrlAdd: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/><line x1="17.5" y1="3" x2="17.5" y2="9"/>'),
   // 같은 표기 + "−" 배지
   ctrlRemove: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/>'),
+  // 고전 비트: 게이트에서 이중선이 아래로 내려가는 형태
+  clbit: svgIcon('<rect x="6.5" y="3.5" width="11" height="7" rx="1.6"/><line x1="10.2" y1="10.5" x2="10.2" y2="19"/><line x1="13.8" y1="10.5" x2="13.8" y2="19"/><line x1="5" y1="19" x2="19" y2="19"/>'),
   // 🗑 휴지통
   trash: svgIcon('<path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.3 1.3 0 0 0 1.3 1.2h6.6a1.3 1.3 0 0 0 1.3-1.2l.9-12.5"/><line x1="10.4" y1="10" x2="10.7" y2="16.8"/><line x1="13.6" y1="10" x2="13.3" y2="16.8"/>'),
 };
@@ -788,6 +796,20 @@ function openGateMenu(column, home, clientX, clientY) {
         else openRemoveControlPopover(column, controls, clientX, clientY);
       },
     },
+    // 고전 레지스터: Measure는 기록 대상 비트를, 그 밖의 게이트는 조건 비트를 고른다.
+    cell.gate === "MEASURE"
+      ? {
+          label: "Set classical bit", icon: "clbit", group: 1, enabled: snapshot.clbitCount > 0,
+          why: "There are no classical bits",
+          run: () => openMeasureBitPopover(column, home, snapshot.clbitCount, clientX, clientY),
+        }
+      : {
+          label: params.cif === undefined ? "Add condition (if)" : "Change / remove condition",
+          icon: "clbit", group: 1,
+          enabled: snapshot.clbitCount > 0 && !NON_CONDITIONABLE.has(cell.gate),
+          why: snapshot.clbitCount === 0 ? "There are no classical bits" : `${cell.gate} cannot be conditioned`,
+          run: () => openConditionPopover(column, home, snapshot.clbitCount, clientX, clientY),
+        },
     // 파괴적 동작은 맨 오른쪽에 구분선으로 분리한다
     { label: "Delete", icon: "trash", group: 2, danger: true, run: () => { circuit.removeGate(column, home); selectedGate = null; infoTarget = null; } },
   ];
@@ -866,6 +888,86 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("click", (e) => {
   if (gateMenuOpen() && !gateMenu.contains(e.target)) closeGateMenu();
 });
+
+// 고전 비트 하나를 고르는 팝오버(조건 지정 / 측정 대상 지정 공용).
+// 기존 배치 팝오버의 DOM·스타일(.qpick-row/.qpick-btn)을 그대로 재사용한다.
+function openBitPopover({ title, hint, count, current, clientX, clientY, onPick, allowNone }) {
+  closePlacePopover();
+  placePopover.innerHTML = "";
+  const t = document.createElement("div");
+  t.className = "place-popover-title";
+  t.textContent = title;
+  const h = document.createElement("div");
+  h.className = "place-popover-hint";
+  h.textContent = hint;
+  placePopover.append(t, h);
+
+  const row = document.createElement("div");
+  row.className = "qpick-row";
+  for (let k = 0; k < count; k++) {
+    const btn = document.createElement("button");
+    btn.className = "qpick-btn" + (k === current ? " selected" : "");
+    btn.textContent = `c[${k}]`;
+    btn.addEventListener("click", () => {
+      const res = onPick(k);
+      closePlacePopover();
+      if (res && !res.ok) showToast(res.reason);
+    });
+    row.appendChild(btn);
+  }
+  placePopover.appendChild(row);
+
+  const actions = document.createElement("div");
+  actions.className = "place-popover-actions";
+  const cancel = document.createElement("button");
+  cancel.className = "icon-btn";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", closePlacePopover);
+  actions.appendChild(cancel);
+  if (allowNone) {
+    const none = document.createElement("button");
+    none.className = "icon-btn";
+    none.textContent = allowNone;
+    none.addEventListener("click", () => {
+      const res = onPick(null);
+      closePlacePopover();
+      if (res && !res.ok) showToast(res.reason);
+    });
+    actions.appendChild(none);
+  }
+  placePopover.appendChild(actions);
+  showPopoverAt(clientX, clientY);
+  row.querySelector(".qpick-btn")?.focus();
+}
+
+function openConditionPopover(column, qubit, clbitCount, clientX, clientY) {
+  const snap = circuit.getSnapshot();
+  const home = homeOf(snap, column, qubit);
+  const current = home === -1 ? undefined : snap.grid[column][home]?.params?.cif;
+  openBitPopover({
+    title: "Conditional (if)",
+    hint: "Apply this gate only when the bit is 1",
+    count: clbitCount,
+    current,
+    clientX, clientY,
+    allowNone: current !== undefined ? "Remove condition" : null,
+    onPick: (k) => circuit.setCondition(column, qubit, k),
+  });
+}
+
+function openMeasureBitPopover(column, qubit, clbitCount, clientX, clientY) {
+  const snap = circuit.getSnapshot();
+  const home = homeOf(snap, column, qubit);
+  const current = home === -1 ? undefined : snap.grid[column][home]?.params?.cbit;
+  openBitPopover({
+    title: "Measure → classical bit",
+    hint: "Where to write the measurement result",
+    count: clbitCount,
+    current,
+    clientX, clientY,
+    onPick: (k) => circuit.setClassicalBit(column, qubit, k),
+  });
+}
 
 // 제어가 여럿일 때 어느 것을 제거할지 고른다 (컨트롤 선택 팝오버와 같은 UI).
 function openRemoveControlPopover(column, controls, clientX, clientY) {
@@ -1126,21 +1228,84 @@ function buildCircuitGrid(snapshot) {
     circuitGrid.appendChild(row);
   }
 
+  // 고전 레지스터 와이어(이중선). 고전 비트가 0개면 아예 그리지 않는다.
+  const clRow = snapshot.qubitCount; // 큐비트 행들 바로 아래
+  if (snapshot.clbitCount > 0) {
+    const row = document.createElement("div");
+    row.className = "qubit-row clbit-row";
+    const label = document.createElement("span");
+    label.className = "qubit-label clbit-label";
+    label.textContent = `c / ${snapshot.clbitCount}`; // IBM Composer식 묶음 표기
+    label.title = `Classical register: ${snapshot.clbitCount} bit(s)`;
+    row.appendChild(label);
+    const wire = document.createElement("div");
+    wire.className = "qubit-wire clbit-wire";
+    for (let col = 0; col < MAX_COLUMNS; col++) {
+      const cell = document.createElement("div");
+      cell.className = "grid-cell";
+      wire.appendChild(cell);
+    }
+    row.appendChild(wire);
+    circuitGrid.appendChild(row);
+  }
+
   // 다중 큐비트 게이트의 세로 연결선
   for (let col = 0; col < MAX_COLUMNS; col++) {
     for (let t = 0; t < snapshot.qubitCount; t++) {
       const cell = snapshot.grid[col]?.[t];
       if (!cell) continue;
+      const x = GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER;
       const qubits = involvedQubits(cell);
-      if (qubits.length < 2) continue;
-      const minQ = Math.min(...qubits);
-      const maxQ = Math.max(...qubits);
-      const line = document.createElement("div");
-      line.className = "gate-connector";
-      line.style.left = `${GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER - 1}px`;
-      line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER}px`;
-      line.style.height = `${(maxQ - minQ) * ROW_PITCH}px`;
-      circuitGrid.appendChild(line);
+      if (qubits.length >= 2) {
+        const minQ = Math.min(...qubits);
+        const maxQ = Math.max(...qubits);
+        const line = document.createElement("div");
+        line.className = "gate-connector";
+        line.style.left = `${x - 1}px`;
+        line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER}px`;
+        line.style.height = `${(maxQ - minQ) * ROW_PITCH}px`;
+        circuitGrid.appendChild(line);
+      }
+    }
+  }
+
+  // 고전 와이어로 가는 이중선: Measure의 기록(cbit) / 조건부 연산의 조건(cif).
+  // 한 열에 여러 개가 내려올 수 있으므로(예: 텔레포테이션의 두 측정) 좌우로 벌려 겹치지 않게 한다.
+  if (snapshot.clbitCount > 0) {
+    const clY = GRID_PAD_TOP + clRow * ROW_PITCH + CELL_CENTER;
+    for (let col = 0; col < MAX_COLUMNS; col++) {
+      const links = [];
+      for (let t = 0; t < snapshot.qubitCount; t++) {
+        const cell = snapshot.grid[col]?.[t];
+        if (!cell) continue;
+        const p = cell.params ?? {};
+        const bit = cell.gate === "MEASURE" ? p.cbit : p.cif;
+        if (bit === undefined) continue;
+        const isMeasure = cell.gate === "MEASURE";
+        const fromQ = isMeasure ? cell.targets[0] : Math.max(...involvedQubits(cell));
+        links.push({ bit, isMeasure, fromQ });
+      }
+      if (!links.length) continue;
+      const baseX = GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER;
+      links.forEach((l, i) => {
+        const x = baseX + (i - (links.length - 1) / 2) * 15; // 여러 개면 나란히
+        const top = GRID_PAD_TOP + l.fromQ * ROW_PITCH + CELL_CENTER;
+        const link = document.createElement("div");
+        link.className = "cl-connector";
+        link.style.left = `${x - 2}px`;
+        link.style.top = `${top}px`;
+        link.style.height = `${(clRow - l.fromQ) * ROW_PITCH}px`;
+        circuitGrid.appendChild(link);
+        const badge = document.createElement("div");
+        badge.className = "cl-bit-badge" + (l.isMeasure ? "" : " cl-bit-cond");
+        badge.textContent = String(l.bit);
+        badge.style.left = `${x}px`;
+        badge.style.top = `${clY}px`;
+        badge.title = l.isMeasure
+          ? `Measurement result is written to c[${l.bit}]`
+          : `Applied only when c[${l.bit}] is 1`;
+        circuitGrid.appendChild(badge);
+      });
     }
   }
 
@@ -1199,6 +1364,15 @@ circuitGrid.addEventListener("drop", (e) => {
       return;
     }
     openControlPopover(column, qubit, opt.candidates, e.clientX, e.clientY);
+    return;
+  }
+
+  // "if" 드롭: 이미 놓인 게이트에 고전 조건(c[k]==1)을 붙인다. •와 같은 조작 방식.
+  if (gateName === "IF") {
+    if (!cell.dataset.role) { showTransientTip(cell, "Drop “if” on a gate to make it conditional"); return; }
+    const snap = circuit.getSnapshot();
+    if (snap.clbitCount === 0) { showTransientTip(cell, "There are no classical bits — add one first"); return; }
+    openConditionPopover(column, qubit, snap.clbitCount, e.clientX, e.clientY);
     return;
   }
 
@@ -1724,6 +1898,14 @@ function formatAmplitude(re, im) {
 
 function renderStateFormula(snapshot) {
   stateFormula.innerHTML = "";
+  // 지연 측정으로 표현할 수 없는 회로: 숫자 대신 이유만 보여준다(조용히 틀린 결과 금지).
+  if (snapshot.deferredError) {
+    const err = document.createElement("div");
+    err.className = "state-error";
+    err.textContent = snapshot.deferredError;
+    stateFormula.appendChild(err);
+    return;
+  }
   const prefix = document.createElement("span");
   prefix.className = "formula-psi";
   prefix.textContent = "|ψ⟩ =";
@@ -1764,6 +1946,22 @@ function renderStateFormula(snapshot) {
   endian.addEventListener("mouseenter", () => showTooltip(endian, ENDIAN_TOOLTIP));
   endian.addEventListener("mouseleave", hideTooltip);
   stateFormula.appendChild(endian);
+
+  // [5] 정직성: 측정이 있는 회로는 화면의 중간 상태가 "붕괴 전" 상태임을 반드시 밝힌다.
+  if (hasMeasurement(snapshot.qubitCount, snapshot.grid)) {
+    const note = document.createElement("div");
+    note.className = "deferred-note";
+    const atMeasure = measurementColumns(snapshot.qubitCount, snapshot.grid).has(snapshot.stepIndex - 1);
+    note.innerHTML =
+      `<b>⚠ Deferred measurement</b>${atMeasure ? ' <span class="deferred-now">measured here — the state shown is NOT collapsed</span>' : ""}`;
+    note.title = DEFERRED_NOTE;
+    note.addEventListener("mouseenter", () => showTooltip(note, DEFERRED_NOTE));
+    note.addEventListener("mouseleave", hideTooltip);
+    const full = document.createElement("div");
+    full.className = "deferred-note-text";
+    full.textContent = DEFERRED_NOTE;
+    stateFormula.append(note, full);
+  }
 }
 
 // ---------- 메인 렌더 ----------
@@ -1777,6 +1975,9 @@ function render(snapshot) {
   applySphereModeUI(snapshot);
 
   qubitCountLabel.textContent = String(snapshot.qubitCount);
+  clbitCountLabel.textContent = String(snapshot.clbitCount);
+  clbitMinusBtn.disabled = !snapshot.canRemoveClbit;
+  clbitPlusBtn.disabled = !snapshot.canAddClbit;
   probEndian.textContent = endianLabelText(snapshot.qubitCount);
   updatePaletteAvailability(snapshot.qubitCount);
 
@@ -1843,6 +2044,14 @@ qubitPlusBtn.addEventListener("click", () => {
   scene.clearTrail();
   closePlacePopover();
   circuit.setQubitCount(circuit.getSnapshot().qubitCount + 1);
+});
+clbitMinusBtn.addEventListener("click", () => {
+  closePlacePopover();
+  circuit.setClbitCount(circuit.getSnapshot().clbitCount - 1);
+});
+clbitPlusBtn.addEventListener("click", () => {
+  closePlacePopover();
+  circuit.setClbitCount(circuit.getSnapshot().clbitCount + 1);
 });
 clearBtn.addEventListener("click", () => {
   scene.clearTrail();
@@ -1916,7 +2125,7 @@ async function copyText(text, label) {
 
 shareBtn.addEventListener("click", () => {
   const snap = circuit.getSnapshot();
-  copyText(buildShareUrl(snap.qubitCount, snap.grid), "Share link");
+  copyText(buildShareUrl(snap.qubitCount, snap.grid, snap.clbitCount), "Share link");
 });
 
 exportBtn.addEventListener("click", (e) => {
@@ -1940,13 +2149,13 @@ document.addEventListener("click", (e) => {
 
 document.getElementById("export-qasm").addEventListener("click", () => {
   const snap = circuit.getSnapshot();
-  copyText(toQASM(snap.qubitCount, snap.grid), "OpenQASM 2.0");
+  copyText(toQASM(snap.qubitCount, snap.grid, snap.clbitCount), "OpenQASM 2.0");
   exportMenu.classList.add("hidden");
 });
 
 document.getElementById("export-qiskit").addEventListener("click", () => {
   const snap = circuit.getSnapshot();
-  copyText(toQiskit(snap.qubitCount, snap.grid), "Qiskit code");
+  copyText(toQiskit(snap.qubitCount, snap.grid, snap.clbitCount), "Qiskit code");
   exportMenu.classList.add("hidden");
 });
 
@@ -1979,7 +2188,7 @@ for (const category of PRESET_CATEGORIES) {
       if (!dec) { showToast("Preset failed to load"); return; }
       scene.clearTrail();
       closePlacePopover();
-      circuit.loadCircuit(dec.qubitCount, dec.grid);
+      circuit.loadCircuit(dec.qubitCount, dec.grid, dec.clbitCount);
       showToast(`Loaded "${preset.name}" — Undo (Ctrl+Z) to revert`);
     });
     presetsMenu.appendChild(item);

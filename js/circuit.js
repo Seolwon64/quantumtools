@@ -15,6 +15,7 @@ import {
   decompositionOf,
 } from "./quantum.js";
 import { qubitBlochVector } from "./density.js";
+import { resolveDeferred } from "./classical.js";
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
@@ -98,7 +99,12 @@ function isValidPlacement(cell, qubitCount) {
 
 // 순수 시뮬레이션: 그리드의 처음 `steps` 칼럼을 적용한 상태벡터를 반환한다.
 // 칼럼 CTRL(•) 점은 같은 칼럼 게이트들에 추가 컨트롤로 부여된다.
-export function simulate(qubitCount, grid, steps) {
+// 고전 조건(params.cif)은 지연 측정 변환으로 양자 제어가 된다 — 변환 불가한 회로는 **예외를 던진다**
+// (조용히 틀린 상태를 돌려주지 않는다). 조건이 없는 회로는 그리드가 그대로 쓰여 결과가 불변이다.
+export function simulate(qubitCount, grid, steps, clbitCount = qubitCount) {
+  const resolved = resolveDeferred(qubitCount, clbitCount, grid);
+  if (resolved.error) throw new Error(resolved.error);
+  grid = resolved.grid;
   const limit = steps === undefined ? usedColumnCount(grid) : steps;
   let state = initialState(qubitCount);
   for (let col = 0; col < limit; col++) {
@@ -128,9 +134,9 @@ function loadStored() {
   }
 }
 
-function save(qubitCount, grid) {
+function save(qubitCount, clbitCount, grid) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ qubitCount, grid }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ qubitCount, clbitCount, grid }));
   } catch {
     // localStorage 사용 불가 - 무시
   }
@@ -147,11 +153,16 @@ function usedColumnCount(grid) {
 // initial: 공유 URL에서 디코딩한 {qubitCount, grid}(이미 canonical) — 있으면 localStorage보다 우선.
 export function createCircuitController({ onChange, onAnimateStep, onStepPause, initial }) {
   let qubitCount = DEFAULT_QUBITS;
+  let clbitCount = DEFAULT_QUBITS; // 고전 비트 수 — 큐비트 수와 독립, 기본은 같게
   let grid = emptyGrid(qubitCount);
 
   const stored = initial ?? loadStored();
   if (stored) {
     qubitCount = stored.qubitCount;
+    // 고전 비트 수가 없는 구버전 저장/URL은 큐비트 수와 같게 연다(기존 링크 무손상)
+    clbitCount = typeof stored.clbitCount === "number"
+      ? Math.max(0, Math.min(MAX_QUBITS, stored.clbitCount))
+      : qubitCount;
     grid = emptyGrid(qubitCount);
     for (let col = 0; col < Math.min(MAX_COLUMNS, stored.grid.length); col++) {
       for (let q = 0; q < qubitCount; q++) {
@@ -178,14 +189,24 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   let isAnimating = false;
 
   function stateAt(step) {
-    return simulate(qubitCount, grid, step);
+    return simulate(qubitCount, grid, step, clbitCount);
   }
 
   function snapshot() {
     const totalSteps = usedColumnCount(grid);
-    const state = stateAt(stepIndex);
+    // 지연 측정으로 표현할 수 없는 회로는 상태를 계산하지 않고 사유를 올린다.
+    // UI가 숫자 대신 사유를 보여주므로 아래 placeholder 상태가 결과로 제시되는 일은 없다.
+    let state, deferredError = null;
+    try {
+      state = stateAt(stepIndex);
+    } catch (err) {
+      deferredError = err.message;
+      state = initialState(qubitCount);
+    }
     return {
       qubitCount,
+      clbitCount,
+      deferredError,
       grid,
       selectedQubit,
       stepIndex,
@@ -194,6 +215,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
       isAnimating,
       canAddQubit: qubitCount < MAX_QUBITS,
       canRemoveQubit: qubitCount > MIN_QUBITS,
+      canAddClbit: clbitCount < MAX_QUBITS,
+      canRemoveClbit: clbitCount > 0,
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
       bloch: qubitBlochVector(state, selectedQubit),
@@ -203,7 +226,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   }
 
   function notify() {
-    save(qubitCount, grid);
+    save(qubitCount, clbitCount, grid);
     onChange(snapshot());
   }
 
@@ -228,7 +251,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     );
   }
   function captureState() {
-    return { qubitCount, grid: cloneGrid(grid) };
+    return { qubitCount, clbitCount, grid: cloneGrid(grid) };
   }
   // 회로 변경 직전에 호출: 현재 상태를 undo 스택에 넣고 redo 스택을 비운다(새 분기).
   function pushUndo() {
@@ -238,6 +261,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   }
   function restoreState(snap) {
     qubitCount = snap.qubitCount;
+    if (typeof snap.clbitCount === "number") clbitCount = snap.clbitCount;
     grid = cloneGrid(snap.grid);
     if (selectedQubit >= qubitCount) selectedQubit = qubitCount - 1;
     stepIndex = Math.min(stepIndex, usedColumnCount(grid));
@@ -269,6 +293,10 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     if (params.partner !== undefined) uiCell.partner = params.partner;
     const cell = migrateCell(uiCell, qubit);
     if (!isValidPlacement(cell, qubitCount)) return;
+    // Measure는 기본적으로 같은 인덱스의 고전 비트에 기록한다(q2 → c2). 범위를 벗어나면 마지막 비트로.
+    if (cell.gate === "MEASURE" && clbitCount > 0 && cell.params.cbit === undefined) {
+      cell.params.cbit = Math.min(cell.targets[0], clbitCount - 1);
+    }
     // 홈 = targets[0] (단일 타깃은 qubit과 동일; RCCX/RC3X는 첫 컨트롤이 홈)
     const home = cell.targets[0];
     // 관여하는 모든 큐비트 자리가 비어 있어야 배치 가능 (자기 자신이 점유 중이면 교체)
@@ -365,6 +393,43 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     return attachControlsTo(column, opt.home, picked); // 기존 제어가 있으면 누적된다
   }
 
+  // Measure가 기록할 고전 비트를 바꾼다. bit=null이면 기록하지 않음(표시만).
+  function setClassicalBit(column, qubit, bit) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    const home = occupantTarget(column, qubit);
+    if (home === -1) return { ok: false, reason: "No gate here" };
+    const cell = grid[column][home];
+    if (cell.gate !== "MEASURE") return { ok: false, reason: "Only Measure writes to a classical bit" };
+    if (bit !== null && (bit < 0 || bit >= clbitCount)) return { ok: false, reason: "That classical bit doesn't exist" };
+    pushUndo();
+    const params = { ...(cell.params ?? {}) };
+    if (bit === null) delete params.cbit; else params.cbit = bit;
+    grid[column][home] = { ...cell, params };
+    notify();
+    return { ok: true };
+  }
+
+  // 게이트에 고전 조건(c[bit]==1일 때만 적용)을 붙이거나(bit=숫자) 뗀다(bit=null).
+  // 시뮬레이션에서는 지연 측정 변환으로 양자 제어가 된다.
+  function setCondition(column, qubit, bit) {
+    if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
+    const home = occupantTarget(column, qubit);
+    if (home === -1) return { ok: false, reason: "No gate here" };
+    const cell = grid[column][home];
+    if (bit !== null) {
+      if (clbitCount === 0) return { ok: false, reason: "There are no classical bits — add one first" };
+      if (bit < 0 || bit >= clbitCount) return { ok: false, reason: "That classical bit doesn't exist" };
+      if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be conditioned` };
+      if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be conditioned` };
+    }
+    pushUndo();
+    const params = { ...(cell.params ?? {}) };
+    if (bit === null) delete params.cif; else params.cif = bit;
+    grid[column][home] = { ...cell, params };
+    notify();
+    return { ok: true };
+  }
+
   // 배치된 게이트의 파라미터만 교체한다(targets/controls·홈 위치는 그대로).
   // 컨텍스트 메뉴 "Edit parameters"용. 셀 구조는 바뀌지 않는다.
   function setParams(column, qubit, params) {
@@ -454,10 +519,14 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   // 프리셋/공유 회로 로드: 현재 회로를 통째로 교체한다. 큐비트 수도 자동 설정.
   // pushUndo로 반드시 undo 스택에 기록 → 실수로 눌러도 Undo로 되돌릴 수 있다.
-  function loadCircuit(nextQubitCount, nextGrid) {
+  function loadCircuit(nextQubitCount, nextGrid, nextClbitCount) {
     if (isAnimating || isPlaying) return;
     const n = Math.max(MIN_QUBITS, Math.min(MAX_QUBITS, nextQubitCount | 0));
     pushUndo();
+    // 고전 비트 수가 없는(구버전) 회로는 큐비트 수와 같게 연다
+    clbitCount = typeof nextClbitCount === "number"
+      ? Math.max(0, Math.min(MAX_QUBITS, nextClbitCount))
+      : n;
     const ng = emptyGrid(n);
     for (let col = 0; col < Math.min(MAX_COLUMNS, nextGrid.length); col++) {
       for (let q = 0; q < n; q++) {
@@ -471,6 +540,33 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     grid = ng;
     if (selectedQubit >= qubitCount) selectedQubit = qubitCount - 1;
     stepIndex = usedColumnCount(grid);
+    notify();
+  }
+
+  // 고전 비트 수 변경(0…MAX). 0이면 캔버스에서 고전 와이어가 사라진다.
+  // 줄어들어 범위를 벗어난 cbit/cif 참조는 함께 정리한다(조용히 잘못된 조건이 남지 않게).
+  function setClbitCount(next) {
+    if (isAnimating || isPlaying) return;
+    const n = Math.max(0, Math.min(MAX_QUBITS, next | 0));
+    if (n === clbitCount) return;
+    pushUndo();
+    clbitCount = n;
+    for (let col = 0; col < MAX_COLUMNS; col++) {
+      for (let q = 0; q < qubitCount; q++) {
+        const cell = grid[col][q];
+        if (!cell) continue;
+        const p = cell.params ?? {};
+        if (p.cbit !== undefined && p.cbit >= n) {
+          const params = { ...p }; delete params.cbit;
+          grid[col][q] = { ...cell, params };
+        }
+        const p2 = grid[col][q].params ?? {};
+        if (p2.cif !== undefined && p2.cif >= n) {
+          const params = { ...p2 }; delete params.cif;
+          grid[col][q] = { ...grid[col][q], params };
+        }
+      }
+    }
     notify();
   }
 
@@ -581,6 +677,9 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     controlOptions,
     addControlToGate,
     setParams,
+    setClassicalBit,
+    setCondition,
+    setClbitCount,
     expandGate,
     removeControl,
     clear,
