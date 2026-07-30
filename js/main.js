@@ -8,6 +8,7 @@ import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
 import { gateMatrix, formatComplex, symbolicComplex, gateDescription, decompositionSteps } from "./gatematrix.js";
 import { hasMeasurement, measurementColumns, DEFERRED_NOTE } from "./classical.js";
+import { phaseWheelGradient } from "./phase.js";
 
 initResizableLayout();
 
@@ -622,8 +623,42 @@ function buildMatrixGrid(m) {
   return grid;
 }
 
+// 파라미터 게이트의 **기호 행렬**(표시용 문자열). 팔레트에서는 각도가 정해지지 않았으므로
+// 대표값(π/2)으로 수치 행렬을 보여주면 거짓이 된다 — 기호로 보여주고 배치하라고 안내한다.
+// (행렬 계산 모듈은 건드리지 않는다. 이건 순수 표시 텍스트다.)
+const SYMBOLIC_MATRICES = {
+  RX: [["cos(θ/2)", "−i·sin(θ/2)"], ["−i·sin(θ/2)", "cos(θ/2)"]],
+  RY: [["cos(θ/2)", "−sin(θ/2)"], ["sin(θ/2)", "cos(θ/2)"]],
+  RZ: [["e^(−iθ/2)", "0"], ["0", "e^(iθ/2)"]],
+  P: [["1", "0"], ["0", "e^(iθ)"]],
+  U: [["cos(θ/2)", "−e^(iλ)·sin(θ/2)"], ["e^(iφ)·sin(θ/2)", "e^(i(φ+λ))·cos(θ/2)"]],
+};
+
+// 기호 행렬을 라벨 붙은 그리드로 (수치 행렬과 같은 시각 언어)
+function buildSymbolicGrid(rows) {
+  const labels = ["|0⟩", "|1⟩"];
+  const grid = document.createElement("div");
+  grid.className = "mx-grid mx-symbolic";
+  grid.style.gridTemplateColumns = `auto repeat(${rows.length}, auto)`;
+  const add = (cls, text) => {
+    const el = document.createElement("div");
+    el.className = cls;
+    el.textContent = text;
+    grid.appendChild(el);
+  };
+  add("mx-corner", "");
+  for (const l of labels) add("mx-collabel", l);
+  rows.forEach((row, r) => {
+    add("mx-rowlabel", labels[r]);
+    row.forEach((v, c) => add("mx-cell" + (r === c ? " mx-diag" : ""), v));
+  });
+  return grid;
+}
+
 // Operations 패널의 팔레트 ↔ 게이트 정보 전환. infoTarget이 있을 때만 정보가 보인다.
+// infoTarget = { column, home }(배치된 셀) 또는 { palette: gateName }(팔레트 게이트).
 function renderGateInfo(snapshot) {
+  if (infoTarget?.palette) return renderPaletteInfo(infoTarget.palette);
   const cell = cellAtHome(snapshot, infoTarget);
   if (!cell) {
     infoTarget = null;
@@ -722,6 +757,54 @@ function renderGateInfo(snapshot) {
   }
 }
 let expandedInfo = null; // { column, home } — "Expand definition"을 누른 셀
+
+// [1] 팔레트 게이트(아직 배치되지 않음)의 정보. 제어도 파라미터도 없으므로 기본 2×2를 보여준다.
+function renderPaletteInfo(gateName) {
+  const info = GATE_INFO[gateName];
+  gateInfoEl.classList.remove("hidden");
+  gatePalette.classList.add("hidden");
+  gateInfoClose.classList.remove("hidden");
+  paletteTitle.textContent = "Gate info";
+  gateInfoEl.innerHTML = "";
+
+  const title = document.createElement("div");
+  title.className = "gate-info-title";
+  title.textContent = info?.label ?? gateName;
+  gateInfoEl.appendChild(title);
+
+  const row = (html) => {
+    const d = document.createElement("div");
+    d.className = "gate-info-row";
+    d.innerHTML = html;
+    gateInfoEl.appendChild(d);
+    return d;
+  };
+  row(info?.desc ?? gateName);
+
+  const symbolic = SYMBOLIC_MATRICES[gateName];
+  if (symbolic) {
+    // 각도가 정해지지 않았으므로 대표값을 쓰지 않고 기호로 보여준다.
+    gateInfoEl.appendChild(buildSymbolicGrid(symbolic));
+    const note = document.createElement("div");
+    note.className = "gate-info-note";
+    note.textContent = "Place this gate to see its matrix with the chosen angle.";
+    gateInfoEl.appendChild(note);
+  } else {
+    const m = gateMatrix({ gate: gateName, targets: [0], controls: [], params: {} });
+    if (m.ok) {
+      gateInfoEl.appendChild(buildMatrixGrid(m));
+    } else if (m.tooLarge) {
+      row(`Matrix is ${m.size}x${m.size} (too large to display)`);
+    } else {
+      row(m.reason);
+    }
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "gate-info-note";
+  hint.textContent = "From the palette — drop it on the circuit to add controls or set parameters.";
+  gateInfoEl.appendChild(hint);
+}
 
 // ---------- [3] 컨텍스트 메뉴 (가로 아이콘 바) ----------
 
@@ -1111,6 +1194,15 @@ function makeGateChip(gateName, categoryId) {
   });
   btn.addEventListener("mouseenter", () => showTooltip(btn, btn.dataset.tip));
   btn.addEventListener("mouseleave", hideTooltip);
+  // [1] 우클릭 → 정보 패널(배치된 게이트의 Show info와 같은 패널·표시 로직).
+  // 좌클릭/드래그 경로는 건드리지 않는다.
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    hideTooltip();
+    expandedInfo = null;
+    infoTarget = { palette: gateName };
+    renderGateInfo(circuit.getSnapshot());
+  });
   gateButtons.push(btn);
   return btn;
 }
@@ -1212,7 +1304,8 @@ function buildCircuitGrid(snapshot) {
           const chip = document.createElement("div");
           chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
           if (info?.kind === "decomposed") chip.classList.add("placed-advanced"); // RCCX/RC3X 시각 구분
-          if (!role.primary) chip.classList.add("placed-partner"); // 두 번째 타깃은 살짝 흐리게(기존과 동일)
+          // 두 번째 타깃을 흐리게 하지 않는다 — RZZ/RXX처럼 한 게이트가 두 블록으로 그려질 때
+          // 한쪽만 감광되면 서로 다른 게이트처럼 보였다. 하나의 게이트는 같은 색이어야 한다.
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
           } else {
@@ -2043,6 +2136,33 @@ function setPlaybackDisabled(btn, plainDisabled, reason) {
     btn.disabled = plainDisabled;
   }
 }
+
+// [4] 위상 색상환을 Q-sphere 노드와 **같은 함수**로 칠한다(범례가 노드 색과 어긋나지 않게).
+document.getElementById("phase-wheel")
+  ?.style.setProperty("--phase-wheel-gradient", phaseWheelGradient(48));
+
+// [5] Q-sphere 노드 hover → 툴팁. showTooltip은 anchor의 getBoundingClientRect만 쓰므로
+// 3D 좌표를 감싼 가짜 anchor를 넘겨 기존 툴팁 스타일(다중행 포함)을 그대로 재사용한다.
+function nodeTooltipText(node) {
+  const amp = formatComplex({ re: node.re, im: node.im });
+  const rad = ((node.phaseRad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  return [
+    `|${node.label}⟩`,
+    `amplitude  ${amp}`,
+    `probability  ${node.probability.toFixed(1)}%`,
+    `phase  ${node.phaseText} = ${rad.toFixed(3)}`,
+  ].join("\n");
+}
+
+scene.setNodeHoverHandler((node, pt) => {
+  if (!node) { hideTooltip(); return; }
+  // 포인터 위치를 감싼 가짜 anchor (showTooltip은 getBoundingClientRect만 호출한다)
+  showTooltip({
+    getBoundingClientRect: () => ({
+      left: pt.x, right: pt.x, top: pt.y, bottom: pt.y, width: 0, height: 0, x: pt.x, y: pt.y,
+    }),
+  }, nodeTooltipText(node));
+});
 
 buildPalette();
 

@@ -30,17 +30,21 @@
   --cat-structural-bg: #eef0f2;   --cat-structural-fg: #4b5563;   /* Non-unitary — 회색 */
   --cat-advanced-bg: #dcd8e0;     --cat-advanced-fg: #3d3646;     /* Advanced · relative phase — 어두운 톤(+점선 테두리) */
 
-  /* 회로 캔버스(canvas) 전용 2단계 색 — 팔레트(파스텔 배경)와 같은 색 계열이되 채도·명도를 높인
-     진한 solid. 회로 블록은 이 색으로 불투명하게 채우고 글자는 흰색(WCAG AA). ⊕·× 기호는 이 색을
-     글리프 색으로 쓴다. 각 색은 흰색 대비 ≥4.5:1(계산): pauli 5.62 · phase 5.75 · rotation 8.20 ·
-     multi 10.39 · interaction 5.75 · structural 5.40 · advanced 10.57. 팔레트 버튼 색은 불변. */
-  --cat-pauli-c: #c62828;
-  --cat-phase-c: #1565c0;
-  --cat-rotation-c: #7b1fa2;
-  --cat-multi-c: #283593;
-  --cat-interaction-c: #0b7365;
-  --cat-structural-c: #546e7a;
-  --cat-advanced-c: #453a54;
+  /* 회로 캔버스(canvas) 전용 solid 색. 회로 블록은 이 색으로 불투명하게 채우고 글자는 흰색,
+     ⊕·× 기호는 이 색을 글리프 색으로 쓴다(팔레트 파스텔 --cat-*-bg/fg는 불변).
+     설계 규칙 두 가지:
+     1) **hue를 4계열로 축소** — 빨강(Pauli) / 파랑계열(Phase·Multi·Rotation을 hue 미세차로) /
+        청록(Interaction) / 회색(Non-unitary·Advanced). 한 회로가 알록달록해지지 않게.
+     2) **흰 글자 대비비를 전부 4.80으로 통일** — 대비비는 배경 휘도의 함수이므로 이를 맞추면
+        지각 밝기가 균일해져 특정 게이트가 더 중요해 보이는 착시가 사라진다(동시에 AA ≥4.5 충족).
+     값이 흔들리면 test/phase.test.mjs가 잡는다. */
+  --cat-pauli-c: #b85255;
+  --cat-phase-c: #4774ae;
+  --cat-rotation-c: #7c65b3;
+  --cat-multi-c: #596fb8;
+  --cat-interaction-c: #387c83;
+  --cat-structural-c: #6a737f;
+  --cat-advanced-c: #776e8b;
 }
 
 * {
@@ -1029,9 +1033,6 @@ html, body {
   background: var(--bg);
 }
 
-.placed-partner {
-  opacity: 0.75;
-}
 
 /* RCCX/RC3X 타깃 칩: 점선 테두리로 CCX(⊕)와 확실히 구분 */
 .placed-advanced {
@@ -1803,16 +1804,36 @@ html, body {
   display: none;
 }
 
+/* 위상 색상환 — 도넛(링) 형태. 그라디언트는 CSS에 하드코딩하지 않고 js/phase.js가 만든다
+   (색상환과 Q-sphere 노드가 반드시 같은 함수를 써야 범례가 정확하다). */
 .phase-wheel {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
+}
+
+/* 그라디언트는 ::before에만 두고 마스크로 가운데를 뚫는다.
+   (마스크를 .phase-wheel에 걸면 라벨·눈금까지 함께 잘린다) */
+.phase-wheel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   border-radius: 50%;
-  /* IBM 매핑: 상단(π/2)=초록, 우측(0)=빨강, 하단(3π/2)=보라, 좌측(π)=하늘색 */
-  background: conic-gradient(from 0deg,
-    #3adf3a 0deg, #dfdf3a 45deg, #df3a3a 90deg, #df3aa1 135deg,
-    #b63adf 180deg, #403adf 225deg, #3aa8df 270deg, #3adfa8 315deg, #3adf3a 360deg);
-  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
+  background: var(--phase-wheel-gradient, conic-gradient(#ccc, #ccc));
+  -webkit-mask: radial-gradient(circle, transparent 0 33%, #000 34% 100%);
+  mask: radial-gradient(circle, transparent 0 33%, #000 34% 100%);
+}
+
+.phase-wheel-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 7px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .phase-tick {
