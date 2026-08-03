@@ -28,6 +28,17 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **부드러운 상태 전환:** 슬라이더나 버튼으로 $\theta, \phi$ 값이 바뀔 때, 블로흐 구의 화살표 벡터가 툭툭 끊기지 않고 목표 지점까지 부드럽게 스르륵 이동(Linear Interpolation/Lerp 등 활용)하도록 구현한다.
 
 ## 3. 기능 및 구현 가이드
+### 3.x. 타이포그래피 시스템
+- **폰트: Geist Sans / Geist Mono (Vercel, SIL OFL)** — `fonts/`에 **자체 호스팅**한다(Google Fonts·CDN 금지: 서드파티 요청 제거 + FOUT 제어). `@font-face`에 `font-display: swap`, 본문 두 폰트는 `<link rel="preload">`.
+  - **가변 폰트 1개씩**을 쓴다(`Geist-Variable` 68KB + `GeistMono-Variable` 70KB = 138KB). 정적 400/500/600·400/500 5개(234KB)보다 **작고**, 가변이라 게이트 블록에 쓰는 **weight 550**이 가능하다.
+- **수학 기호 폴백(중요):** Geist는 이 앱이 쓰는 **⟨ ⟩ ψ ρ θ φ Φ ⊕ ⋮ ▾ ⟲ ⚠ ⏮ ⏸ 를 갖고 있지 않다**(fontkit으로 cmap 실측). 그대로 두면 그 글자만 시스템 폴백으로 튀므로, **Noto Sans Math / Noto Sans Symbols 2(OFL)를 필요한 코드포인트만 서브셋**해(`"QT Math"`, 합계 3KB) 스택의 **Geist 뒤**에 둔다. `unicode-range`로 범위를 못박아 Geist가 가진 글자(π·†·√·×·−)는 절대 가져가지 않는다. 브라우저 실측 결과 **시스템 폴백으로 남는 기호 0개**.
+- **CSS 변수만 쓴다:** `--font-sans`/`--font-mono`, 타입 스케일 `--text-xs 10 / --text-sm 11 / --text-base 13 / --text-md 15 / --text-lg 18`. **이 목록 밖의 크기를 새로 만들지 않는다**(⊕·× 회로 기호만 글자가 아닌 아이콘이라 `calc(var(--text-base) * 1.7)`로 파생).
+- **등폭(mono)을 쓰는 곳** — 숫자 열이 세로 정렬되어야 하는 영역 전부를 **style.css 상단 한 블록에 모아** 지정한다: 축소 밀도행렬·유니터리 행렬·상태벡터 진폭·확률 축/기저 라벨·샘플링 카운트·`q[0]`/`c/n`·스텝 카운터·QASM 코드·분해 스텝·각도 값.
+- **`button/input/select/textarea`는 폰트를 상속하지 않는다** — 명시하지 않으면 팔레트 게이트 버튼만 Arial로 렌더된다(실제로 겪음). 전역 규칙으로 `font-family/size/weight/feature-settings`를 `inherit`.
+- **비-mono 숫자에도 `tnum`**(`font-feature-settings: "tnum" 1` + `font-variant-numeric: tabular-nums`)을 body에 걸어 큐비트 수·스텝 카운터가 바뀔 때 폭이 흔들리지 않게 한다.
+- **캔버스 라벨은 폰트 로드 후 다시 그려야 한다** — DOM은 웹폰트가 늦게 와도 자동 리플로우되지만 **캔버스는 한 번 래스터화되면 끝**이다. `scene.js`가 라벨 스프라이트를 `LABEL_SPRITES`에 모아 두고 `document.fonts.ready` 후 재렌더한다. `FONT_STACK`은 `--font-sans`와 **반드시 일치**시킨다.
+- **주의:** 등폭은 비례폰트보다 넓어 기존 셀에서 줄바꿈이 생길 수 있다(밀도행렬 `0.000 − 0.500i`가 실제로 그랬다) → 해당 셀은 한 단계 작은 크기 + `white-space: nowrap`.
+
 - **3D Bloch Sphere:** Three.js를 사용하되, 구체(Sphere)의 와이어프레임과 X, Y, Z축은 얇고 은은하게 표현하여 미니멀한 감성을 유지한다. 상태 벡터(화살표)만 토스 블루 컬러로 명확하게 강조한다.
 - **컨트롤러 UI:** 각 입력 영역은 독립된 화이트 카드 UI로 감싸고, 슬라이더와 숫자는 직관적으로 매핑한다.
 - **코드 파일 구조 규칙:**

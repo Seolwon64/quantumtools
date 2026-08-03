@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Quantum Tools</title>
+<!-- 본문에 바로 쓰이는 두 폰트는 미리 받아 FOUT 구간을 줄인다(수학 서브셋은 용량이 작고
+     unicode-range로 필요할 때만 받으므로 preload하지 않는다). -->
+<link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css" />
 <script type="importmap">
 {

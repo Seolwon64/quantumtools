@@ -3,9 +3,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-// index.html의 html,body font-family와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가
-// DOM 폰트와 다른 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
-const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Segoe UI", Roboto, sans-serif';
+// style.css의 --font-sans와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가 DOM 폰트와 다른
+// 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
+// "QT Math"는 Geist가 갖고 있지 않은 ⟨ ⟩ 등을 채우는 서브셋 폰트다(style.css 참조).
+const FONT_STACK = '"Geist", "QT Math", system-ui, -apple-system, sans-serif';
+
+// 폰트 로딩 후 다시 그려야 할 캔버스 라벨 스프라이트들(아래 document.fonts.ready 참조)
+const LABEL_SPRITES = new Set();
 
 const SPHERE_RADIUS = 1;
 const WIREFRAME_COLOR = 0xb0b8c1;
@@ -96,13 +100,26 @@ function makeLabelSprite(text) {
   sprite.userData.canvas = canvas;
   sprite.userData.ctx = ctx;
   sprite.userData.texture = texture;
+  sprite.userData.text = text;
+  LABEL_SPRITES.add(sprite);
   return sprite;
 }
 
 function updateLabelSprite(sprite, text) {
   const { ctx, texture } = sprite.userData;
+  sprite.userData.text = text;
   drawLabelCanvas(ctx, sprite.userData.canvas.width, text);
   texture.needsUpdate = true;
+}
+
+// 캔버스 텍스트는 한 번 래스터화되면 끝이라, 웹폰트가 나중에 도착해도 스스로 갱신되지 않는다
+// (DOM은 자동 리플로우되지만 캔버스는 아니다). 폰트가 준비되면 라벨을 다시 그린다.
+if (typeof document !== "undefined" && document.fonts?.ready) {
+  document.fonts.ready.then(() => {
+    for (const sprite of LABEL_SPRITES) {
+      if (sprite.userData.text !== undefined) updateLabelSprite(sprite, sprite.userData.text);
+    }
+  });
 }
 
 // Q-sphere 마커 라벨("|0000⟩ π" 등)처럼 가로로 긴 문자열 전용. 정사각 캔버스를
