@@ -2,7 +2,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { phaseToRgb } from "./phase.js";
 
 // index.html의 html,body font-family와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가
 // DOM 폰트와 다른 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
@@ -38,11 +37,18 @@ function popcount(n) {
   return count;
 }
 
-// 위상 색은 phase.js의 **단일 정의**를 쓴다 — 색상환 범례와 노드가 같은 함수를 공유해야
-// 범례가 거짓말을 하지 않는다. 여기서는 THREE.Color로 감싸기만 한다.
+// IBM Quantum Composer의 Q-sphere 위상 색상환에 맞춘 매핑.
+// 기준점: phase 0 = 빨강, π/2 = 초록, π = 하늘색, 3π/2 = 보라. 위상 각도(라디안)를
+// 네 기준의 HSL hue(도)로 조각별 선형 보간해 IBM과 동일한 색을 낸다.
+// (일반 hue=phase/2π 방식은 π/2가 연두, π가 청록으로 나와 IBM과 어긋난다.)
+const PHASE_HUE_STOPS = [0, 120, 200, 285, 360]; // phase 0, π/2, π, 3π/2, 2π
 export function phaseToColor(phaseRad) {
-  const { r, g, b } = phaseToRgb(phaseRad);
-  return new THREE.Color(r, g, b);
+  const frac = ((phaseRad / (2 * Math.PI)) % 1 + 1) % 1; // 0..1
+  const seg = frac * 4;
+  const i = Math.min(3, Math.floor(seg));
+  const t = seg - i;
+  const hue = PHASE_HUE_STOPS[i] + (PHASE_HUE_STOPS[i + 1] - PHASE_HUE_STOPS[i]) * t;
+  return new THREE.Color().setHSL(hue / 360, 0.72, 0.55);
 }
 
 // WebGL은 대부분의 브라우저/GPU에서 Line의 linewidth를 무시하고 항상 1px로 그리므로,
@@ -156,59 +162,16 @@ export function createBlochScene(container) {
     controls.update();
   }
 
-  // Bloch 격자 (Bloch 모드 전용). 예전엔 wireframe 구 하나였는데 경도선이 빽빽해 화살표를
-  // 가렸다. 경도선은 빼되, 위상 φ는 수평 각도로 읽는 값이라 **x·y·z 축 기준 대원은 남긴다**.
-  const blochGridGroup = new THREE.Group();
-  scene.add(blochGridGroup);
-
-  const circlePoints = (radius, y, axis = "y") => {
-    const pts = [];
-    for (let s = 0; s <= 96; s++) {
-      const a = (2 * Math.PI * s) / 96;
-      const c = Math.cos(a) * radius;
-      const d = Math.sin(a) * radius;
-      if (axis === "y") pts.push(new THREE.Vector3(c, y, d));      // 수평(위도) 원
-      else if (axis === "x") pts.push(new THREE.Vector3(0, c, d)); // yz 평면 대원
-      else pts.push(new THREE.Vector3(c, d, 0));                   // xy 평면 대원
-    }
-    return pts;
-  };
-  const addLine = (pts, color, opacity) =>
-    blochGridGroup.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity })
-    ));
-
-  // 위도 사이 띠에 아주 옅은 음영 — 층이 구분되되 화살표·노드가 묻히지 않는 정도만.
-  const N_LAT = 8; // 극각을 8등분 → 위도선 7개(적도 포함)
-  const bandMat = new THREE.MeshBasicMaterial({
-    color: WIREFRAME_COLOR, transparent: true, opacity: 0.045,
-    side: THREE.DoubleSide, depthWrite: false,
+  // 와이어프레임 구 (Bloch 모드 전용)
+  const sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 28, 18);
+  const sphereMat = new THREE.MeshBasicMaterial({
+    color: WIREFRAME_COLOR,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.35,
   });
-  for (let i = 0; i < N_LAT; i += 2) {
-    const t0 = (Math.PI * i) / N_LAT;
-    const t1 = (Math.PI * (i + 1)) / N_LAT;
-    const band = new THREE.Mesh(
-      new THREE.SphereGeometry(SPHERE_RADIUS, 48, 8, 0, Math.PI * 2, t0, t1 - t0),
-      bandMat
-    );
-    blochGridGroup.add(band);
-  }
-
-  // 위도선(가로 원). 적도만 더 진하고 굵게 그려 기준선임을 드러낸다.
-  for (let i = 1; i < N_LAT; i++) {
-    const t = (Math.PI * i) / N_LAT;
-    const y = Math.cos(t) * SPHERE_RADIUS;
-    const r = Math.sin(t) * SPHERE_RADIUS;
-    const isEquator = i === N_LAT / 2;
-    addLine(circlePoints(r, y), isEquator ? 0x6b7684 : WIREFRAME_COLOR, isEquator ? 0.55 : 0.24);
-  }
-  // 적도는 한 겹 더 얹어 굵어 보이게 한다(WebGL이 linewidth를 무시하므로).
-  addLine(circlePoints(SPHERE_RADIUS * 0.999, 0), 0x6b7684, 0.45);
-
-  // 축 기준 대원: xz(적도는 위에서 그림) 외에 xy·yz 평면 — x·y·z 방향을 읽는 기준.
-  addLine(circlePoints(SPHERE_RADIUS, 0, "x"), WIREFRAME_COLOR, 0.3);
-  addLine(circlePoints(SPHERE_RADIUS, 0, "z"), WIREFRAME_COLOR, 0.3);
+  const wireframeSphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+  scene.add(wireframeSphereMesh);
 
   // X, Y, Z 축 (bloch X -> three X, bloch Y -> three Z, bloch Z -> three Y)
   const axisX = makeAxisMesh("x");
@@ -388,8 +351,6 @@ export function createBlochScene(container) {
     controls.update();
     // Q-sphere 외곽 실루엣 링을 항상 카메라를 향하게(billboard) 회전시켜 구 윤곽처럼 보이게 한다.
     if (qsphereBgGroup.visible) silhouette.quaternion.copy(camera.quaternion);
-    // [5] 노드 hover: mousemove마다 레이캐스트하면 비싸므로 좌표만 저장하고 **프레임당 1회**만 검사.
-    if (hoverDirty) { hoverDirty = false; updateHover(); }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
@@ -504,11 +465,6 @@ export function createBlochScene(container) {
   const qspherePhaseGroup = new THREE.Group(); // 위상 색 스템 라인
   scene.add(qsphereStateGroup, qspherePhaseGroup);
   const qsphereMarkerGeo = new THREE.SphereGeometry(1, 12, 10);
-  // 히트 영역용 투명 재질(눈에는 안 보이지만 raycaster는 맞힌다). 마커마다 공유한다.
-  const HIT_SCALE = 1.9;
-  const HIT_MATERIAL = new THREE.MeshBasicMaterial({
-    transparent: true, opacity: 0, depthWrite: false, depthTest: false,
-  });
 
   // 위상(라디안)을 π의 간단한 분수로 표기 (0, π, π/2, 2π/3 ...), 아니면 소수 배수로 근사.
   const SIMPLE_FRACTIONS = [
@@ -580,18 +536,7 @@ export function createBlochScene(container) {
         const marker = new THREE.Mesh(qsphereMarkerGeo, markerMat);
         marker.position.copy(pos);
         marker.scale.setScalar(radius);
-        // hover 툴팁에 쓸 값. 화면 표시는 main.js가 맡고 여기선 데이터만 실어 둔다.
-        marker.userData.node = {
-          label: entry.label, index: entry.index, re: entry.re, im: entry.im,
-          probability: entry.probability, phaseRad, phaseText: formatPhase(phaseRad), baseScale: radius,
-        };
         qsphereStateGroup.add(marker);
-        // 노드가 작아 정확히 겨냥하기 어려우므로 히트 영역을 시각 크기보다 크게 잡는다.
-        // (보이지 않지만 raycast는 되도록 opacity 0 + depthWrite:false)
-        const hit = new THREE.Mesh(qsphereMarkerGeo, HIT_MATERIAL);
-        hit.scale.setScalar(HIT_SCALE);
-        hit.userData.hitFor = marker;
-        marker.add(hit);
         nodes.push({ material: markerMat, base: 1 });
 
         const label = makeWideLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
@@ -604,59 +549,11 @@ export function createBlochScene(container) {
   }
 
   function setQSphereData(probabilities, qubitCount) {
-    clearHover();
     clearGroup(qsphereStateGroup);
     clearGroup(qspherePhaseGroup);
     rebuildQSphereRings(qubitCount);
     addQSphereNodes(probabilities, qubitCount);
   }
-
-  // ---------- [5] Q-sphere 노드 hover ----------
-  // Raycaster로 히트 테스트하되 renderLoop에서 프레임당 1회만 처리한다(≤60fps 스로틀).
-  const raycaster = new THREE.Raycaster();
-  const pointerNdc = new THREE.Vector2();
-  let hoverDirty = false;
-  let hoveredMarker = null;
-  let onNodeHover = null; // main.js가 툴팁을 그리는 콜백
-
-  function clearHover() {
-    if (hoveredMarker) {
-      hoveredMarker.scale.setScalar(hoveredMarker.userData.node.baseScale);
-      hoveredMarker.material.emissiveIntensity = 0.28;
-      hoveredMarker = null;
-    }
-    onNodeHover?.(null);
-  }
-
-  function updateHover() {
-    if (!qsphereStateGroup.visible || !onNodeHover) return;
-    raycaster.setFromCamera(pointerNdc, camera);
-    // 히트 메쉬(마커의 자식)까지 포함해 재귀 검사. 결과는 카메라에서 가까운 순으로 정렬되므로
-    // [0]만 보면 겹친 노드 중 가장 앞의 것만 잡힌다.
-    const hits = raycaster.intersectObjects(qsphereStateGroup.children, true);
-    const first = hits.find((h) => h.object.userData.hitFor || h.object.userData.node);
-    const marker = first ? (first.object.userData.hitFor ?? first.object) : null;
-    if (marker === hoveredMarker) {
-      if (marker) onNodeHover(marker.userData.node, lastPointerClient);
-      return;
-    }
-    clearHover();
-    if (!marker) return;
-    hoveredMarker = marker;
-    marker.scale.setScalar(marker.userData.node.baseScale * 1.35); // hover 강조
-    marker.material.emissiveIntensity = 0.6;
-    onNodeHover(marker.userData.node, lastPointerClient);
-  }
-
-  let lastPointerClient = { x: 0, y: 0 };
-  container.addEventListener("pointermove", (e) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    lastPointerClient = { x: e.clientX, y: e.clientY };
-    hoverDirty = true;
-  });
-  container.addEventListener("pointerleave", clearHover);
 
   // [3] 스텝 전환: 위치·색 보간 없이 짧은 크로스페이드. 이전 노드는 제자리에서 투명해지고,
   // 새 노드는 제자리에서 나타난다. slerp/hue 보간 없음.
@@ -700,7 +597,7 @@ export function createBlochScene(container) {
     axisX.visible = isBloch;
     axisY.visible = isBloch;
     axisZ.visible = isBloch;
-    blochGridGroup.visible = isBloch;
+    wireframeSphereMesh.visible = isBloch;
     qsphereBgGroup.visible = !isBloch;
     qsphereStateGroup.visible = !isBloch;
     qspherePhaseGroup.visible = !isBloch;
@@ -724,7 +621,5 @@ export function createBlochScene(container) {
     setMode,
     setQSphereData,
     crossfadeQSphere,
-    // [5] 노드 hover 콜백 등록: (node|null, {x,y} 화면좌표) — 툴팁 렌더는 main.js가 맡는다.
-    setNodeHoverHandler(fn) { onNodeHover = fn; },
   };
 }
