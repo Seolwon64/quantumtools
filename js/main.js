@@ -6,6 +6,7 @@ import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
+import { token, accentAlpha } from "./tokens.js";
 import { gateMatrix, formatComplex, symbolicComplex, gateDescription, decompositionSteps } from "./gatematrix.js";
 import { hasMeasurement, measurementColumns, DEFERRED_NOTE } from "./classical.js";
 
@@ -1506,7 +1507,7 @@ function renderDensityMatrix(snapshot) {
       const z = rho[a][b];
       const cell = document.createElement("div");
       cell.className = "dm-cell" + (a === b ? " dm-diag" : "");
-      cell.style.background = `rgba(49, 130, 246, ${(mag(z) / maxMag) * 0.5})`;
+      cell.style.background = accentAlpha((mag(z) / maxMag) * 0.5);
       cell.textContent = a === b ? fmt3(z.re) : fmtComplexCell(z); // 대각=실수, 비대각=복소수
       grid.appendChild(cell);
     }
@@ -1530,9 +1531,16 @@ function renderDensityMatrix(snapshot) {
 
 // ---------- 확률 SVG 막대 차트 ----------
 const SVGNS = "http://www.w3.org/2000/svg";
+// [4] 데이터 영역: 축·격자는 중립 램프로 최대한 옅게, 막대(데이터)만 액센트를 갖는다.
+// getter로 두어 CSS 램프가 바뀌면 함께 따라간다.
 const CHART = {
-  grid: "#e6e9ec", axis: "#c4c9d0", tick: "#8b95a1", label: "#4e5968",
-  theorySolid: "#3182f6", theoryLight: "#7fb0f7", observed: "#3182f6",
+  get grid() { return token("--gray-6"); },
+  get axis() { return token("--gray-7"); },
+  get tick() { return token("--gray-10"); },
+  get label() { return token("--gray-11"); },
+  get theorySolid() { return token("--accent-9"); },
+  get theoryLight() { return token("--accent-6"); },
+  get observed() { return token("--accent-9"); },
 };
 function svgEl(tag, attrs) {
   const el = document.createElementNS(SVGNS, tag);

@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { tokenHex, token } from "./tokens.js";
 
 // style.css의 --font-sans와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가 DOM 폰트와 다른
 // 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
@@ -12,11 +13,13 @@ const FONT_STACK = '"Geist", "QT Math", system-ui, -apple-system, sans-serif';
 const LABEL_SPRITES = new Set();
 
 const SPHERE_RADIUS = 1;
-const WIREFRAME_COLOR = 0xb0b8c1;
-const AXIS_COLOR = 0x98a2ad;
-const LABEL_COLOR = "#4e5968";
-const VECTOR_COLOR = 0x3182f6;
-const TRAIL_COLOR = 0x3182f6; // 확률 막대그래프와 동일한 토스 블루
+// 색은 전부 style.css의 램프에서 읽는다(JS에 하드코딩하면 조용히 어긋난다).
+// [4] 격자·축 같은 배경 요소는 중립 램프에서 최대한 옅게, 데이터(상태 벡터)만 액센트를 쓴다.
+const WIREFRAME_COLOR = tokenHex("--gray-7");
+const AXIS_COLOR = tokenHex("--gray-8");
+const LABEL_COLOR = token("--gray-11");
+const VECTOR_COLOR = tokenHex("--accent-9");
+const TRAIL_COLOR = tokenHex("--accent-9");
 const TRAIL_RADIUS = 0.012;
 
 // 초기/리셋 시점: 오른쪽 X축, 왼쪽 Y축, 위쪽 Z축이 보이는 구도.
@@ -161,6 +164,8 @@ export function createBlochScene(container) {
   // Q-sphere 유리 구에 하이라이트/음영/입체감을 주기 위한 조명 + 환경맵.
   // Bloch 모드의 와이어프레임/축/화살표/트레일은 전부 MeshBasicMaterial이라
   // 조명·환경맵 영향을 받지 않으므로 Bloch 뷰는 그대로 유지된다.
+  // 예외: 아래 0xffffff는 UI 색이 아니라 **광원의 색(백색광)**이다. 팔레트 토큰으로 바꾸면
+  // 3D 장면 전체에 색조가 입혀진다.
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
   keyLight.position.set(3, 4, 2);
@@ -382,8 +387,9 @@ export function createBlochScene(container) {
 
   // 유리 같은 반투명 구 (MeshPhysicalMaterial + transmission). 환경맵을 반사해
   // 표면에 하이라이트가 맺히고 속이 비쳐 입체적인 유리 구슬처럼 보인다.
+  const QS_FILL = tokenHex("--gray-3");
   const qsphereFillMat = new THREE.MeshPhysicalMaterial({
-    color: 0xeaf0f7,
+    color: QS_FILL,
     metalness: 0,
     roughness: 0.08,
     transmission: 1.0,
@@ -435,7 +441,7 @@ export function createBlochScene(container) {
   qsphereBgGroup.add(
     new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(equatorPts),
-      new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.4 })
+      new THREE.LineBasicMaterial({ color: tokenHex("--gray-8"), transparent: true, opacity: 0.4 })
     )
   );
 
@@ -447,7 +453,7 @@ export function createBlochScene(container) {
   }
   const silhouette = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(silhouettePoints),
-    new THREE.LineBasicMaterial({ color: 0x8b95a1, transparent: true, opacity: 0.5 })
+    new THREE.LineBasicMaterial({ color: tokenHex("--gray-8"), transparent: true, opacity: 0.5 })
   );
   qsphereBgGroup.add(silhouette);
 
@@ -463,7 +469,7 @@ export function createBlochScene(container) {
       child.geometry.dispose();
       child.material.dispose();
     }
-    const ringMat = new THREE.LineBasicMaterial({ color: 0x6b7684, transparent: true, opacity: 0.45 });
+    const ringMat = new THREE.LineBasicMaterial({ color: tokenHex("--gray-9"), transparent: true, opacity: 0.45 });
     const SEGMENTS = 64;
     for (let w = 1; w < qubitCount; w++) {
       const theta = (Math.PI * w) / qubitCount;
