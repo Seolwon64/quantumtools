@@ -41,6 +41,17 @@
   --font-sans: "Geist", "QT Math", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", "QT Math", ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* 간격 스케일 — 4px 배수. padding/margin/gap은 **이 값들만** 쓴다.
+     예외는 셋뿐이고 전부 주석을 남긴다: ① 1px 테두리 ② 3D 캔버스 내부 좌표 계산
+     ③ 아이콘·폰트 광학 보정용 1~2px 미세 조정. */
+  --space-1: 4px;   /* 아이콘과 글자 사이 */
+  --space-2: 8px;   /* 버튼 내부 세로 패딩 */
+  --space-3: 12px;  /* 그리드 간격, 패널 사이, 버튼 내부 가로 패딩 */
+  --space-4: 16px;  /* 패널 내부 패딩 */
+  --space-5: 24px;  /* 섹션 분리 */
+  --space-6: 32px;  /* 큰 분리 */
+  --space-8: 48px;
+
   /* 타입 스케일 — 이 값들만 쓴다(새 크기를 만들지 않는다) */
   --text-xs: 10px;   /* 카테고리 라벨 (대문자, 500) */
   --text-sm: 11px;   /* 패널 제목 (대문자, 600, letter-spacing .06em) */
@@ -60,12 +71,12 @@
 
   /* 팔레트 버튼 치수/간격/폰트 — 한 곳에서만 정의(나머지는 참조). Quirk 수준 조밀함 목표. */
   --gate-size: 40px;   /* 버튼 최소 한 변 (데스크톱; 모바일은 미디어쿼리로 44px) */
-  --gate-gap: 4px;     /* 버튼 사이 간격 */
+  --gate-gap: var(--space-2);     /* [3] 팔레트 게이트 그리드 간격 */
   --gate-font: var(--text-base);   /* 라벨 폰트 크기 */
   --gate-font-sm: var(--text-xs);  /* 긴 라벨(√X†, RCCX/RC3X)이 넘칠 때 한 단계 작게 */
   --palette-cat-font: var(--text-xs); /* 카테고리 헤더 폰트 */
-  --palette-cat-gap: 2px;       /* 헤더 ↔ 그리드 간격 */
-  --palette-section-gap: 4px;   /* 섹션 사이 간격 */
+  --palette-cat-gap: var(--space-1);     /* 헤더 ↔ 그리드 간격 */
+  --palette-section-gap: var(--space-2); /* 섹션 사이 간격 */
 
   /* 게이트 카테고리 색상 — 한 곳에서만 정의(변수 값만 교체, 개별 버튼 X). Qiskit Composer 계열
      저채도 파스텔 배경 + 진한 텍스트로 WCAG AA(≥4.5:1) 대비 만족. 게이트 버튼은 클래스만 참조.
@@ -151,7 +162,7 @@ html, body {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 16px 24px 8px;
+  padding: var(--space-4) var(--space-5) var(--space-2);
 }
 
 .app-header h1 {
@@ -188,12 +199,12 @@ html, body {
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   color: var(--text-body);
   text-decoration: none;
   font-size: var(--text-base);
   font-weight: 600;
-  padding: 8px 14px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 12px;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -205,10 +216,10 @@ html, body {
 
 .menu-panel {
   flex: none;
-  margin: 0 24px 12px;
+  margin: 0 var(--space-5) var(--space-3);
   background: var(--card-bg);
   border-radius: 16px;
-  padding: 16px 18px;
+  padding: var(--space-4);
 }
 
 .menu-panel.hidden {
@@ -227,7 +238,7 @@ html, body {
   min-height: 0;
   display: flex;
   flex-direction: row;
-  padding: 4px 24px 20px;
+  padding: var(--space-1) var(--space-5) var(--space-5);
 }
 
 /* 칼럼-메이저 구조: 세로 스플리터 1개(전체 높이) + 칼럼별 가로 스플리터 2개.
@@ -268,16 +279,17 @@ html, body {
   min-height: 0;
 }
 
+/* 스플리터의 두께가 곧 패널 사이 간격이다([3] --space-3) */
 .col-splitter {
   flex: none;
-  width: 14px;
+  width: var(--space-3);
   cursor: col-resize;
   position: relative;
 }
 
 .row-splitter {
   flex: none;
-  height: 14px;
+  height: var(--space-3);
   cursor: row-resize;
   position: relative;
 }
@@ -319,7 +331,7 @@ html, body {
 .panel {
   background: var(--card-bg);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  padding: var(--space-4);
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -328,7 +340,7 @@ html, body {
 }
 
 .panel-title {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-faint);
@@ -434,7 +446,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-1);
   line-height: 1;
   pointer-events: none;
 }
@@ -463,7 +475,7 @@ html, body {
   color: #fff;
   font-size: var(--text-base);
   font-weight: 600;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   white-space: pre; /* 줄바꿈 유지(행렬 미리보기), 자동 줄바꿈은 없음 */
   pointer-events: none;
@@ -485,11 +497,11 @@ html, body {
   z-index: 55;
   background: var(--card-bg);
   border-radius: 14px;
-  padding: 6px;
+  padding: var(--space-2);
   box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 190px;
 }
 
@@ -504,7 +516,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 600;
   color: var(--text-title);
-  padding: 9px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   cursor: pointer;
 }
@@ -520,11 +532,11 @@ html, body {
   z-index: 55;
   background: var(--card-bg);
   border-radius: 14px;
-  padding: 6px;
+  padding: var(--space-2);
   box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--space-1);
   min-width: 210px;
   max-width: 280px;
   max-height: 70vh;
@@ -540,17 +552,17 @@ html, body {
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 8px 12px 3px;
+  padding: var(--space-2) var(--space-3) var(--space-1);
 }
 .preset-cat:first-child {
-  padding-top: 4px;
+  padding-top: var(--space-1);
 }
 /* 이름만 표시(설명은 hover 툴팁) */
 .preset-item {
   border: none;
   background: transparent;
   text-align: left;
-  padding: 6px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 9px;
   cursor: pointer;
   font-size: var(--text-base);
@@ -572,7 +584,7 @@ html, body {
   color: #fff;
   font-size: var(--text-base);
   font-weight: 600;
-  padding: 10px 18px;
+  padding: var(--space-3) var(--space-4);
   border-radius: 999px;
   opacity: 0;
   pointer-events: none;
@@ -599,8 +611,8 @@ html, body {
 .circuit-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .circuit-toolbar .panel-title {
@@ -610,7 +622,7 @@ html, body {
 .qubit-stepper {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -645,7 +657,7 @@ html, body {
   color: var(--text-faint);
   font-size: var(--text-base);
   font-weight: 600;
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   cursor: pointer;
 }
@@ -679,7 +691,7 @@ html, body {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .circuit-scroll {
@@ -693,7 +705,7 @@ html, body {
 .palette-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .palette-header .panel-title { flex: 1; min-width: 0; }
 .palette-header .hidden { display: none; }
@@ -702,10 +714,10 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 2px 4px;
+  padding: var(--space-1) var(--space-1) var(--space-1);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-body);
 }
@@ -724,10 +736,10 @@ html, body {
 .gate-info-steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gate-info-step {
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 6px;
   background: var(--bg);
   font-size: var(--text-xs);
@@ -739,7 +751,7 @@ html, body {
 /* 라벨 붙은 유니터리 행렬. .dm-grid(밀도행렬)와 같은 시각 언어를 쓰되 크기를 일반화했다. */
 .mx-grid {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
   width: max-content;
   max-width: 100%;
 }
@@ -754,14 +766,14 @@ html, body {
   color: var(--text-faint);
   white-space: nowrap;
 }
-.mx-rowlabel { justify-content: flex-end; padding-right: 3px; }
+.mx-rowlabel { justify-content: flex-end; padding-right: var(--space-1); }
 .mx-cell {
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 52px;
   min-height: 26px;
-  padding: 3px 5px;
+  padding: var(--space-1) var(--space-1);
   border-radius: 6px;
   background: var(--bg);
   color: var(--text-title);
@@ -784,8 +796,8 @@ html, body {
   align-items: center;
   align-content: center;
   flex-wrap: wrap;
-  gap: 5px;
-  padding: 8px 12px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-md);
   font-weight: 600;
   color: var(--text-title);
@@ -799,7 +811,7 @@ html, body {
 /* [5] 지연 측정 안내 — 측정이 있는 회로에서는 반드시 보인다 */
 .deferred-note {
   flex-basis: 100%;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 700;
   color: var(--cat-pauli-fg);
@@ -819,7 +831,7 @@ html, body {
 /* 지연 측정으로 표현할 수 없는 회로 — 숫자 대신 이유를 크게 보여준다 */
 .state-error {
   flex-basis: 100%;
-  padding: 10px 12px;
+  padding: var(--space-3) var(--space-3);
   border-radius: 10px;
   background: var(--cat-pauli-bg);
   color: var(--cat-pauli-fg);
@@ -853,8 +865,8 @@ html, body {
   isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 2px 10px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-3);
   width: max-content;
 }
 
@@ -968,7 +980,7 @@ html, body {
   transform: translate(-50%, -50%);
   min-width: 15px;
   height: 15px;
-  padding: 0 3px;
+  padding: 0 var(--space-1);
   border-radius: 4px;
   background: var(--card-bg);
   border: 1px solid var(--text-faint);
@@ -990,7 +1002,7 @@ html, body {
   flex: none;
   width: 50px;
   height: 50px;
-  margin-right: 4px;
+  margin-right: var(--space-1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1056,11 +1068,11 @@ html, body {
 .gate-menu {
   position: fixed;
   z-index: 60;
-  padding: 4px;
+  padding: var(--space-1);
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   background: var(--card-bg);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
@@ -1109,7 +1121,7 @@ html, body {
   flex: none;
   width: 1px;
   align-self: stretch;
-  margin: 4px 3px;
+  margin: var(--space-1) var(--space-1);
   background: var(--bg);
 }
 
@@ -1127,8 +1139,8 @@ html, body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 /* [6] 모션 최소화 선호 시 CSS 전환/애니메이션도 사실상 끈다(자바스크립트 트윈은 별도 처리). */
@@ -1179,7 +1191,7 @@ html, body {
   color: #fff;
   font-size: var(--text-base);
   font-weight: 700;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -1195,7 +1207,7 @@ html, body {
 }
 
 .playback-status {
-  margin-left: 4px;
+  margin-left: var(--space-1);
   font-size: var(--text-base);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -1205,7 +1217,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-3);
 }
 
 .prob-toolbar .panel-title {
@@ -1224,14 +1236,14 @@ html, body {
 .prob-toolbar-left {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .prob-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 /* 비트 순서(엔디언) 라벨 — 본문보다 작고 회색으로 시선을 뺏지 않게 */
@@ -1247,15 +1259,15 @@ html, body {
 /* 상태벡터 수식 아래 줄에 표시 (flex-wrap 컨테이너에서 새 줄로 내림) */
 .formula-endian {
   flex-basis: 100%;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .segmented {
   display: flex;
   background: var(--bg);
   border-radius: 9px;
-  padding: 2px;
-  gap: 2px;
+  padding: var(--space-1);
+  gap: var(--space-1);
 }
 
 .segmented.hidden {
@@ -1268,7 +1280,7 @@ html, body {
   color: var(--text-body);
   font-size: var(--text-base);
   font-weight: 700;
-  padding: 4px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
@@ -1283,7 +1295,7 @@ html, body {
 .prob-hide-toggle {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-faint);
@@ -1305,11 +1317,11 @@ html, body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
   min-height: 16px;
-  margin-top: 6px;
-  padding: 0 4px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-1);
 }
 .prob-footer.hidden {
   display: none;
@@ -1325,7 +1337,7 @@ html, body {
   color: var(--text-body);
   font-size: var(--text-sm);
   font-weight: 700;
-  padding: 4px 10px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
@@ -1339,14 +1351,14 @@ html, body {
 .prob-sampling {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .prob-sampling.hidden {
   display: none;
 }
 .shots-input {
   width: 64px;
-  padding: 4px 6px;
+  padding: var(--space-1) var(--space-2);
   border: none;
   border-radius: 7px;
   background: var(--bg);
@@ -1362,7 +1374,7 @@ html, body {
   color: #fff;
   font-size: var(--text-base);
   font-weight: 700;
-  padding: 4px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 7px;
   cursor: pointer;
   transition: opacity 0.12s ease;
@@ -1377,7 +1389,7 @@ html, body {
   color: var(--text-body);
   font-size: var(--text-base);
   font-weight: 700;
-  padding: 4px 10px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
@@ -1477,7 +1489,7 @@ html, body {
 .prob-legend {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-body);
@@ -1485,7 +1497,7 @@ html, body {
 .prob-legend .lg-item {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .prob-legend .lg-sw {
   width: 11px;
@@ -1508,7 +1520,7 @@ html, body {
   font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1.5;
-  padding: 8px 11px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   white-space: nowrap;
   pointer-events: none;
@@ -1519,7 +1531,7 @@ html, body {
 }
 .chart-tooltip .tt-title {
   font-weight: 700;
-  margin-bottom: 3px;
+  margin-bottom: var(--space-1);
 }
 .chart-tooltip .tt-dim {
   color: #b0b8c1;
@@ -1535,7 +1547,7 @@ html, body {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 14px;
+  gap: var(--space-3);
 }
 .prob-left {
   flex: 1;
@@ -1548,7 +1560,7 @@ html, body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   overflow-y: auto;
 }
 .dm-header {
@@ -1561,14 +1573,14 @@ html, body {
 .dm-qubit-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 /* 2×2 행렬: ρ 코너 + 열/행 기저 라벨 + 4개 값 셀 */
 .dm-grid {
   display: grid;
   grid-template-columns: 18px 1fr 1fr;
   grid-template-rows: 16px 1fr 1fr;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .dm-corner,
 .dm-collabel,
@@ -1589,7 +1601,7 @@ html, body {
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  padding: 4px 5px;
+  padding: var(--space-1) var(--space-1);
   border-radius: 7px;
   background: var(--bg);
   color: var(--text-title);
@@ -1606,15 +1618,15 @@ html, body {
 .dm-metrics {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-body);
-  margin-top: 2px;
+  margin-top: var(--space-1);
 }
 .dm-stat {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .dm-stat b {
   color: var(--text-title);
@@ -1656,7 +1668,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .prob-bar-value {
@@ -1712,9 +1724,9 @@ html, body {
 
 .qubit-tabs {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   background: rgba(255, 255, 255, 0.85);
-  padding: 4px;
+  padding: var(--space-1);
   border-radius: 12px;
   backdrop-filter: blur(4px);
 }
@@ -1722,7 +1734,7 @@ html, body {
 .qubit-tab {
   border: none;
   background: transparent;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 9px;
   font-size: var(--text-base);
   font-weight: 700;
@@ -1742,7 +1754,7 @@ html, body {
 .sphere-mode-title {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 12px;
   font-size: var(--text-base);
   font-weight: 700;
@@ -1801,13 +1813,13 @@ html, body {
 .mode-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   height: 32px;
   border: none;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
   border-radius: 999px;
-  padding: 6px 12px 6px 6px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   cursor: pointer;
   box-sizing: border-box;
 }
@@ -1873,7 +1885,7 @@ html, body {
 .sphere-footer-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 /* Q-sphere 위상 색상 범례. 체크박스 대신 이 자리(구 패널 오른쪽 아래)에 배치한다. */
@@ -1908,7 +1920,7 @@ html, body {
   color: var(--text-body);
   background: rgba(255, 255, 255, 0.85);
   border-radius: 4px;
-  padding: 0 2px;
+  padding: 0 var(--space-1);
   transform: translate(-50%, -50%);
 }
 
@@ -1923,9 +1935,9 @@ html, body {
 .bloch-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   height: 32px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
@@ -1945,7 +1957,7 @@ html, body {
 .bloch-stat {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .bloch-mixed-label {
   color: var(--text-faint);
@@ -1973,7 +1985,7 @@ html, body {
   top: 66%; /* 원점 점보다 아래에 둬 점이 가려지지 않게 */
   transform: translate(-50%, -50%);
   max-width: 78%;
-  padding: 7px 13px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   background: rgba(25, 31, 40, 0.82);
   color: #fff;
@@ -1988,10 +2000,10 @@ html, body {
   display: none;
 }
 
-.tick-right { top: 50%; left: 100%; margin-left: 8px; }
-.tick-top { top: 0; left: 50%; margin-top: -8px; }
-.tick-left { top: 50%; left: 0; margin-left: -8px; }
-.tick-bottom { top: 100%; left: 50%; margin-top: 8px; }
+.tick-right { top: 50%; left: 100%; margin-left: var(--space-2); }
+.tick-top { top: 0; left: 50%; margin-top: calc(var(--space-2) * -1); }
+.tick-left { top: 50%; left: 0; margin-left: calc(var(--space-2) * -1); }
+.tick-bottom { top: 100%; left: 50%; margin-top: var(--space-2); }
 
 /* Placement popover (각도/컨트롤/파트너 선택) */
 .place-popover {
@@ -1999,12 +2011,12 @@ html, body {
   z-index: 50;
   background: var(--card-bg);
   border-radius: 16px;
-  padding: 16px;
+  padding: var(--space-4);
   width: 232px;
   box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .place-popover.hidden {
@@ -2026,7 +2038,7 @@ html, body {
 .qpick-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .qpick-btn {
@@ -2035,7 +2047,7 @@ html, body {
   color: var(--text-body);
   font-size: var(--text-base);
   font-weight: 700;
-  padding: 7px 10px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   cursor: pointer;
   transition: transform 0.12s ease, background 0.12s ease;
@@ -2053,7 +2065,7 @@ html, body {
 .slider-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .slider-label {
@@ -2081,7 +2093,7 @@ html, body {
 .place-popover-actions {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .pill-btn-primary:disabled {
