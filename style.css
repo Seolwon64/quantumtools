@@ -66,8 +66,24 @@
   --text-title: #191f28;
   --text-body: #4e5968;
   --text-faint: #8b95a1;
-  --radius: 20px;
-  --radius-sm: 12px;
+  /* 모서리 반경 — 이 네 값만 쓴다. 도구 UI라 과하게 둥글면 정교함이 떨어진다. */
+  --radius-1: 3px;   /* 작은 배지·태그 */
+  --radius-2: 5px;   /* 버튼, 게이트 블록 */
+  --radius-3: 8px;   /* 패널, 팝오버, 컨텍스트 메뉴 */
+  --radius-4: 12px;  /* 모달 */
+  /* 원(50%)과 알약(pill)은 "모서리 반경"이 아니라 도형 자체라 스케일과 별개로 둔다
+     — 제어점·재생 버튼을 3px로 만들 수는 없다. */
+  --radius-full: 999px;
+
+  /* 그림자 — 마지막 레이어 `0 0 0 1px`가 테두리 역할을 겸한다.
+     **이 변수를 쓰는 요소에는 border를 따로 주지 마라**(합쳐져 2px로 보인다).
+     그림자는 눈에 띄면 안 되고 느껴져야 하므로 아래 불투명도를 올리지 않는다. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(0, 0, 0, 0.06);
+
+  /* 패널 경계선 — 그림자로 띄우는 대신 면을 나눈다. 색은 다음 색상 작업에서 확정한다(임시). */
+  --border-panel: rgba(0, 0, 0, 0.08);
 
   /* 팔레트 버튼 치수/간격/폰트 — 한 곳에서만 정의(나머지는 참조). Quirk 수준 조밀함 목표. */
   --gate-size: 40px;   /* 버튼 최소 한 변 (데스크톱; 모바일은 미디어쿼리로 44px) */
@@ -185,7 +201,7 @@ html, body {
   border: none;
   background: transparent;
   color: var(--text-title);
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background 0.12s ease;
 }
@@ -205,7 +221,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 600;
   padding: var(--space-2) var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   transition: background 0.12s ease, color 0.12s ease;
 }
 
@@ -218,7 +234,7 @@ html, body {
   flex: none;
   margin: 0 var(--space-5) var(--space-3);
   background: var(--card-bg);
-  border-radius: 16px;
+  border-radius: var(--radius-3);
   padding: var(--space-4);
 }
 
@@ -300,7 +316,7 @@ html, body {
   position: absolute;
   background: var(--text-faint);
   opacity: 0.25;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   transition: background 0.12s ease, opacity 0.12s ease;
 }
 
@@ -330,7 +346,9 @@ html, body {
 
 .panel {
   background: var(--card-bg);
-  border-radius: var(--radius);
+  /* [3] 카드처럼 띄우지 않고 면으로 나눈다 — 그림자 대신 1px 테두리 */
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-3);
   padding: var(--space-4);
   min-height: 0;
   min-width: 0;
@@ -388,7 +406,7 @@ html, body {
 .gate-chip {
   aspect-ratio: 1;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-2);
   font-size: var(--gate-font);
   font-weight: 700;
   cursor: grab;
@@ -476,9 +494,10 @@ html, body {
   font-size: var(--text-base);
   font-weight: 600;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-3);
   white-space: pre; /* 줄바꿈 유지(행렬 미리보기), 자동 줄바꿈은 없음 */
   pointer-events: none;
+  box-shadow: var(--shadow-2);
 }
 
 /* 행렬 미리보기가 든 툴팁은 등폭으로 자릿수를 맞춘다(폰트는 위 공통 mono 블록이 지정) */
@@ -496,9 +515,9 @@ html, body {
   position: fixed;
   z-index: 55;
   background: var(--card-bg);
-  border-radius: 14px;
+  border-radius: var(--radius-3);
   padding: var(--space-2);
-  box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
+  box-shadow: var(--shadow-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -517,7 +536,7 @@ html, body {
   font-weight: 600;
   color: var(--text-title);
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-2);
   cursor: pointer;
 }
 
@@ -531,9 +550,9 @@ html, body {
   position: fixed;
   z-index: 55;
   background: var(--card-bg);
-  border-radius: 14px;
+  border-radius: var(--radius-3);
   padding: var(--space-2);
-  box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
+  box-shadow: var(--shadow-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -563,7 +582,7 @@ html, body {
   background: transparent;
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   font-size: var(--text-base);
   font-weight: 600;
@@ -585,7 +604,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 600;
   padding: var(--space-3) var(--space-4);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -629,7 +648,7 @@ html, body {
 .stepper-btn {
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-2);
   border: none;
   background: var(--bg);
   color: var(--text-title);
@@ -658,7 +677,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 600;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-2);
   cursor: pointer;
 }
 
@@ -740,7 +759,7 @@ html, body {
 }
 .gate-info-step {
   padding: var(--space-1) var(--space-2);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: var(--bg);
   font-size: var(--text-xs);
   font-weight: 700;
@@ -774,7 +793,7 @@ html, body {
   min-width: 52px;
   min-height: 26px;
   padding: var(--space-1) var(--space-1);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: var(--bg);
   color: var(--text-title);
   font-size: var(--text-xs);
@@ -832,7 +851,7 @@ html, body {
 .state-error {
   flex-basis: 100%;
   padding: var(--space-3) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-3);
   background: var(--cat-pauli-bg);
   color: var(--cat-pauli-fg);
   font-size: var(--text-sm);
@@ -879,7 +898,7 @@ html, body {
   width: 2px;
   background: var(--text-title);
   opacity: 0.7;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   pointer-events: none;
   z-index: -1;
 }
@@ -902,7 +921,7 @@ html, body {
 /* 현재 적용 중인 열 강조(하이라이트 밴드). 반투명이라 아래 레이어의 연결선이 밴드 위로 비쳐 보인다. */
 .grid-cell.step-col-active {
   background: rgba(49, 130, 246, 0.13);
-  border-radius: 8px;
+  border-radius: var(--radius-2);
 }
 
 .ctrl-dot {
@@ -981,7 +1000,7 @@ html, body {
   min-width: 15px;
   height: 15px;
   padding: 0 var(--space-1);
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   background: var(--card-bg);
   border: 1px solid var(--text-faint);
   color: var(--text-body);
@@ -1006,7 +1025,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-2);
 }
 
 .grid-cell.drag-over {
@@ -1020,7 +1039,7 @@ html, body {
 .placed-gate {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1074,8 +1093,8 @@ html, body {
   align-items: center;
   gap: var(--space-1);
   background: var(--card-bg);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
 }
 .gate-menu.hidden { display: none; }
 
@@ -1088,7 +1107,7 @@ html, body {
   height: 34px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--text-title);
   cursor: pointer;
@@ -1192,7 +1211,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   white-space: nowrap;
   transition: transform 0.12s ease, background 0.12s ease;
@@ -1265,7 +1284,7 @@ html, body {
 .segmented {
   display: flex;
   background: var(--bg);
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   padding: var(--space-1);
   gap: var(--space-1);
 }
@@ -1281,7 +1300,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -1338,7 +1357,7 @@ html, body {
   font-size: var(--text-sm);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -1360,7 +1379,7 @@ html, body {
   width: 64px;
   padding: var(--space-1) var(--space-2);
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: var(--bg);
   color: var(--text-body);
   font-size: var(--text-base);
@@ -1375,7 +1394,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: opacity 0.12s ease;
 }
@@ -1390,7 +1409,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -1415,7 +1434,7 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   width: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-1);
   background: var(--primary); /* 관측값 = 진한 파랑 */
   transition: height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1502,7 +1521,7 @@ html, body {
 .prob-legend .lg-sw {
   width: 11px;
   height: 11px;
-  border-radius: 3px;
+  border-radius: var(--radius-1);
 }
 .prob-legend .lg-theory {
   background: #7fb0f7;
@@ -1521,10 +1540,10 @@ html, body {
   font-weight: 500;
   line-height: 1.5;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-3);
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 4px 16px rgba(25, 31, 40, 0.28);
+  box-shadow: var(--shadow-2);
 }
 .chart-tooltip.hidden {
   display: none;
@@ -1602,7 +1621,7 @@ html, body {
   justify-content: center;
   min-height: 36px;
   padding: var(--space-1) var(--space-1);
-  border-radius: 7px;
+  border-radius: var(--radius-2);
   background: var(--bg);
   color: var(--text-title);
   /* 등폭은 비례폰트보다 폭이 넓어 "0.000 − 0.500i"가 줄바꿈된다 → 한 단계 작게 + 줄바꿈 금지 */
@@ -1640,7 +1659,7 @@ html, body {
   flex: 1;
   min-width: 40px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-1);
   background: var(--bg);
   overflow: hidden;
 }
@@ -1649,7 +1668,7 @@ html, body {
   width: 0;
   height: 100%;
   background: var(--primary);
-  border-radius: 3px;
+  border-radius: var(--radius-1);
   transition: width 0.25s ease;
 }
 .dm-bloch {
@@ -1686,13 +1705,13 @@ html, body {
   display: flex;
   align-items: flex-end;
   background: var(--bg);
-  border-radius: 8px;
+  border-radius: var(--radius-2);
   overflow: hidden;
 }
 
 .prob-bar-fill-v {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-2);
   background: var(--primary);
   transition: height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1727,7 +1746,7 @@ html, body {
   gap: var(--space-1);
   background: rgba(255, 255, 255, 0.85);
   padding: var(--space-1);
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   backdrop-filter: blur(4px);
 }
 
@@ -1735,7 +1754,7 @@ html, body {
   border: none;
   background: transparent;
   padding: var(--space-2) var(--space-3);
-  border-radius: 9px;
+  border-radius: var(--radius-2);
   font-size: var(--text-base);
   font-weight: 700;
   color: var(--text-body);
@@ -1755,7 +1774,7 @@ html, body {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
   padding: var(--space-2) var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   font-size: var(--text-base);
   font-weight: 700;
   color: var(--text-title);
@@ -1775,7 +1794,7 @@ html, body {
   width: 36px;
   height: 36px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-2);
   background: rgba(255, 255, 255, 0.85);
   color: var(--text-body);
   font-size: var(--text-md);
@@ -1818,7 +1837,7 @@ html, body {
   border: none;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   cursor: pointer;
   box-sizing: border-box;
@@ -1828,7 +1847,7 @@ html, body {
   flex: none;
   width: 34px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bg);
   position: relative;
   transition: background 0.18s ease;
@@ -1846,7 +1865,7 @@ html, body {
   height: 16px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(25, 31, 40, 0.3);
+  box-shadow: var(--shadow-1);
   transition: transform 0.18s ease;
 }
 
@@ -1875,7 +1894,7 @@ html, body {
   border-radius: 50%;
   background: #f5c945;
   cursor: default;
-  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
+  box-shadow: var(--shadow-1);
 }
 
 .entangle-warning.hidden {
@@ -1910,7 +1929,7 @@ html, body {
   background: conic-gradient(from 0deg,
     #3adf3a 0deg, #dfdf3a 45deg, #df3a3a 90deg, #df3aa1 135deg,
     #b63adf 180deg, #403adf 225deg, #3aa8df 270deg, #3adfa8 315deg, #3adf3a 360deg);
-  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.18);
+  box-shadow: var(--shadow-1);
 }
 
 .phase-tick {
@@ -1919,7 +1938,7 @@ html, body {
   font-weight: 700;
   color: var(--text-body);
   background: rgba(255, 255, 255, 0.85);
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   padding: 0 var(--space-1);
   transform: translate(-50%, -50%);
 }
@@ -1928,7 +1947,7 @@ html, body {
 .view-toggle {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.12);
+  box-shadow: var(--shadow-1);
 }
 
 /* Purity / Local mixedness 정보 (Bloch 뷰 전용) */
@@ -1938,10 +1957,10 @@ html, body {
   gap: var(--space-3);
   height: 32px;
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(25, 31, 40, 0.12);
+  box-shadow: var(--shadow-1);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-body);
@@ -1965,7 +1984,7 @@ html, body {
 .bloch-mixed-bar {
   width: 46px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-1);
   background: var(--bg);
   overflow: hidden;
 }
@@ -1974,7 +1993,7 @@ html, body {
   height: 100%;
   width: 0%;
   background: var(--primary);
-  border-radius: 3px;
+  border-radius: var(--radius-1);
   transition: width 0.25s ease;
 }
 
@@ -1986,7 +2005,7 @@ html, body {
   transform: translate(-50%, -50%);
   max-width: 78%;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-3);
   background: rgba(25, 31, 40, 0.82);
   color: #fff;
   font-size: var(--text-sm);
@@ -2010,10 +2029,10 @@ html, body {
   position: fixed;
   z-index: 50;
   background: var(--card-bg);
-  border-radius: 16px;
+  border-radius: var(--radius-3);
   padding: var(--space-4);
   width: 232px;
-  box-shadow: 0 12px 32px rgba(25, 31, 40, 0.18);
+  box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -2048,7 +2067,7 @@ html, body {
   font-size: var(--text-base);
   font-weight: 700;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: transform 0.12s ease, background 0.12s ease;
 }
