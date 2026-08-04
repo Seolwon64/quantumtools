@@ -2261,3 +2261,50 @@ html, body {
   .pill-btn-primary:active, .round-btn-primary:active,
   .qubit-tab.active:active, .segmented-btn.active:active { transform: none; }
 }
+
+
+/* ==========================================================================
+   아이콘 — Lucide 한 세트 (js/icons.js)
+   크기 16px · stroke 1.5 · stroke: currentColor · fill: none 은 icons.js가
+   SVG 속성으로 직접 박는다. 여기서는 **배치만** 다룬다 — CSS로 크기나 굵기를
+   덮어쓰면 "어디서 정하는가"가 두 곳이 되어 세트가 조용히 어긋난다.
+   ========================================================================== */
+.icon {
+  display: block;
+  flex: none;
+}
+
+/* 자리표시자 <span data-icon> 자체는 레이아웃에 관여하지 않는다 */
+[data-icon] {
+  display: inline-flex;
+  flex: none;
+}
+
+/* 아이콘만 있는 버튼은 예외 없이 정중앙 정렬한다.
+   예전엔 글리프였기에 font-size/line-height로 맞췄지만, SVG는 그렇게 정렬되지 않는다. */
+.round-btn,
+.view-reset-btn,
+.stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 텍스트 + 캐럿(Examples ▾를 대체) */
+#presets-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* 헤더의 GitHub 링크: 아이콘 + 글자 */
+.github-link .icon {
+  /* 스트로크 아이콘은 대문자 높이보다 커 보인다 — 글자와 시각적으로 맞추는 광학 보정 1px */
+  margin-top: 1px;
+}
+
+/* 경고 배너: 아이콘이 첫 줄 텍스트와 같은 baseline 위에 앉게 */
+.deferred-note .icon {
+  display: inline-block;
+  vertical-align: -3px; /* 광학 보정: 대문자 중앙에 맞춤 */
+}

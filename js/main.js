@@ -1,4 +1,5 @@
 import { createBlochScene } from "./scene.js";
+import { icon, hydrateIcons } from "./icons.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
@@ -61,8 +62,10 @@ function standardGateName(cell) {
 }
 
 // Qiskit 스타일 측정 게이지 아이콘
+// **UI 아이콘이 아니라 게이트 표기다** — ⊕(CNOT)·×(SWAP)와 같은 층이라
+// Lucide 세트(16px/1.5)가 아니라 게이트 칩 크기를 따른다. 이름은 칩의 aria-label이 준다.
 const MEASURE_SVG =
-  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M5 16a7 7 0 0 1 14 0" />' +
   '<line x1="12" y1="16" x2="16.5" y2="9.5" />' +
   '<text x="17.5" y="8" font-size="8" fill="currentColor" stroke="none">z</text>' +
@@ -728,24 +731,18 @@ let expandedInfo = null; // { column, home } — "Expand definition"을 누른 �
 
 // 아이콘은 인라인 SVG로만 넣는다 — 이모지는 플랫폼마다 렌더링이 다르고 크기 제어가 안 된다.
 // 한 세트로 보이도록 24 뷰박스 · stroke-width 1.9 · round 캡으로 통일한다.
-const svgIcon = (body) =>
-  `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-
+// 컨텍스트 메뉴 아이콘 → Lucide 이름 매핑.
+// 예전에는 여기서 SVG를 직접 그렸는데(제어점·고전선 등 회로 표기를 흉내낸 형태),
+// 손으로 그린 도형은 그리드도 스트로크도 Lucide와 달라 **한 세트로 보이지 않았다**.
+// 의미는 aria-label과 툴팁이 전달하므로 아이콘은 Lucide 표준형을 쓴다.
 const MENU_ICONS = {
-  // ⓘ 원 안 i
-  info: svgIcon('<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.8" r="0.9" fill="currentColor" stroke="none"/>'),
-  // ✎ 연필
-  edit: svgIcon('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z"/><line x1="14.5" y1="6.5" x2="17.5" y2="9.5"/>'),
-  // 상자에서 펼쳐지는 형태(⤢): 점선 상자 + 바깥으로 향하는 화살표
-  expand: svgIcon('<path d="M4 9V5h4"/><path d="M20 15v4h-4"/><line x1="5" y1="5.6" x2="10.5" y2="11"/><line x1="19" y1="18.4" x2="13.5" y2="13"/><path d="M15 4.5h4.5V9"/><path d="M9 19.5H4.5V15"/>'),
-  // 제어점(•)—타깃(◯) 연결 + 오른쪽 위 "+" 배지 (회로 표기 그대로 읽히게)
-  ctrlAdd: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/><line x1="17.5" y1="3" x2="17.5" y2="9"/>'),
-  // 같은 표기 + "−" 배지
-  ctrlRemove: svgIcon('<circle cx="7.5" cy="5.5" r="2.4" fill="currentColor" stroke="none"/><line x1="7.5" y1="7.9" x2="7.5" y2="15.4"/><circle cx="7.5" cy="18" r="2.6"/><line x1="14.5" y1="6" x2="20.5" y2="6"/>'),
-  // 고전 비트: 게이트에서 이중선이 아래로 내려가는 형태
-  clbit: svgIcon('<rect x="6.5" y="3.5" width="11" height="7" rx="1.6"/><line x1="10.2" y1="10.5" x2="10.2" y2="19"/><line x1="13.8" y1="10.5" x2="13.8" y2="19"/><line x1="5" y1="19" x2="19" y2="19"/>'),
-  // 🗑 휴지통
-  trash: svgIcon('<path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.7"/><path d="M6.5 6.5 7.4 19a1.3 1.3 0 0 0 1.3 1.2h6.6a1.3 1.3 0 0 0 1.3-1.2l.9-12.5"/><line x1="10.4" y1="10" x2="10.7" y2="16.8"/><line x1="13.6" y1="10" x2="13.3" y2="16.8"/>'),
+  info: "info",                    // Show info
+  edit: "pencil",                  // Edit parameters
+  expand: "unfold-horizontal",     // Expand definition — 한 게이트가 여러 열로 펼쳐진다
+  ctrlAdd: "circle-plus",          // Add control
+  ctrlRemove: "circle-minus",      // Remove control
+  clbit: "binary",                 // Set classical bit / Add condition (if)
+  trash: "trash-2",                // Delete
 };
 
 let menuIndex = 0;
@@ -828,7 +825,7 @@ function openGateMenu(column, home, clientX, clientY) {
     }
     const btn = document.createElement("button");
     btn.className = "gate-menu-item" + (item.danger ? " is-danger" : "");
-    btn.innerHTML = MENU_ICONS[item.icon];
+    btn.innerHTML = icon(MENU_ICONS[item.icon]);
     const off = item.enabled === false;
     // `disabled` 속성을 쓰지 않는다 — 브라우저가 disabled 요소의 마우스 이벤트를 막아
     // "왜 못 쓰는지" 툴팁이 아예 뜨지 않기 때문. aria-disabled로 표현하고 클릭만 막는다.
@@ -1095,6 +1092,8 @@ function makeGateChip(gateName, categoryId) {
   btn.className = `gate-chip cat-${categoryId}`;
   if (PALETTE_GLYPHS[gateName]) {
     btn.innerHTML = PALETTE_GLYPHS[gateName];
+    // 글리프 칩은 읽을 텍스트가 없다 — 아이콘만 있는 요소는 이름을 명시해야 한다.
+    btn.setAttribute("aria-label", info.desc ?? info.label ?? gateName);
   } else {
     btn.textContent = info.label;
   }
@@ -1965,7 +1964,7 @@ function renderStateFormula(snapshot) {
     note.className = "deferred-note";
     const atMeasure = measurementColumns(snapshot.qubitCount, snapshot.grid).has(snapshot.stepIndex - 1);
     note.innerHTML =
-      `<b>⚠ Deferred measurement</b>${atMeasure ? ' <span class="deferred-now">measured here — the state shown is NOT collapsed</span>' : ""}`;
+      `<b>${icon("triangle-alert")} Deferred measurement</b>${atMeasure ? ' <span class="deferred-now">measured here — the state shown is NOT collapsed</span>' : ""}`;
     note.title = DEFERRED_NOTE;
     note.addEventListener("mouseenter", () => showTooltip(note, DEFERRED_NOTE));
     note.addEventListener("mouseleave", hideTooltip);
@@ -2023,7 +2022,9 @@ function render(snapshot) {
     snapshot.totalSteps === 0 || (snapshot.isAnimating && !snapshot.isPlaying),
     blocked
   );
-  playBtn.textContent = snapshot.isPlaying ? "⏸" : "▶";
+  // ▶/⏸ 문자를 쓰지 않는다 — 플랫폼마다 글리프가 달라 크기·정렬이 흔들린다.
+  playBtn.innerHTML = icon(snapshot.isPlaying ? "pause" : "play");
+  playBtn.setAttribute("aria-label", snapshot.isPlaying ? "Pause" : "Play");
   playBtn.title = snapshot.isPlaying ? "Pause" : "Play";
 
   playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} steps`;
@@ -2271,3 +2272,7 @@ document.addEventListener("click", (e) => {
     closePresetsMenu();
   }
 });
+
+// index.html의 <span data-icon="..."> 자리표시자를 Lucide SVG로 채운다.
+// 정적 마크업과 동적 렌더가 **같은 정의(js/icons.js)** 를 쓰게 하는 유일한 연결점이다.
+hydrateIcons();
