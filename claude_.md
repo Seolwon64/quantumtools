@@ -28,12 +28,23 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **부드러운 상태 전환:** 슬라이더나 버튼으로 $\theta, \phi$ 값이 바뀔 때, 블로흐 구의 화살표 벡터가 툭툭 끊기지 않고 목표 지점까지 부드럽게 스르륵 이동(Linear Interpolation/Lerp 등 활용)하도록 구현한다.
 
 ## 3. 기능 및 구현 가이드
+### 3.u. 패널의 시각적 위계
+화면을 봤을 때 **데이터(회로·차트·구)가 먼저 보이고 제목·라벨은 배경으로 물러나야** 한다. 눈대중이 아니라 **패널 배경 대비 대비비**로 검증한다.
+- **텍스트 4칸 램프**: `--text-title`(gray-12) → `--text-body`(gray-11) → `--text-faint`(gray-10, **패널 제목**) → `--text-label`(gray-9, **카테고리 라벨**). 대비 실측 17.01 / … / 3.51 / 3.08.
+- **패널 제목**(CIRCUIT·OPERATIONS·PROBABILITIES·Q-SPHERE·REDUCED DENSITY MATRIX): `--text-sm` 11px · w600 · `letter-spacing .06em` · 대문자 · `--text-faint`. 제목→콘텐츠 간격 `--space-3`. **다섯 개가 값까지 동일**해야 한다 — `.sphere-mode-title`은 예전에 13px/w700/gray-12라 화면에서 가장 강한 텍스트였고, `.dm-header`·`.preset-cat`은 w700이라 **패널 제목보다 굵은 위계 역전**이었다.
+- **카테고리 라벨**: `--text-xs` 10px · w500 · 대문자 · `--text-label`. 크기·굵기·대비 **셋 다** 제목보다 낮아야 한다(하나만 낮추면 위계가 서지 않는다).
+- **데이터를 `--text-faint`로 쓰지 않는다.** `.qubit-label`(q[0]…)이 그랬는데, 대비가 제목과 **똑같이 3.51**이라 "몇 번 큐비트인가"가 제목만큼 뒤로 물러나 있었다 → `--text-body`.
+- **패널 상자**: 배경 `--gray-2`, 앱 배경 `--gray-1`, **그림자 없이** 1px `--gray-6` 테두리로만 구분, `--radius-3`, 안쪽 `--space-4`, 패널 사이 `--space-3`(`.col-splitter`/`.row-splitter` 폭). 예외는 `.panel-sphere { padding: 0 }` 하나 — 3D 뷰는 테두리까지 꽉 차야 하고 `overflow: hidden`이 모서리를 잘라준다.
+- **구분선은 남발하지 않는다.** 여백으로 갈라지면 선을 넣지 않는다. 현재 방향성 테두리는 회로 의미론(`.step-indicator` 점선, `.cl-connector` 고전선)과 아이콘 바 그룹 구분선(`.gate-menu-sep`, 1px `--gray-6`)뿐이다.
+- **flex 헤더 안의 제목에는 `margin-bottom`을 두지 않는다.** flex 아이템의 margin은 정렬 박스에 포함돼 **제목만 위로 밀린다** — 여백은 헤더 자신에게 준다(`.palette-header`).
+
 ### 3.v. 인터랙티브 상태 — 5개
 클릭 가능한 모든 요소에 **default / hover / active / focus-visible / disabled**를 예외 없이 정의한다(도입 전에는 focus-visible이 **1개 요소에만**, active가 4개에만 있었다). 정의는 style.css 맨 아래 한 블록에 모여 있다.
 - **hover** 중립 배경 → `--gray-4` · **active** `--gray-5` + **`transform: scale(0.98)`**(누르는 촉감의 핵심). 자기 색을 가진 요소(Primary·활성 탭·게이트 칩)는 중립으로 덮지 않고 **자기 톤 안에서** 한 단계 진해진다(`--accent-10/11`, `--chip-hover`).
 - **focus는 `:focus-visible`만** 쓴다 — 마우스 클릭엔 링이 뜨지 않고 키보드 탐색에만 뜬다. 액센트 2px + `outline-offset: 2px`.
 - **disabled** `opacity .45` + `cursor: not-allowed`, **`pointer-events`는 유지**(사유 툴팁을 보여줘야 한다). 네이티브 `disabled` 속성은 브라우저가 마우스 이벤트를 막으므로, 툴팁이 필요한 곳은 `aria-disabled`+`.is-disabled`를 쓴다.
 - **비활성 요소는 hover/active 선택자에서 `:not()`으로 제외**한다. 반대로 "적용 후 되돌리기"(`background-color: inherit` 등)로 처리하면 **자기 색을 가진 버튼이 hover 시 투명해진다**(실제로 겪음).
+- **`:not()`은 특이도를 올린다.** `:not()` 3개를 붙인 중립 hover 규칙은 (0,5,0)이라 `.segmented-btn.active:hover`(0,3,0)를 이겨버렸고, **활성 탭이 hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라졌다**(대비 1.03). 자기 색을 가진 변형은 중립 규칙에서 `:not(.active)`로 **아예 제외**한다.
 - **전환은 `background-color`와 `transform`만**, `--dur: 120ms` + `--ease: cubic-bezier(0.16,1,0.3,1)`. `all`이나 CSS 기본 `ease`를 쓰지 않는다. (확률 막대·mixedness 미터의 height/width 전환은 인터랙션이 아니라 데이터 애니메이션이라 별개다.)
 - **커서**: 클릭 `pointer` · 드래그 `grab`/누르는 중 `grabbing`(팔레트 칩) · 비활성 `not-allowed`.
 - **버튼 3종**: Primary(액센트 채움 — 재생, 팝오버 Apply) · Secondary(중립+테두리 — Run·Clear all·Examples) · Ghost(배경 없이 hover 시에만 — 아이콘·스텝 버튼).
