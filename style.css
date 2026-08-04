@@ -106,6 +106,11 @@
   --text-title: var(--gray-12);
   --text-body: var(--gray-11);
   --text-faint: var(--gray-10);
+  /* 인터랙티브 전환 — background-color와 transform만, easing은 고정.
+     `all`을 쓰면 예상치 못한 속성까지 애니메이션된다. */
+  --dur: 120ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
   /* 모서리 반경 — 이 네 값만 쓴다. 도구 UI라 과하게 둥글면 정교함이 떨어진다. */
   --radius-1: 3px;   /* 작은 배지·태그 */
   --radius-2: 5px;   /* 버튼, 게이트 블록 */
@@ -221,7 +226,7 @@ html, body {
   color: var(--text-title);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 
 .menu-btn:hover {
@@ -240,7 +245,7 @@ html, body {
   font-weight: 600;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 
 .github-link:hover {
@@ -335,7 +340,7 @@ html, body {
   background: var(--text-faint);
   opacity: 0.25;
   border-radius: var(--radius-full);
-  transition: background 0.12s ease, opacity 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 
 .col-splitter::after {
@@ -432,12 +437,10 @@ html, body {
   align-items: center;
   justify-content: center;
   white-space: nowrap; /* √X†, RCCX 등 긴 라벨이 줄바꿈되지 않게 */
-  transition: transform 0.12s ease;
+  transition: transform var(--dur) var(--ease);
 }
 
-.gate-chip:active {
-  transform: scale(0.92);
-}
+/* 눌림 효과는 아래 공통 인터랙티브 상태 블록이 담당한다(scale 0.98로 통일). */
 
 .gate-chip[data-ready="false"] {
   opacity: 0.4;
@@ -635,12 +638,12 @@ html, body {
 
 /* 게이트 카테고리 색상 클래스 — 팔레트 버튼과 캔버스에 배치된 게이트 공통 사용.
    색은 :root의 --cat-* 변수에서만 온다(버튼별 하드코딩 없음). */
-.cat-pauli { background: var(--cat-pauli-bg); color: var(--cat-pauli-fg); }
-.cat-phase { background: var(--cat-phase-bg); color: var(--cat-phase-fg); }
-.cat-rotation { background: var(--cat-rotation-bg); color: var(--cat-rotation-fg); }
-.cat-multi { background: var(--cat-multi-bg); color: var(--cat-multi-fg); }
-.cat-interaction { background: var(--cat-interaction-bg); color: var(--cat-interaction-fg); }
-.cat-structural { background: var(--cat-structural-bg); color: var(--cat-structural-fg); }
+.cat-pauli { background: var(--cat-pauli-bg); color: var(--cat-pauli-fg); --chip-hover: var(--cat-pauli-c); }
+.cat-phase { background: var(--cat-phase-bg); color: var(--cat-phase-fg); --chip-hover: var(--cat-phase-c); }
+.cat-rotation { background: var(--cat-rotation-bg); color: var(--cat-rotation-fg); --chip-hover: var(--cat-rotation-c); }
+.cat-multi { background: var(--cat-multi-bg); color: var(--cat-multi-fg); --chip-hover: var(--cat-multi-c); }
+.cat-interaction { background: var(--cat-interaction-bg); color: var(--cat-interaction-fg); --chip-hover: var(--cat-interaction-c); }
+.cat-structural { background: var(--cat-structural-bg); color: var(--cat-structural-fg); --chip-hover: var(--cat-structural-c); }
 /* RCCX/RC3X: 경고 톤 + 점선 테두리로 CCX와 시각 구분(정확한 Toffoli가 아님). */
 .cat-advanced { background: var(--cat-advanced-bg); color: var(--cat-advanced-fg); border: 1.5px dashed var(--cat-advanced-fg); }
 
@@ -885,14 +888,10 @@ html, body {
   color: var(--text-faint);
 }
 
-/* 재생 컨트롤을 사유와 함께 막아둔 상태(aria-disabled). disabled 속성을 쓰면 사유 툴팁이 안 뜬다. */
+/* 재생 컨트롤을 사유와 함께 막아둔 상태(aria-disabled). disabled 속성을 쓰면 사유 툴팁이 안 뜬다.
+   흐림·커서는 아래 공통 disabled 규격이 담당하고, 여기서는 포인터 수신만 보장한다. */
 .round-btn.is-disabled {
-  opacity: 0.4;
-  cursor: default;
   pointer-events: auto; /* hover 툴팁은 받아야 한다 */
-}
-.round-btn.is-disabled:hover {
-  background: var(--bg);
 }
 
 .circuit-grid {
@@ -1065,7 +1064,7 @@ html, body {
   /* 가변 폰트라 550을 쓸 수 있다 — 흰 글자가 진한 배경 위에서 얇아 보이지 않게 반 단계만 굵게 */
   font-weight: 550;
   cursor: pointer;
-  transition: transform 0.12s ease;
+  transition: transform var(--dur) var(--ease);
   background: var(--gate-c, var(--cat-structural-c));
   /* 회로 tier가 밝아졌으므로 글자는 흰색이 아니라 --gray-12 (흰 글자는 대비 1.7로 AA 미달) */
   color: var(--gray-12);
@@ -1151,9 +1150,7 @@ html, body {
 /* 비활성 항목은 숨기지 않고 흐리게 남긴다. `disabled` 속성을 쓰면 브라우저가 마우스 이벤트를
    막아 사유 툴팁이 뜨지 않으므로, 클래스로만 표현하고 클릭은 JS에서 막는다. */
 .gate-menu-item.is-disabled {
-  color: var(--text-faint);
-  opacity: 0.55;
-  cursor: default;
+  color: var(--gray-10);   /* 흐림·커서는 공통 disabled 규격이 담당 */
 }
 /* 그룹 사이 얇은 세로 구분선 */
 .gate-menu-sep {
@@ -1199,7 +1196,7 @@ html, body {
   color: var(--text-title);
   font-size: var(--text-base);
   cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .round-btn:hover:not(:disabled) {
@@ -1234,7 +1231,7 @@ html, body {
   border-radius: var(--radius-2);
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .pill-btn-primary:hover {
@@ -1322,7 +1319,7 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 
 .segmented-btn.active {
@@ -1379,7 +1376,7 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 .prob-showall-btn:hover {
   background: var(--primary-dim);
@@ -1416,7 +1413,7 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--dur) var(--ease);
 }
 .prob-run-btn:disabled {
   opacity: 0.55;
@@ -1431,7 +1428,7 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color var(--dur) var(--ease);
 }
 .prob-reset-btn:hover {
   background: var(--primary-dim);
@@ -1820,7 +1817,7 @@ html, body {
   font-size: var(--text-md);
   cursor: pointer;
   backdrop-filter: blur(4px);
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .view-reset-btn:hover {
@@ -2089,7 +2086,7 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: transform 0.12s ease, background 0.12s ease;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .qpick-btn:active {
@@ -2138,4 +2135,110 @@ html, body {
 .pill-btn-primary:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+
+/* ==========================================================================
+   인터랙티브 상태 — 5개 상태를 예외 없이 전부 정의한다.
+   default / hover / active / focus-visible / disabled
+   ========================================================================== */
+
+/* 클릭 가능한 모든 요소의 공통 베이스.
+   전환은 background-color와 transform만 — `all`을 쓰면 예상 못 한 속성까지 애니메이션된다. */
+.menu-btn, .github-link, .icon-btn, .tool-icon-btn, .stepper-btn,
+.round-btn, .pill-btn-primary, .segmented-btn, .prob-run-btn, .prob-reset-btn,
+.prob-showall-btn, .qubit-tab, .export-menu-item, .preset-item, .gate-menu-item,
+.qpick-btn, .view-reset-btn, .gate-chip, .placed-gate, .ctrl-dot, .prob-hide-toggle {
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+/* --- hover: 중립 배경 요소는 한 단계 진하게 (비활성 요소는 반응하지 않는다) --- */
+.menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.segmented-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.prob-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.prob-showall-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.qubit-tab:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
+  background-color: var(--gray-4);
+}
+
+/* --- active: 한 단계 더 + 눌리는 촉감(scale) --- */
+.menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.segmented-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.prob-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.prob-showall-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.qubit-tab:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
+  background-color: var(--gray-5);
+  transform: scale(0.98);
+}
+/* 자기 색을 가진 요소는 중립으로 덮지 않고 자기 톤 안에서 반응한다 */
+.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover, .round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover { background-color: var(--accent-10); }
+.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active, .round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
+  background-color: var(--accent-11);
+  transform: scale(0.98);
+}
+.gate-chip:hover { background-color: var(--chip-hover); }
+.gate-chip:active { transform: scale(0.98); }
+.placed-gate:active, .ctrl-dot:active { transform: scale(0.98); }
+.qubit-tab.active:hover, .segmented-btn.active:hover { background-color: var(--accent-10); }
+.qubit-tab.active:active, .segmented-btn.active:active {
+  background-color: var(--accent-11);
+  transform: scale(0.98);
+}
+
+/* --- focus: :focus가 아니라 :focus-visible — 마우스 클릭엔 링이 뜨지 않고 키보드 탐색에만 뜬다 --- */
+.menu-btn:focus-visible, .github-link:focus-visible, .icon-btn:focus-visible,
+.tool-icon-btn:focus-visible, .stepper-btn:focus-visible, .round-btn:focus-visible,
+.pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
+.prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible, .qubit-tab:focus-visible,
+.export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
+.qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
+.shots-input:focus-visible, .prob-hide-toggle:focus-within {
+  outline: 2px solid var(--accent-9);
+  outline-offset: 2px;
+}
+
+/* --- disabled: 흐리게 + not-allowed. **pointer-events는 유지**한다(사유 툴팁을 보여줘야 한다) --- */
+.menu-btn:disabled, .icon-btn:disabled, .tool-icon-btn:disabled, .stepper-btn:disabled,
+.round-btn:disabled, .pill-btn-primary:disabled, .segmented-btn:disabled,
+.prob-run-btn:disabled, .prob-reset-btn:disabled, .prob-showall-btn:disabled,
+.qpick-btn:disabled, .view-reset-btn:disabled,
+.is-disabled, [aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 비활성 요소는 위 선택자에서 :not()으로 이미 제외된다 —
+   여기서 background를 되돌리려 하면(inherit 등) 자기 색을 가진 버튼이 투명해진다. */
+
+/* --- [4] 커서: 드래그 가능한 요소 --- */
+.gate-chip { cursor: grab; }
+.gate-chip:active { cursor: grabbing; }
+
+/* 모션 최소화 선호 시 눌림 효과는 끈다(전환 자체는 위 미디어쿼리가 처리) */
+@media (prefers-reduced-motion: reduce) {
+  .gate-chip:active, .placed-gate:active, .ctrl-dot:active,
+  .pill-btn-primary:active, .round-btn-primary:active,
+  .qubit-tab.active:active, .segmented-btn.active:active { transform: none; }
 }

@@ -28,6 +28,17 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **부드러운 상태 전환:** 슬라이더나 버튼으로 $\theta, \phi$ 값이 바뀔 때, 블로흐 구의 화살표 벡터가 툭툭 끊기지 않고 목표 지점까지 부드럽게 스르륵 이동(Linear Interpolation/Lerp 등 활용)하도록 구현한다.
 
 ## 3. 기능 및 구현 가이드
+### 3.v. 인터랙티브 상태 — 5개
+클릭 가능한 모든 요소에 **default / hover / active / focus-visible / disabled**를 예외 없이 정의한다(도입 전에는 focus-visible이 **1개 요소에만**, active가 4개에만 있었다). 정의는 style.css 맨 아래 한 블록에 모여 있다.
+- **hover** 중립 배경 → `--gray-4` · **active** `--gray-5` + **`transform: scale(0.98)`**(누르는 촉감의 핵심). 자기 색을 가진 요소(Primary·활성 탭·게이트 칩)는 중립으로 덮지 않고 **자기 톤 안에서** 한 단계 진해진다(`--accent-10/11`, `--chip-hover`).
+- **focus는 `:focus-visible`만** 쓴다 — 마우스 클릭엔 링이 뜨지 않고 키보드 탐색에만 뜬다. 액센트 2px + `outline-offset: 2px`.
+- **disabled** `opacity .45` + `cursor: not-allowed`, **`pointer-events`는 유지**(사유 툴팁을 보여줘야 한다). 네이티브 `disabled` 속성은 브라우저가 마우스 이벤트를 막으므로, 툴팁이 필요한 곳은 `aria-disabled`+`.is-disabled`를 쓴다.
+- **비활성 요소는 hover/active 선택자에서 `:not()`으로 제외**한다. 반대로 "적용 후 되돌리기"(`background-color: inherit` 등)로 처리하면 **자기 색을 가진 버튼이 hover 시 투명해진다**(실제로 겪음).
+- **전환은 `background-color`와 `transform`만**, `--dur: 120ms` + `--ease: cubic-bezier(0.16,1,0.3,1)`. `all`이나 CSS 기본 `ease`를 쓰지 않는다. (확률 막대·mixedness 미터의 height/width 전환은 인터랙션이 아니라 데이터 애니메이션이라 별개다.)
+- **커서**: 클릭 `pointer` · 드래그 `grab`/누르는 중 `grabbing`(팔레트 칩) · 비활성 `not-allowed`.
+- **버튼 3종**: Primary(액센트 채움 — 재생, 팝오버 Apply) · Secondary(중립+테두리 — Run·Clear all·Examples) · Ghost(배경 없이 hover 시에만 — 아이콘·스텝 버튼).
+- 참고: `.gate-chip`은 `draggable`이라 브라우저가 mousedown 시 `:active`를 취소한다 — 눌림 효과가 드래그 시작에는 보이지 않는 게 정상이다.
+
 ### 3.w. 색상 — 3층 구조
 역할별로 완전히 분리한다. 예전에는 게이트 색과 인터랙티브 색이 모두 파랑이라 "누를 수 있는 것"의 신호가 약했다.
 - **(a) 중립 램프 `--gray-1..12`** — **Radix Colors `slate` 원본 12단계**를 그대로 쓴다(직접 만들지 않는다). UI의 90%가 여기서 나온다. 1 앱 배경 · 2 패널 배경 · 3~5 배경/hover/active · 6~8 테두리·포커스 · 9~12 텍스트.
