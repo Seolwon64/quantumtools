@@ -29,10 +29,6 @@
       </a>
     </header>
 
-    <div class="menu-panel hidden" id="menu-panel">
-      <p class="menu-panel-placeholder">More tools coming soon.</p>
-    </div>
-
     <div class="workspace" id="workspace">
       <div class="ws-col ws-left" id="ws-left">
       <section class="panel panel-palette">
@@ -156,6 +152,26 @@
       </div>
     </div>
   </div>
+
+  <!-- 메뉴 드로어. 선택 후 바로 닫히는 일시적 UI라 오버레이로 뒤를 딤 처리한다.
+       `hidden`(display:none)을 쓰지 않는다 — display:none 에서는 transition 이
+       실행되지 않아 슬라이드 애니메이션이 통째로 죽는다. 열림은 .is-open 으로 표현하고
+       닫힘은 visibility:hidden 이라 탭 순서에서도 빠진다. -->
+  <div class="drawer-overlay" id="menu-overlay"></div>
+  <aside class="menu-drawer" id="menu-drawer" role="dialog" aria-modal="true" aria-label="Main menu">
+    <nav class="menu-drawer-body" id="menu-drawer-body"></nav>
+  </aside>
+
+  <!-- 코드 드로어: 회로를 보면서 코드를 읽는 패널이라 **오버레이를 두지 않는다**.
+       메뉴와 반대쪽(오른쪽)에서 들어와 둘의 성격이 구분된다.
+       본문은 다음 작업에서 채운다. -->
+  <aside class="code-drawer" id="code-drawer" role="dialog" aria-label="Code editor">
+    <header class="code-drawer-header">
+      <h2 class="panel-title">Code</h2>
+      <button class="icon-btn tool-icon-btn" id="code-drawer-close" title="Close (Esc)" aria-label="Close code editor"><span data-icon="x"></span></button>
+    </header>
+    <div class="code-drawer-body" id="code-drawer-body"></div>
+  </aside>
 
   <div class="place-popover hidden" id="place-popover"></div>
 

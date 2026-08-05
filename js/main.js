@@ -1,5 +1,6 @@
 import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
+import { initMenu } from "./menu.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
@@ -155,7 +156,6 @@ const blochMixedFill = document.getElementById("bloch-mixed-fill");
 const blochMixedPct = document.getElementById("bloch-mixed-pct");
 const sphereCaption = document.getElementById("sphere-caption");
 const menuBtn = document.getElementById("menu-btn");
-const menuPanel = document.getElementById("menu-panel");
 const probEndian = document.getElementById("prob-endian");
 const dmQubitTabs = document.getElementById("dm-qubit-tabs");
 const dmMatrix = document.getElementById("dm-matrix");
@@ -180,19 +180,15 @@ const resetShotsBtn = document.getElementById("reset-shots-btn");
 
 const gateButtons = [];
 
-// ---------- 햄버거 메뉴 (열림/닫힘만 구현 — 내용은 추후 확장 예정) ----------
-menuBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const willOpen = menuPanel.classList.contains("hidden");
-  menuPanel.classList.toggle("hidden", !willOpen);
-  menuBtn.setAttribute("aria-expanded", String(willOpen));
-});
-
-document.addEventListener("click", (e) => {
-  if (!menuPanel.classList.contains("hidden") && !menuPanel.contains(e.target) && e.target !== menuBtn) {
-    menuPanel.classList.add("hidden");
-    menuBtn.setAttribute("aria-expanded", "false");
-  }
+// ---------- 햄버거 메뉴 드로어 ----------
+// 열기/닫기·포커스 트랩·방향키는 js/menu.js 가 전부 갖고 있다.
+initMenu({
+  menuBtn,
+  overlay: document.getElementById("menu-overlay"),
+  drawer: document.getElementById("menu-drawer"),
+  body: document.getElementById("menu-drawer-body"),
+  codeDrawer: document.getElementById("code-drawer"),
+  codeClose: document.getElementById("code-drawer-close"),
 });
 
 // ---------- Bloch / Q-sphere 뷰 ----------

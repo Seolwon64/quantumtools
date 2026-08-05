@@ -154,6 +154,8 @@
   /* 인터랙티브 전환 — background-color와 transform만, easing은 고정.
      `all`을 쓰면 예상치 못한 속성까지 애니메이션된다. */
   --dur: 120ms;
+  /* 드로어는 이동 거리가 길어 120ms 면 튕기듯 보인다. 이징(--ease)은 공유한다. */
+  --dur-drawer: 180ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* 모서리 반경 — 이 네 값만 쓴다. 도구 UI라 과하게 둥글면 정교함이 떨어진다. */
@@ -259,6 +261,11 @@ html, body {
 }
 
 .menu-btn {
+  /* 열린 드로어(z-index 65)가 이 버튼을 덮어 X를 마우스로 누를 수 없었다.
+     열린 상태에서 이 버튼이 곧 닫기(X)이므로 드로어보다 위에 있어야 한다.
+     토스트(70)보다는 아래라 알림을 가리지 않는다. */
+  position: relative;
+  z-index: 66;
   grid-column: 1;
   justify-self: start;
   display: flex;
@@ -298,23 +305,121 @@ html, body {
   color: var(--text-title);
 }
 
-.menu-panel {
-  flex: none;
-  margin: 0 var(--space-5) var(--space-3);
-  background: var(--card-bg);
-  border-radius: var(--radius-3);
-  padding: var(--space-4);
+/* ==========================================================================
+   드로어 — 메뉴(왼쪽, 오버레이 있음) · 코드(오른쪽, 오버레이 없음)
+
+   **`.hidden`(display:none)을 쓰지 않는다.** display:none 에서는 transition 이
+   실행되지 않아 슬라이드가 통째로 죽는다. 열림은 .is-open, 닫힘은
+   visibility:hidden 이다(탭 순서에서도 빠져 접근성에도 맞다).
+
+   **transform 만 애니메이션한다.** width/left 를 움직이면 매 프레임 레이아웃이
+   다시 계산돼 끊긴다. prefers-reduced-motion 은 파일 상단의 전역 규칙이 이미 덮는다.
+   ========================================================================== */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 64;
+  /* 새 색을 만들지 않고 램프에서 파생시킨다 */
+  background: color-mix(in srgb, var(--gray-12) 32%, transparent);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--dur-drawer) var(--ease), visibility 0s linear var(--dur-drawer);
 }
 
-.menu-panel.hidden {
-  display: none;
+.drawer-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--dur-drawer) var(--ease), visibility 0s;
 }
 
-.menu-panel-placeholder {
-  margin: 0;
+.menu-drawer,
+.code-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  background: var(--gray-2);
+  box-shadow: var(--shadow-3);
+  visibility: hidden;
+  transition: transform var(--dur-drawer) var(--ease), visibility 0s linear var(--dur-drawer);
+}
+
+.menu-drawer.is-open,
+.code-drawer.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-drawer) var(--ease), visibility 0s;
+}
+
+/* 메뉴는 왼쪽에서. min() 이라 360px 화면에서도 드로어가 화면을 벗어나지 않는다. */
+.menu-drawer {
+  left: 0;
+  width: min(260px, 86vw);
+  /* 위쪽은 헤더 높이만큼 비운다 — 그 자리에 떠 있는 햄버거(=X)가 첫 항목을 덮지 않게.
+     햄버거의 아래끝이 52px 이므로 48+12=60px 이 최소치다. 스케일 조합으로 만든다. */
+  padding: calc(var(--space-8) + var(--space-3)) var(--space-3) var(--space-3);
+  transform: translateX(-100%);
+}
+
+/* 코드는 반대쪽(오른쪽)에서 — 메뉴와 성격이 다르다는 신호이기도 하다 */
+.code-drawer {
+  right: 0;
+  width: min(420px, 92vw);
+  transform: translateX(100%);
+}
+
+.menu-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 그룹 사이 구분선. 여백으로 갈라지는 곳에는 넣지 않는다(패널 위계의 [4] 규칙). */
+.menu-drawer-sep {
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: var(--gray-6);
+}
+
+.menu-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-title);
   font-size: var(--text-base);
-  color: var(--text-faint);
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.code-drawer-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--gray-6);
+}
+
+.code-drawer-header .panel-title {
+  margin: 0;
+}
+
+.code-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
 }
 
 .workspace {
@@ -2262,6 +2367,7 @@ html, body {
 .export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .gate-menu-item:not(.is-danger):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
@@ -2282,6 +2388,7 @@ html, body {
 .export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
@@ -2309,6 +2416,7 @@ html, body {
 .pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
 .prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible, .qubit-tab:focus-visible,
 .export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
+.menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
 .shots-input:focus-visible, .prob-hide-toggle:focus-within {
   outline: 2px solid var(--accent-9);
