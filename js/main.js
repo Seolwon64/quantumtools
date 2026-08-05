@@ -90,13 +90,29 @@ const PALETTE_GLYPHS = {
   MEASURE: MEASURE_SVG,
 };
 
-// .circuit-grid 좌표 상수 (style.css의 셀/행 치수와 일치해야 함)
-const GRID_PAD_TOP = 4;
-const GRID_PAD_LEFT = 2;
-const LABEL_WIDTH = 38;
-const ROW_PITCH = 56; // 행 높이 50 + gap 6 (세로는 조여 4~5큐비트 세로 스크롤 방지)
-const COL_PITCH = 54; // 셀 50 + margin 4
-const CELL_CENTER = 25; // 셀(50) 중심. 셀 높이=행 높이라 세로 오프셋 0
+// 격자 좌표는 **CSS를 베껴 쓰지 않고 DOM에서 실측한다.**
+// 예전에는 GRID_PAD_LEFT/ROW_PITCH 같은 상수로 CSS 치수를 손으로 옮겨 적었는데,
+// 간격 시스템 도입(ab4683a)이 padding 2→4px, gap 6→8px로 바꾸면서 상수만 낡아
+// **연결선이 게이트 중심에서 가로 2px, 행마다 세로 2px씩 어긋났다.**
+// 아래 두 함수가 유일한 좌표 출처다 — 연결선·제어점·⊕·×·고전선·배지·스텝 인디케이터가
+// 전부 여기서 나오므로 CSS를 어떻게 바꿔도 다시 어긋날 수 없다.
+
+/** .circuit-grid 기준으로 요소의 중심 좌표. 정수로 스냅해 1~2px 선이 번지지 않게 한다. */
+function gridCenter(el, gridRect) {
+  const r = el.getBoundingClientRect();
+  return {
+    x: Math.round(r.left - gridRect.left + r.width / 2),
+    y: Math.round(r.top - gridRect.top + r.height / 2),
+  };
+}
+
+/** (col, row)의 셀 요소. row는 큐비트 인덱스이며, 고전 행은 clbit-row에서 찾는다. */
+function cellAt(col, row, qubitCount) {
+  if (row < qubitCount) {
+    return circuitGrid.querySelector(`.grid-cell[data-col="${col}"][data-qubit="${row}"]`);
+  }
+  return circuitGrid.querySelector(`.clbit-row .grid-cell[data-col="${col}"]`);
+}
 // 회로 패널에서 캔버스 말고 나머지가 쓰는 세로 공간(툴바 + 재생 컨트롤 + 패딩)
 const CIRCUIT_CHROME = 132;
 
@@ -1212,7 +1228,6 @@ function buildCircuitGrid(snapshot) {
           const chip = document.createElement("div");
           chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
           if (info?.kind === "decomposed") chip.classList.add("placed-advanced"); // RCCX/RC3X 시각 구분
-          if (!role.primary) chip.classList.add("placed-partner"); // 두 번째 타깃은 살짝 흐리게(기존과 동일)
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
           } else {
@@ -1247,36 +1262,47 @@ function buildCircuitGrid(snapshot) {
     for (let col = 0; col < MAX_COLUMNS; col++) {
       const cell = document.createElement("div");
       cell.className = "grid-cell";
+      cell.dataset.col = String(col); // 고전선·배지도 큐비트 행과 같은 방식으로 좌표를 실측한다
       wire.appendChild(cell);
     }
     row.appendChild(wire);
     circuitGrid.appendChild(row);
   }
 
-  // 다중 큐비트 게이트의 세로 연결선
+  // 여기서부터는 실제 배치된 셀을 측정한다. 위 루프가 모든 행을 append한 뒤이므로
+  // 레이아웃이 확정돼 있다. gridRect는 한 번만 읽어 강제 리플로를 1회로 묶는다.
+  const gridRect = circuitGrid.getBoundingClientRect();
+
+  // 다중 큐비트 게이트의 세로 연결선.
+  // x는 **게이트가 놓인 셀의 실제 중심**이다 — 블록·제어점과 같은 요소에서 나온 값이라
+  // 정의상 어긋날 수 없다(예전엔 상수로 따로 계산해 2px 틀어졌다).
   for (let col = 0; col < MAX_COLUMNS; col++) {
     for (let t = 0; t < snapshot.qubitCount; t++) {
       const cell = snapshot.grid[col]?.[t];
       if (!cell) continue;
-      const x = GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER;
       const qubits = involvedQubits(cell);
-      if (qubits.length >= 2) {
-        const minQ = Math.min(...qubits);
-        const maxQ = Math.max(...qubits);
-        const line = document.createElement("div");
-        line.className = "gate-connector";
-        line.style.left = `${x - 1}px`;
-        line.style.top = `${GRID_PAD_TOP + minQ * ROW_PITCH + CELL_CENTER}px`;
-        line.style.height = `${(maxQ - minQ) * ROW_PITCH}px`;
-        circuitGrid.appendChild(line);
-      }
+      if (qubits.length < 2) continue;
+      const minQ = Math.min(...qubits);
+      const maxQ = Math.max(...qubits);
+      const topCell = cellAt(col, minQ, snapshot.qubitCount);
+      const botCell = cellAt(col, maxQ, snapshot.qubitCount);
+      if (!topCell || !botCell) continue;
+      const a = gridCenter(topCell, gridRect);
+      const b = gridCenter(botCell, gridRect);
+      const line = document.createElement("div");
+      line.className = "gate-connector";
+      line.style.left = `${a.x - 1}px`; // 폭 2px(짝수)이라 정수 좌표에서 이미 선명하다
+      line.style.top = `${a.y}px`;
+      line.style.height = `${b.y - a.y}px`;
+      circuitGrid.appendChild(line);
     }
   }
 
   // 고전 와이어로 가는 이중선: Measure의 기록(cbit) / 조건부 연산의 조건(cif).
   // 한 열에 여러 개가 내려올 수 있으므로(예: 텔레포테이션의 두 측정) 좌우로 벌려 겹치지 않게 한다.
   if (snapshot.clbitCount > 0) {
-    const clY = GRID_PAD_TOP + clRow * ROW_PITCH + CELL_CENTER;
+    const clAnchor = cellAt(0, clRow, snapshot.qubitCount);
+    const clY = clAnchor ? gridCenter(clAnchor, gridRect).y : 0;
     for (let col = 0; col < MAX_COLUMNS; col++) {
       const links = [];
       for (let t = 0; t < snapshot.qubitCount; t++) {
@@ -1290,15 +1316,19 @@ function buildCircuitGrid(snapshot) {
         links.push({ bit, isMeasure, fromQ });
       }
       if (!links.length) continue;
-      const baseX = GRID_PAD_LEFT + LABEL_WIDTH + col * COL_PITCH + CELL_CENTER;
+      const colAnchor = cellAt(col, 0, snapshot.qubitCount);
+      if (!colAnchor) continue;
+      const baseX = gridCenter(colAnchor, gridRect).x;
       links.forEach((l, i) => {
-        const x = baseX + (i - (links.length - 1) / 2) * 15; // 여러 개면 나란히
-        const top = GRID_PAD_TOP + l.fromQ * ROW_PITCH + CELL_CENTER;
+        const x = Math.round(baseX + (i - (links.length - 1) / 2) * 15); // 여러 개면 나란히
+        const fromCell = cellAt(col, l.fromQ, snapshot.qubitCount);
+        if (!fromCell) return;
+        const top = gridCenter(fromCell, gridRect).y;
         const link = document.createElement("div");
         link.className = "cl-connector";
-        link.style.left = `${x - 2}px`;
+        link.style.left = `${x - 2}px`; // 폭 4px(짝수)
         link.style.top = `${top}px`;
-        link.style.height = `${(clRow - l.fromQ) * ROW_PITCH}px`;
+        link.style.height = `${clY - top}px`;
         circuitGrid.appendChild(link);
         const badge = document.createElement("div");
         badge.className = "cl-bit-badge" + (l.isMeasure ? "" : " cl-bit-cond");
@@ -1317,7 +1347,14 @@ function buildCircuitGrid(snapshot) {
   highlightedCol = -1; // 셀이 새로 만들어져 하이라이트 클래스는 사라짐
   const ind = document.createElement("div");
   ind.className = "step-indicator";
-  ind.style.height = `${snapshot.qubitCount * ROW_PITCH - 8}px`;
+  // 인디케이터는 첫 행 위에서 마지막 큐비트 행 아래까지 걸친다 — 행 높이도 실측한다.
+  const firstCell = cellAt(0, 0, snapshot.qubitCount);
+  const lastCell = cellAt(0, Math.max(0, snapshot.qubitCount - 1), snapshot.qubitCount);
+  const indH =
+    firstCell && lastCell
+      ? gridCenter(lastCell, gridRect).y - gridCenter(firstCell, gridRect).y + firstCell.offsetHeight
+      : 0;
+  ind.style.height = `${Math.max(0, indH - 8)}px`;
   ind.style.transform = `translateX(${stepIndicatorX(snapshot.stepIndex)}px)`;
   ind.classList.toggle("hidden", snapshot.totalSteps === 0);
   circuitGrid.appendChild(ind);
@@ -1827,7 +1864,14 @@ function buildProbTween(fromProbs, toProbs, qubitCount, W, H) {
 let stepIndicatorEl = null;
 let highlightedCol = -1;
 function stepIndicatorX(step) {
-  return GRID_PAD_LEFT + LABEL_WIDTH + step * COL_PITCH - 2;
+  // 열 k의 **왼쪽 경계**. 애니메이션 중에도 불리므로 그리드를 다시 짓지 않고 셀만 읽는다.
+  const gridRect = circuitGrid.getBoundingClientRect();
+  const cell = circuitGrid.querySelector(`.grid-cell[data-col="${step}"][data-qubit="0"]`);
+  if (cell) return Math.round(cell.getBoundingClientRect().left - gridRect.left) - 2;
+  // step이 마지막 열을 넘어선 경우(전 스텝 재생 완료): 마지막 셀의 오른쪽 끝에 세운다.
+  const cells = circuitGrid.querySelectorAll('.grid-cell[data-qubit="0"]');
+  const last = cells[cells.length - 1];
+  return last ? Math.round(last.getBoundingClientRect().right - gridRect.left) - 2 : 0;
 }
 function setStepIndicator(x) {
   if (stepIndicatorEl) stepIndicatorEl.style.transform = `translateX(${x}px)`;
@@ -2031,8 +2075,9 @@ function render(snapshot) {
 
   // [4] 고전 와이어까지 들어가도록 회로 패널 최소 높이를 내용에 맞춘다.
   // (패널 높이가 워크스페이스 비율 고정이라 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
-  const rows = snapshot.qubitCount + (snapshot.clbitCount > 0 ? 1 : 0);
-  const needed = rows * ROW_PITCH + CIRCUIT_CHROME;
+  // buildCircuitGrid가 위에서 이미 돌았으므로 그리드의 실제 높이를 그대로 쓴다
+  // (행 높이·gap을 JS에서 다시 계산하지 않는다 — 그게 어긋남의 원인이었다).
+  const needed = circuitGrid.scrollHeight + CIRCUIT_CHROME;
   const cap = Math.round((workspace.clientHeight || 0) * 0.72);
   circuitPanel.style.minHeight = `${cap > 0 ? Math.min(needed, cap) : needed}px`;
 }

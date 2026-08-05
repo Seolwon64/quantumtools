@@ -85,18 +85,42 @@
   --accent-10: #005ec9;   /* hover — 대비 5.96 */
   --accent-11: #0061c0;   /* 밝은 배경 위 액센트 텍스트 */
 
-  /* (c) 게이트 카테고리 — hue 3개 + 중립 3종.
-     OKLCH에서 **L을 고정하고 hue만** 바꿔 모든 유채색 카테고리의 지각 명도를 동일하게 맞췄다
-     (Y가 RY보다 중요해 보이던 착시 제거). 중립 3종은 hue가 없으므로 명도로 구분한다.
-     -bg/-fg = 팔레트 tier(밝게) · -c = 회로 tier(한 단계만 진하게, 글자는 --gray-12).
-     회로 tier가 예전처럼 어둡지 않아 캔버스가 훨씬 차분해진다. */
-  --cat-pauli-bg: #ffe5e1;        --cat-pauli-fg: #852f29;        --cat-pauli-c: #f5a69d;
-  --cat-phase-bg: #d4f5f5;        --cat-phase-fg: #006264;        --cat-phase-c: #6cd1d1;
-  --cat-rotation-bg: #f5e7ff;     --cat-rotation-fg: #643980;     --cat-rotation-c: #d1adec;
-  --cat-interaction-bg: #d8f6e9;  --cat-interaction-fg: #006343;  --cat-interaction-c: #7dd2b2;
-  --cat-multi-bg: #ebeef1;        --cat-multi-fg: #4c5055;        --cat-multi-c: #b9bec4;
-  --cat-structural-bg: #f0f3f6;   --cat-structural-fg: #4c5055;   --cat-structural-c: #cfd4da;
-  --cat-advanced-bg: #e5e8ec;     --cat-advanced-fg: #4c5055;     --cat-advanced-c: #9ca1a7;
+  /* (c) 게이트 카테고리 — **카테고리당 색 하나**.
+     예전에는 -bg(팔레트 tier)와 -c(회로 tier)로 나눠 뒀는데, 값이 두 벌이라
+     "팔레트의 이 게이트 = 회로의 저 블록"이 성립하지 않았다. 하나로 합친다.
+     팔레트 .cat-* 와 회로 .placed-gate.cat-* 가 아래 **같은 변수**를 참조한다.
+
+     규격: OKLCH **L = 0.62 고정**(7개 전부 — 지각 명도 균일) ·
+           유채색 C = 0.135 · 중성 C = 0.038(회색 성격은 유지하되 hue로 구분).
+     L=0.62는 두 제약을 동시에 만족하는 거의 유일한 값이다 —
+       L=0.64면 패널 경계 대비가 2.90으로 3:1 미달,
+       L=0.60이면 --gray-12 글자 대비가 4.27로 AA 미달.
+     청록 계열(phase 195°, interaction 168°)은 L=0.62에서 C=0.135가 **sRGB 색역 밖**이라
+     그대로 쓰면 채널이 잘리면서 L이 0.634로 밀린다 → L은 고정한 채 C만 줄여 색역에 맞췄다
+     (CSS Color 4의 gamut mapping과 같은 방식). 그 결과 실제 L 편차는 0.0021이다.
+     실측: 경계 3.24~3.67(≥3.0) · 글자 4.64~5.26(≥4.5). test/colors.test.mjs가 고정한다.
+     흰 글자로 뒤집지 않는다 — 이 배경에 흰 글자는 3.28~3.87로 AA 미달이다. */
+  --cat-pauli: #cb6259;         /* 26.6°  Pauli & Clifford */
+  --cat-phase: #00999a;         /* 195.4° Phase / T */
+  --cat-rotation: #9f6dc2;      /* 310.2° Rotations */
+  --cat-interaction: #009e77;   /* 167.8° Interaction */
+  --cat-multi: #76889d;         /* 252°   Multi-qubit — 중성 */
+  --cat-structural: #6c8e8b;    /* 190°   Non-unitary — 중성 */
+  --cat-advanced: #917f95;      /* 320°   Advanced — 중성(+ 점선 테두리) */
+
+  /* hover: 같은 hue에서 L만 한 단계(0.62 → 0.56) 내린다. 중립 회색으로 덮지 않는다. */
+  --cat-pauli-hover: #b65048;
+  --cat-phase-hover: #008586;
+  --cat-rotation-hover: #8d5baf;
+  --cat-interaction-hover: #008967;
+  --cat-multi-hover: #65768b;
+  --cat-structural-hover: #5b7c79;
+  --cat-advanced-hover: #7f6e83;
+
+  /* 위험/경고 — 예전에는 --cat-pauli-bg/-fg를 빌려 썼는데, 게이트 색이 진해지면
+     같이 깨진다. 의미 토큰으로 분리한다(값은 예전 pauli 파스텔을 그대로 계승). */
+  --danger-bg: #ffe5e1;
+  --danger-fg: #852f29;
 
   /* 이전 이름 → 새 램프 별칭(기존 규칙이 계속 동작하게) */
   --bg: var(--gray-1);
@@ -640,14 +664,16 @@ html, body {
 
 /* 게이트 카테고리 색상 클래스 — 팔레트 버튼과 캔버스에 배치된 게이트 공통 사용.
    색은 :root의 --cat-* 변수에서만 온다(버튼별 하드코딩 없음). */
-.cat-pauli { background: var(--cat-pauli-bg); color: var(--cat-pauli-fg); --chip-hover: var(--cat-pauli-c); }
-.cat-phase { background: var(--cat-phase-bg); color: var(--cat-phase-fg); --chip-hover: var(--cat-phase-c); }
-.cat-rotation { background: var(--cat-rotation-bg); color: var(--cat-rotation-fg); --chip-hover: var(--cat-rotation-c); }
-.cat-multi { background: var(--cat-multi-bg); color: var(--cat-multi-fg); --chip-hover: var(--cat-multi-c); }
-.cat-interaction { background: var(--cat-interaction-bg); color: var(--cat-interaction-fg); --chip-hover: var(--cat-interaction-c); }
-.cat-structural { background: var(--cat-structural-bg); color: var(--cat-structural-fg); --chip-hover: var(--cat-structural-c); }
+/* 팔레트 칩과 회로 블록이 **같은 변수**를 쓴다 — 놓기 전후로 색이 변하지 않는다.
+   글자는 7개 모두 --gray-12(램프의 최대 농도). 카테고리별 글자색을 따로 두지 않는다. */
+.cat-pauli { background: var(--cat-pauli); color: var(--gray-12); --chip-hover: var(--cat-pauli-hover); }
+.cat-phase { background: var(--cat-phase); color: var(--gray-12); --chip-hover: var(--cat-phase-hover); }
+.cat-rotation { background: var(--cat-rotation); color: var(--gray-12); --chip-hover: var(--cat-rotation-hover); }
+.cat-multi { background: var(--cat-multi); color: var(--gray-12); --chip-hover: var(--cat-multi-hover); }
+.cat-interaction { background: var(--cat-interaction); color: var(--gray-12); --chip-hover: var(--cat-interaction-hover); }
+.cat-structural { background: var(--cat-structural); color: var(--gray-12); --chip-hover: var(--cat-structural-hover); }
 /* RCCX/RC3X: 경고 톤 + 점선 테두리로 CCX와 시각 구분(정확한 Toffoli가 아님). */
-.cat-advanced { background: var(--cat-advanced-bg); color: var(--cat-advanced-fg); border: 1.5px dashed var(--cat-advanced-fg); }
+.cat-advanced { background: var(--cat-advanced); color: var(--gray-12); --chip-hover: var(--cat-advanced-hover); border: 1.5px dashed var(--gray-12); }
 
 /* Circuit */
 .circuit-toolbar {
@@ -863,7 +889,7 @@ html, body {
   margin-top: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 700;
-  color: var(--cat-pauli-fg);
+  color: var(--danger-fg);
 }
 .deferred-now {
   font-weight: 800;
@@ -882,8 +908,8 @@ html, body {
   flex-basis: 100%;
   padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-3);
-  background: var(--cat-pauli-bg);
-  color: var(--cat-pauli-fg);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
   font-size: var(--text-sm);
   font-weight: 600;
   line-height: 1.55;
@@ -1076,26 +1102,27 @@ html, body {
   font-weight: 550;
   cursor: pointer;
   transition: transform var(--dur) var(--ease);
-  background: var(--gate-c, var(--cat-structural-c));
+  background: var(--gate-c, var(--cat-structural));
   /* 회로 tier가 밝아졌으므로 글자는 흰색이 아니라 --gray-12 (흰 글자는 대비 1.7로 AA 미달) */
   color: var(--gray-12);
 }
 
 /* 카테고리 → 회로 전용 색 매핑(팔레트 .gate-chip 은 건드리지 않음, .placed-gate 만 재지정) */
-.placed-gate.cat-pauli { --gate-c: var(--cat-pauli-c); --gate-fg: var(--cat-pauli-fg); }
-.placed-gate.cat-phase { --gate-c: var(--cat-phase-c); --gate-fg: var(--cat-phase-fg); }
-.placed-gate.cat-rotation { --gate-c: var(--cat-rotation-c); --gate-fg: var(--cat-rotation-fg); }
-.placed-gate.cat-multi { --gate-c: var(--cat-multi-c); --gate-fg: var(--cat-multi-fg); }
-.placed-gate.cat-interaction { --gate-c: var(--cat-interaction-c); --gate-fg: var(--cat-interaction-fg); }
-.placed-gate.cat-structural { --gate-c: var(--cat-structural-c); --gate-fg: var(--cat-structural-fg); }
-.placed-gate.cat-advanced { --gate-c: var(--cat-advanced-c); --gate-fg: var(--cat-advanced-fg); }
+.placed-gate.cat-pauli { --gate-c: var(--cat-pauli); }
+.placed-gate.cat-phase { --gate-c: var(--cat-phase); }
+.placed-gate.cat-rotation { --gate-c: var(--cat-rotation); }
+.placed-gate.cat-multi { --gate-c: var(--cat-multi); }
+.placed-gate.cat-interaction { --gate-c: var(--cat-interaction); }
+.placed-gate.cat-structural { --gate-c: var(--cat-structural); }
+.placed-gate.cat-advanced { --gate-c: var(--cat-advanced); }
 
 /* [1] ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 채운 박스가 아니라 와이어 위의 기호 → 배경을 없애 아래의
    연결선이 기호 중심까지 이어져 보이게 한다. 글리프는 카테고리 색(흰 배경 대비 ≥4.5:1)으로 키운다. */
 .placed-gate.placed-symbol {
   background: transparent;
-  /* 기호는 배경이 없어 패널 위에 바로 놓인다 → 회로 tier(밝음)가 아니라 진한 톤을 쓴다 */
-  color: var(--gate-fg, var(--gray-12));
+  /* 기호는 배경이 없어 패널 위에 바로 놓인다 — 카테고리 색으로 칠하면 와이어 위에서 옅다.
+     --gate-fg를 없앴으므로(카테고리당 색 하나) 램프의 최대 농도를 그대로 쓴다. */
+  color: var(--gray-12);
   /* ⊕·×는 글자가 아니라 회로 기호(아이콘)라 본문 스케일과 별개로 크게 그린다.
      그래도 스케일에서 파생시켜 임의의 값이 생기지 않게 한다. */
   font-size: calc(var(--text-base) * 1.7);
@@ -1155,8 +1182,8 @@ html, body {
 /* 파괴적 동작(Delete)은 색으로도 구분한다 */
 .gate-menu-item.is-danger:hover:not(.is-disabled),
 .gate-menu-item.is-danger.active:not(.is-disabled) {
-  background: var(--cat-pauli-bg);
-  color: var(--cat-pauli-fg);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
 }
 /* 비활성 항목은 숨기지 않고 흐리게 남긴다. `disabled` 속성을 쓰면 브라우저가 마우스 이벤트를
    막아 사유 툴팁이 뜨지 않으므로, 클래스로만 표현하고 클릭은 JS에서 막는다. */
@@ -1173,13 +1200,9 @@ html, body {
   background: var(--gray-6);
 }
 
-.placed-partner {
-  opacity: 0.75;
-}
-
 /* RCCX/RC3X 타깃 칩: 점선 테두리로 CCX(⊕)와 확실히 구분 */
 .placed-advanced {
-  border: 1.5px dashed var(--cat-advanced-fg);
+  border: 1.5px dashed var(--gray-12);
 }
 
 /* Playback */
@@ -1925,7 +1948,7 @@ html, body {
   height: 30px;
   border: none;
   border-radius: 50%;
-  background: var(--cat-pauli-c);
+  background: var(--danger-fg);
   cursor: default;
   box-shadow: var(--shadow-1);
 }
@@ -2172,7 +2195,8 @@ html, body {
 /* --- hover: 중립 배경 요소는 한 단계 진하게 (비활성 요소는 반응하지 않는다) --- */
 /* .active 를 :not() 으로 빼는 이유: :not() 3개가 특이도를 (0,5,0)으로 올려
    아래의 .segmented-btn.active:hover(0,3,0)를 이겨버린다. 그러면 활성 탭이
-   hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라진다(대비 1.03). */
+   hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라진다(대비 1.03).
+   같은 이유로 .is-danger(Delete)도 뺀다 — 파괴적 동작의 빨강 신호가 회색으로 덮인다. */
 .menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
@@ -2185,7 +2209,7 @@ html, body {
 .qubit-tab:not(.active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.gate-menu-item:not(.is-danger):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
