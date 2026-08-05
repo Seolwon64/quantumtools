@@ -63,19 +63,27 @@
      역할별로 완전히 분리한다. 예전에는 게이트 색과 인터랙티브 색이 모두 파랑이라
      "누를 수 있는 것"의 신호가 약했다. */
 
-  /* (a) 중립 램프 — Radix Colors `slate` 12단계 원본. UI의 90%가 여기서 나온다. */
-  --gray-1: #fbfcfd;   /* 앱 배경 */
-  --gray-2: #f8f9fa;   /* 패널 배경 */
-  --gray-3: #f1f3f5;   /* 미묘한 배경 */
-  --gray-4: #eceef0;   /* hover 배경 */
-  --gray-5: #e6e8eb;   /* active 배경 */
-  --gray-6: #dfe3e6;   /* 미묘한 테두리 */
-  --gray-7: #d7dbdf;   /* 테두리 */
-  --gray-8: #c1c8cd;   /* 강한 테두리 / 포커스 링 */
-  --gray-9: #889096;   /* 플레이스홀더 텍스트 */
-  --gray-10: #7e868c;  /* 보조 텍스트 */
-  --gray-11: #687076;  /* 본문 텍스트 */
-  --gray-12: #11181c;  /* 강조 텍스트 */
+  /* (a) 중립 램프 — Radix `slate`의 **명도 구조** + Stripe 수준의 채도.
+     예전에는 Radix v1 slate 원본(#fbfcfd … #11181c)을 그대로 썼는데, hue는 240~248°로
+     차가웠지만 **채도가 0.0017~0.0135로 극히 낮아 순수 회색으로 읽혔다.** Stripe의
+     텍스트 계열(#0a2540 C=0.060 / #425466 C=0.037 / #697386 C=0.032)과 비교하면
+     2.4~4.5배 낮다 — 차가운 인상은 hue가 아니라 **채도**가 만든다.
+     그래서 L 12단계는 Radix 값을 그대로 두고(모든 대비 관계가 보존된다)
+     hue 253°에서 C만 L에 따라 0.006 → 0.055로 키웠다.
+     결과가 참고값과 거의 겹친다: --gray-2 #f6f9fd(vs #f6f9fc) · --gray-12 #03172f(vs #0a2540).
+     검증: 본문 4.79 · 제목 17.03 — 교체 전과 동일하다. */
+  --gray-1: #fafcff;   /* 앱 배경 */
+  --gray-2: #f6f9fd;   /* 패널 배경 */
+  --gray-3: #eff3f8;   /* 미묘한 배경 */
+  --gray-4: #eaeef3;   /* hover 배경 */
+  --gray-5: #e4e8ee;   /* active 배경 */
+  --gray-6: #dee3e9;   /* 미묘한 테두리 */
+  --gray-7: #d5dbe2;   /* 테두리 */
+  --gray-8: #c0c8d1;   /* 강한 테두리 / 포커스 링 */
+  --gray-9: #84909f;   /* 플레이스홀더 텍스트 */
+  --gray-10: #798696;  /* 보조 텍스트 */
+  --gray-11: #617082;  /* 본문 텍스트 */
+  --gray-12: #03172f;  /* 강조 텍스트 — Stripe의 진한 남색 성격 */
 
   /* (b) 액센트 — 인터랙티브 전용 hue(파랑) 1개.
      재생 버튼·선택 상태·활성 탭·포커스 링·진행 점선에만 쓰고, **게이트 카테고리에서는 완전히 제외**한다. */
@@ -85,37 +93,48 @@
   --accent-10: #005ec9;   /* hover — 대비 5.96 */
   --accent-11: #0061c0;   /* 밝은 배경 위 액센트 텍스트 */
 
-  /* (c) 게이트 카테고리 — **카테고리당 색 하나**.
-     예전에는 -bg(팔레트 tier)와 -c(회로 tier)로 나눠 뒀는데, 값이 두 벌이라
-     "팔레트의 이 게이트 = 회로의 저 블록"이 성립하지 않았다. 하나로 합친다.
-     팔레트 .cat-* 와 회로 .placed-gate.cat-* 가 아래 **같은 변수**를 참조한다.
+  /* (c) 게이트 카테고리 — **카테고리당 색 하나**(팔레트 칩과 회로 블록이 같은 변수를 쓴다).
 
-     규격: OKLCH **L = 0.62 고정**(7개 전부 — 지각 명도 균일) ·
-           유채색 C = 0.135 · 중성 C = 0.038(회색 성격은 유지하되 hue로 구분).
-     L=0.62는 두 제약을 동시에 만족하는 거의 유일한 값이다 —
-       L=0.64면 패널 경계 대비가 2.90으로 3:1 미달,
-       L=0.60이면 --gray-12 글자 대비가 4.27로 AA 미달.
-     청록 계열(phase 195°, interaction 168°)은 L=0.62에서 C=0.135가 **sRGB 색역 밖**이라
-     그대로 쓰면 채널이 잘리면서 L이 0.634로 밀린다 → L은 고정한 채 C만 줄여 색역에 맞췄다
-     (CSS Color 4의 gamut mapping과 같은 방식). 그 결과 실제 L 편차는 0.0021이다.
-     실측: 경계 3.24~3.67(≥3.0) · 글자 4.64~5.26(≥4.5). test/colors.test.mjs가 고정한다.
-     흰 글자로 뒤집지 않는다 — 이 배경에 흰 글자는 3.28~3.87로 AA 미달이다. */
-  --cat-pauli: #cb6259;         /* 26.6°  Pauli & Clifford */
-  --cat-phase: #00999a;         /* 195.4° Phase / T */
-  --cat-rotation: #9f6dc2;      /* 310.2° Rotations */
-  --cat-interaction: #009e77;   /* 167.8° Interaction */
-  --cat-multi: #76889d;         /* 252°   Multi-qubit — 중성 */
-  --cat-structural: #6c8e8b;    /* 190°   Non-unitary — 중성 */
-  --cat-advanced: #917f95;      /* 320°   Advanced — 중성(+ 점선 테두리) */
+     예전에는 L=0.62 / C=0.135 였다. 명도도 채도도 중간값이라 **탁했다**(mid+mid = muddy).
+     밝고 선명한 쪽으로 옮긴다: **L = 0.70 고정(7개 전부)** · 유채색 C = 0.15 · 중성 C = 0.05.
 
-  /* hover: 같은 hue에서 L만 한 단계(0.62 → 0.56) 내린다. 중립 회색으로 덮지 않는다. */
-  --cat-pauli-hover: #b65048;
-  --cat-phase-hover: #008586;
-  --cat-rotation-hover: #8d5baf;
-  --cat-interaction-hover: #008967;
-  --cat-multi-hover: #65768b;
-  --cat-structural-hover: #5b7c79;
-  --cat-advanced-hover: #7f6e83;
+     채도 상한이 0.15인 이유: 액센트(--accent-9 #006fdc)의 C가 0.187이다. 7개 카테고리가
+     액센트만큼 진하면 화면이 형광펜이 되고 **액센트가 액센트로 기능하지 못한다.**
+     한 단계 낮게 두어 재생 버튼·활성 탭이 항상 이긴다(액센트 경계 대비 4.62 vs 게이트 2.70).
+
+     **L을 올리면 채움만으로는 경계가 안 나온다.** 패널이 L≈0.98이라 블록이 밝아질수록
+     휘도차가 줄어 채움의 경계 대비가 2.37~2.70(3:1 미달)이 된다. 그래서 **같은 hue·같은 C에서
+     L만 0.52로 내린 1px 테두리**로 경계를 되찾는다 — 테두리 대비 4.92~5.62로 WCAG 1.4.11 충족.
+     밝기와 경계를 동시에 얻는 유일한 방법이다.
+
+     글자는 --gray-12 유지. 배경이 밝아져 대비가 4.64~5.26 → **6.30~7.20** 으로 좋아진다.
+     청록(phase 195° · interaction 168°)은 L=0.70에서 C 0.15가 sRGB 색역 밖이라
+     L·H는 고정하고 C만 줄여 맞췄다(0.119 / 0.142). test/colors.test.mjs가 전부 고정한다. */
+  --cat-pauli: #ed756b;         /* 26.6°  Pauli & Clifford */
+  --cat-phase: #00b5b6;         /* 195.4° Phase / T */
+  --cat-rotation: #bb81e3;      /* 310.2° Rotations */
+  --cat-interaction: #00ba8d;   /* 167.8° Interaction */
+  --cat-multi: #89a1bd;         /* 253°   Multi-qubit — 중성 */
+  --cat-structural: #7aa9a5;    /* 190°   Non-unitary — 중성 */
+  --cat-advanced: #ad95b2;      /* 320°   Advanced — 중성(+ 점선 테두리) */
+
+  /* 테두리: 같은 hue·같은 C에서 L만 0.70 → 0.52. 채움이 밝아진 대가를 여기서 갚는다. */
+  --cat-pauli-border: #af3d37;
+  --cat-phase-border: #007879;
+  --cat-rotation-border: #834ba8;
+  --cat-interaction-border: #007c5d;
+  --cat-multi-border: #556b85;
+  --cat-structural-border: #45726f;
+  --cat-advanced-border: #76607b;
+
+  /* hover: 같은 hue에서 L만 한 단계(0.70 → 0.64). 중립 회색으로 덮지 않는다. */
+  --cat-pauli-hover: #d86259;
+  --cat-phase-hover: #00a0a1;
+  --cat-rotation-hover: #a86fcf;
+  --cat-interaction-hover: #00a57d;
+  --cat-multi-hover: #778eaa;
+  --cat-structural-hover: #689693;
+  --cat-advanced-hover: #9a839f;
 
   /* 위험/경고 — 예전에는 --cat-pauli-bg/-fg를 빌려 썼는데, 게이트 색이 진해지면
      같이 깨진다. 의미 토큰으로 분리한다(값은 예전 pauli 파스텔을 그대로 계승). */
@@ -454,7 +473,9 @@ html, body {
 
 .gate-chip {
   aspect-ratio: 1;
-  border: none;
+  /* [2] 채움을 밝게(L=0.70) 올린 대가로 채움만으로는 패널과 경계가 안 난다(대비 2.4~2.7).
+     같은 hue의 진한 테두리로 경계를 만든다. box-sizing:border-box 라 크기는 그대로다. */
+  border: 1px solid var(--chip-border, var(--cat-structural-border));
   border-radius: var(--radius-2);
   font-size: var(--gate-font);
   font-weight: 700;
@@ -666,14 +687,14 @@ html, body {
    색은 :root의 --cat-* 변수에서만 온다(버튼별 하드코딩 없음). */
 /* 팔레트 칩과 회로 블록이 **같은 변수**를 쓴다 — 놓기 전후로 색이 변하지 않는다.
    글자는 7개 모두 --gray-12(램프의 최대 농도). 카테고리별 글자색을 따로 두지 않는다. */
-.cat-pauli { background: var(--cat-pauli); color: var(--gray-12); --chip-hover: var(--cat-pauli-hover); }
-.cat-phase { background: var(--cat-phase); color: var(--gray-12); --chip-hover: var(--cat-phase-hover); }
-.cat-rotation { background: var(--cat-rotation); color: var(--gray-12); --chip-hover: var(--cat-rotation-hover); }
-.cat-multi { background: var(--cat-multi); color: var(--gray-12); --chip-hover: var(--cat-multi-hover); }
-.cat-interaction { background: var(--cat-interaction); color: var(--gray-12); --chip-hover: var(--cat-interaction-hover); }
-.cat-structural { background: var(--cat-structural); color: var(--gray-12); --chip-hover: var(--cat-structural-hover); }
+.cat-pauli { background: var(--cat-pauli); color: var(--gray-12); --chip-border: var(--cat-pauli-border); --chip-hover: var(--cat-pauli-hover); }
+.cat-phase { background: var(--cat-phase); color: var(--gray-12); --chip-border: var(--cat-phase-border); --chip-hover: var(--cat-phase-hover); }
+.cat-rotation { background: var(--cat-rotation); color: var(--gray-12); --chip-border: var(--cat-rotation-border); --chip-hover: var(--cat-rotation-hover); }
+.cat-multi { background: var(--cat-multi); color: var(--gray-12); --chip-border: var(--cat-multi-border); --chip-hover: var(--cat-multi-hover); }
+.cat-interaction { background: var(--cat-interaction); color: var(--gray-12); --chip-border: var(--cat-interaction-border); --chip-hover: var(--cat-interaction-hover); }
+.cat-structural { background: var(--cat-structural); color: var(--gray-12); --chip-border: var(--cat-structural-border); --chip-hover: var(--cat-structural-hover); }
 /* RCCX/RC3X: 경고 톤 + 점선 테두리로 CCX와 시각 구분(정확한 Toffoli가 아님). */
-.cat-advanced { background: var(--cat-advanced); color: var(--gray-12); --chip-hover: var(--cat-advanced-hover); border: 1.5px dashed var(--gray-12); }
+.cat-advanced { background: var(--cat-advanced); color: var(--gray-12); --chip-border: var(--cat-advanced-border); --chip-hover: var(--cat-advanced-hover); border-style: dashed; }
 
 /* Circuit */
 .circuit-toolbar {
@@ -1103,18 +1124,20 @@ html, body {
   cursor: pointer;
   transition: transform var(--dur) var(--ease);
   background: var(--gate-c, var(--cat-structural));
+  /* 팔레트 칩과 같은 규칙 — 밝은 채움 + 같은 hue의 진한 1px 테두리 */
+  border: 1px solid var(--gate-border, var(--cat-structural-border));
   /* 회로 tier가 밝아졌으므로 글자는 흰색이 아니라 --gray-12 (흰 글자는 대비 1.7로 AA 미달) */
   color: var(--gray-12);
 }
 
 /* 카테고리 → 회로 전용 색 매핑(팔레트 .gate-chip 은 건드리지 않음, .placed-gate 만 재지정) */
-.placed-gate.cat-pauli { --gate-c: var(--cat-pauli); }
-.placed-gate.cat-phase { --gate-c: var(--cat-phase); }
-.placed-gate.cat-rotation { --gate-c: var(--cat-rotation); }
-.placed-gate.cat-multi { --gate-c: var(--cat-multi); }
-.placed-gate.cat-interaction { --gate-c: var(--cat-interaction); }
-.placed-gate.cat-structural { --gate-c: var(--cat-structural); }
-.placed-gate.cat-advanced { --gate-c: var(--cat-advanced); }
+.placed-gate.cat-pauli { --gate-c: var(--cat-pauli); --gate-border: var(--cat-pauli-border); }
+.placed-gate.cat-phase { --gate-c: var(--cat-phase); --gate-border: var(--cat-phase-border); }
+.placed-gate.cat-rotation { --gate-c: var(--cat-rotation); --gate-border: var(--cat-rotation-border); }
+.placed-gate.cat-multi { --gate-c: var(--cat-multi); --gate-border: var(--cat-multi-border); }
+.placed-gate.cat-interaction { --gate-c: var(--cat-interaction); --gate-border: var(--cat-interaction-border); }
+.placed-gate.cat-structural { --gate-c: var(--cat-structural); --gate-border: var(--cat-structural-border); }
+.placed-gate.cat-advanced { --gate-c: var(--cat-advanced); --gate-border: var(--cat-advanced-border); }
 
 /* [1] ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 채운 박스가 아니라 와이어 위의 기호 → 배경을 없애 아래의
    연결선이 기호 중심까지 이어져 보이게 한다. 글리프는 카테고리 색(흰 배경 대비 ≥4.5:1)으로 키운다. */
@@ -1123,6 +1146,7 @@ html, body {
   /* 기호는 배경이 없어 패널 위에 바로 놓인다 — 카테고리 색으로 칠하면 와이어 위에서 옅다.
      --gate-fg를 없앴으므로(카테고리당 색 하나) 램프의 최대 농도를 그대로 쓴다. */
   color: var(--gray-12);
+  border: none; /* 배경이 없는 기호에 테두리를 두르면 없는 상자가 생긴다 */
   /* ⊕·×는 글자가 아니라 회로 기호(아이콘)라 본문 스케일과 별개로 크게 그린다.
      그래도 스케일에서 파생시켜 임의의 값이 생기지 않게 한다. */
   font-size: calc(var(--text-base) * 1.7);
@@ -1201,8 +1225,11 @@ html, body {
 }
 
 /* RCCX/RC3X 타깃 칩: 점선 테두리로 CCX(⊕)와 확실히 구분 */
-.placed-advanced {
-  border: 1.5px dashed var(--gray-12);
+/* RCCX/RC3X 타깃 칩: 점선이 CCX(⊕)와 구분하는 **유일한 단서**다.
+   타깃 라벨이 ⊕라 .placed-symbol(border: none)에도 걸리므로,
+   같은 특이도에서 **뒤에** 두어 점선이 이기게 한다. 순서를 바꾸면 구분이 사라진다. */
+.placed-gate.placed-advanced {
+  border: 1px dashed var(--cat-advanced-border);
 }
 
 /* Playback */
@@ -1334,7 +1361,18 @@ html, body {
 }
 
 .segmented {
-  display: flex;
+  /* [3] 어느 쪽을 선택하든 크기가 변하면 안 된다.
+     .sphere-footer 는 space-between flex 이고, Bloch 모드에서만 나타나는
+     .bloch-info(223px)가 이 토글을 밀어냈다 → "Q-sphere"가 두 줄로 접혀
+     토글이 41px → 58px 로 커지고 17px 위로 밀렸다(1440px 이하에서 재현).
+     양보는 읽기 전용 정보(.bloch-info)가 하고, 조작 대상인 토글은 고정한다. */
+  flex: none;
+  /* grid 2열 균등(1fr 1fr)으로 두 버튼 폭을 맞춘다.
+     flex + `flex: 1` 로는 안 된다 — 컨테이너가 콘텐츠 크기(shrink-to-fit)라
+     나눠 줄 여유 공간이 0이고, 각 버튼이 자기 콘텐츠 폭에 머문다(실측 52.3 vs 75.2).
+     auto 폭 grid에서 1fr 트랙은 **가장 넓은 아이템 기준으로 균등**해진다. */
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   background: var(--bg);
   border-radius: var(--radius-2);
   padding: var(--space-1);
@@ -1350,8 +1388,15 @@ html, body {
   background: transparent;
   color: var(--text-body);
   font-size: var(--text-base);
+  /* 활성/비활성 모두 같은 굵기 — 굵기를 바꾸면 글자 폭이 달라져 크기가 미세하게 흔들린다.
+     구분은 .segmented-btn.active 의 배경색·글자색만으로 한다. */
   font-weight: 700;
-  padding: var(--space-2) var(--space-3);
+  /* 두 버튼을 같은 폭으로: flex-basis 0 이라 남는 폭을 정확히 반씩 나눠 갖고,
+     min-width: max-content 가 가장 긴 라벨("Q-sphere") 아래로는 못 줄어들게 막는다.
+     자동 폭에 맡기면 "Bloch"와 "Q-sphere"가 달라 선택에 따라 레이아웃이 흔들린다.
+     폭은 부모의 grid 트랙이 정하므로 여기서는 줄바꿈만 막으면 된다. */
+  white-space: nowrap; /* 밀려도 줄바꿈하지 않는다 — 높이가 변하는 직접 원인이었다 */
+  padding: var(--space-2);
   border-radius: var(--radius-2);
   cursor: pointer;
   transition: background-color var(--dur) var(--ease);
@@ -2008,9 +2053,12 @@ html, body {
 
 /* Purity / Local mixedness 정보 (Bloch 뷰 전용) */
 .bloch-info {
+  /* 폭이 모자라면 토글 대신 이쪽이 줄어든다(읽기 전용 정보라 잘려도 조작을 막지 않는다) */
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   height: 32px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-full);
@@ -2038,7 +2086,11 @@ html, body {
   color: var(--text-faint);
 }
 .bloch-mixed-bar {
+  /* 폭이 모자라면 **바가 먼저 줄어든다** — 바는 장식이고 옆의 %가 정보다.
+     고정 폭이면 오른쪽 끝의 숫자부터 잘려 나간다. */
+  flex: 0 1 46px;
   width: 46px;
+  min-width: 8px;
   height: 6px;
   border-radius: var(--radius-1);
   background: var(--bg);
