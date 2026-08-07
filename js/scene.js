@@ -369,12 +369,35 @@ export function createBlochScene(container) {
 
   // renderLoop 정의만 하고 호출은 Q-sphere 요소(qsphereBgGroup, silhouette) 생성 후에 한다
   // (const TDZ 때문에 먼저 호출하면 "Cannot access before initialization" 발생).
+  // 코드 패널이 왼쪽 열을 덮으면 이 캔버스는 display:none 이 된다. 그때 렌더를 멈춰
+  // GPU를 놀린다. **DOM에서 빼지는 않는다** — 빼면 WebGL 컨텍스트가 손실된다.
+  let paused = false;
+  let loopScheduled = false;
+
   function renderLoop() {
+    loopScheduled = false;
+    if (paused) return; // 다음 프레임을 예약하지 않는다 = 루프 정지
     controls.update();
     // Q-sphere 외곽 실루엣 링을 항상 카메라를 향하게(billboard) 회전시켜 구 윤곽처럼 보이게 한다.
     if (qsphereBgGroup.visible) silhouette.quaternion.copy(camera.quaternion);
     renderer.render(scene, camera);
+    loopScheduled = true;
     requestAnimationFrame(renderLoop);
+  }
+
+  /**
+   * 렌더 루프 정지/재개.
+   * 재개할 때 **resize()를 먼저 부른다** — 숨겨져 있는 동안 clientWidth가 0이라
+   * resize()가 조기 반환했으므로 카메라 aspect가 낡아 있을 수 있다.
+   */
+  function setPaused(value) {
+    const next = Boolean(value);
+    if (next === paused) return;
+    paused = next;
+    if (!paused) {
+      resize();
+      if (!loopScheduled) { loopScheduled = true; requestAnimationFrame(renderLoop); }
+    }
   }
 
   // ---------- Q-sphere (IBM 스타일 전체 상태 시각화) ----------
@@ -637,6 +660,7 @@ export function createBlochScene(container) {
   renderLoop();
 
   return {
+    setPaused,
     setVectorInstant,
     animateVectorTo,
     resetView,

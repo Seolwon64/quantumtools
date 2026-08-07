@@ -170,11 +170,11 @@ test("[3] export 역매핑: X+1→cx, Z+1→cz, X+2→ccx", () => {
     { col: 1, row: 1, cell: { gate: "Z", targets: [1], controls: [0], params: {} } },  // cz
     { col: 2, row: 2, cell: { gate: "X", targets: [2], controls: [0, 1], params: {} } }, // ccx
   ]);
-  const qasm = toQASM(3, grid);
+  const qasm = toQASM(3, grid).code;
   assert.match(qasm, /^cx q\[0\],q\[1\];$/m);
   assert.match(qasm, /^cz q\[0\],q\[1\];$/m);
   assert.match(qasm, /^ccx q\[0\],q\[1\],q\[2\];$/m);
-  const qiskit = toQiskit(3, grid);
+  const qiskit = toQiskit(3, grid).code;
   assert.match(qiskit, /qc\.cx\(0, 1\)/);
   assert.match(qiskit, /qc\.cz\(0, 1\)/);
   assert.match(qiskit, /qc\.ccx\(0, 1, 2\)/);
@@ -275,10 +275,10 @@ test("[6] 구 v1 URL의 RCCX가 고유 게이트로 복원 (ccx 아님)", () => 
 
 test("[4] export: RCCX → rccx (ccx 아님)", () => {
   const grid = gridWith(3, [{ col: 0, row: 0, cell: { gate: "RCCX", targets: [0, 1, 2], controls: [], params: {} } }]);
-  const qasm = toQASM(3, grid);
+  const qasm = toQASM(3, grid).code;
   assert.match(qasm, /^rccx q\[0\],q\[1\],q\[2\];$/m);
   assert.ok(!/ccx/.test(qasm.replace(/rccx/g, "")), "ccx로 잘못 출력됨");
-  const qiskit = toQiskit(3, grid);
+  const qiskit = toQiskit(3, grid).code;
   assert.match(qiskit, /qc\.rccx\(0, 1, 2\)/);
 });
 
@@ -322,8 +322,8 @@ test("RYY 유니터리성: U†U = I", () => {
 
 test("[1] RYY export: ryy(θ) / qc.ryy", () => {
   const grid = gridWith(2, [{ col: 0, row: 0, cell: { gate: "RYY", targets: [0, 1], controls: [], params: { theta: Math.PI / 2 } } }]);
-  assert.match(toQASM(2, grid), /^ryy\(1\.570796\) q\[0\],q\[1\];$/m);
-  assert.match(toQiskit(2, grid), /qc\.ryy\(1\.570796, 0, 1\)/);
+  assert.match(toQASM(2, grid).code, /^ryy\(1\.570796\) q\[0\],q\[1\];$/m);
+  assert.match(toQiskit(2, grid).code, /qc\.ryy\(1\.570796, 0, 1\)/);
 });
 
 // ---------- CSWAP (Fredkin): SWAP + controls[1] 프리셋 ----------
@@ -354,8 +354,8 @@ test("[2] CSWAP 프리셋: migrateCell → SWAP + controls (CNOT/CCX와 동일 �
 
 test("[2] CSWAP export: cswap q[c],q[a],q[b]", () => {
   const grid = gridWith(3, [{ col: 0, row: 1, cell: { gate: "SWAP", targets: [1, 2], controls: [0], params: {} } }]);
-  assert.match(toQASM(3, grid), /^cswap q\[0\],q\[1\],q\[2\];$/m);
-  assert.match(toQiskit(3, grid), /qc\.cswap\(0, 1, 2\)/);
+  assert.match(toQASM(3, grid).code, /^cswap q\[0\],q\[1\],q\[2\];$/m);
+  assert.match(toQiskit(3, grid).code, /qc\.cswap\(0, 1, 2\)/);
 });
 
 // migrateGridForTest: 테스트 로컬 헬퍼 (circuit.js의 migrateCell을 그리드에 적용)

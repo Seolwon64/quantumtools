@@ -253,7 +253,7 @@ test("QASM: creg + 지정된 고전 비트로의 measure + 조건부 if", () => 
   const g = emptyGrid(3);
   g[0][2] = cell("MEASURE", [2], [], { cbit: 1 });
   g[1][2] = cell("X", [2], [], { cif: 1 });
-  const qasm = toQASM(3, g, 3);
+  const qasm = toQASM(3, g, 3).code;
   assert.match(qasm, /creg c\[3\];/);
   assert.match(qasm, /measure q\[2\] -> c\[1\];/);
   assert.match(qasm, /if \(c==2\) x q\[2\];/);
@@ -263,7 +263,7 @@ test("QASM: 고전 비트가 0이면 creg도 measure도 나오지 않는다", ()
   const g = emptyGrid(2);
   g[0][0] = cell("H", [0]);
   g[1][0] = cell("MEASURE", [0], [], {});
-  const qasm = toQASM(2, g, 0);
+  const qasm = toQASM(2, g, 0).code;
   assert.ok(!/creg/.test(qasm), qasm);
   assert.ok(!/measure/.test(qasm), qasm);
   assert.match(qasm, /h q\[0\];/);
@@ -273,7 +273,7 @@ test("Qiskit: c_if와 measure 대상 비트", () => {
   const g = emptyGrid(3);
   g[0][2] = cell("MEASURE", [2], [], { cbit: 1 });
   g[1][2] = cell("X", [2], [], { cif: 1 });
-  const code = toQiskit(3, g, 3);
+  const code = toQiskit(3, g, 3).code;
   assert.match(code, /QuantumCircuit\(3, 3\)/);
   assert.match(code, /qc\.measure\(2, 1\)/);
   assert.match(code, /qc\.x\(2\)\.c_if\(qc\.cregs\[0\], 2\)/);

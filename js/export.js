@@ -2,6 +2,7 @@
 // 셀은 canonical { gate, targets, controls, params } 구조. 구버전(v:1) URL도 계속 열린다.
 import { GATE_INFO } from "./quantum.js";
 import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell } from "./circuit.js";
+import { opFor, normalizeCircuit } from "./qasm.js";
 
 function b64urlEncode(str) {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -108,145 +109,159 @@ export function buildShareUrl(qubitCount, grid, clbitCount) {
 }
 
 // ---------- QASM / Qiskit ----------
+// 매핑은 js/qasm.js 의 QASM_OPS 표 하나뿐이다. 여기서 게이트 이름을 다시 적지 않는다 —
+// 예전엔 SIMPLE/PARAM/qasmControlled/본문 if-else 로 다섯 군데에 흩어져 있었고,
+// 역방향 파서가 그 지식을 다시 적으면 export 와 parse 가 조용히 갈라진다.
 
 function fmt(x) {
   return String(+Number(x ?? 0).toFixed(6));
 }
 
-const SIMPLE = {
-  H: "h", X: "x", Y: "y", Z: "z", S: "s", Sdg: "sdg",
-  T: "t", Tdg: "tdg", I: "id", SX: "sx", SXdg: "sxdg",
-};
-const PARAM = { RX: "rx", RY: "ry", RZ: "rz", P: "p" };
+/** 조건이 하나라도 있고 고전 비트가 2개 이상일 때만 붙는 안내. */
+const IF_SEMANTICS_NOTE = [
+  "// NOTE: This app treats `if (c==2^k)` as \"bit c[k] is 1\" regardless of",
+  "// other bits. OpenQASM 2.0 compares the whole register value.",
+  "// With 2+ classical bits these differ: below, `if (c==2) x q[2];` runs",
+  "// in this app whenever c[1]==1, but in Qiskit only when c is exactly 0b10.",
+];
 
-// canonical 셀을 순회하며 방문 (CTRL 점은 표준 표현이 없어 export 생략)
+export const IF_SEMANTICS_WARNING =
+  'Conditions differ from OpenQASM 2.0: this app reads `if (c==2^k)` as "bit c[k] is 1" ' +
+  "regardless of other bits, while OpenQASM compares the whole register value. " +
+  "With 2+ classical bits the exported `if` lines behave differently in Qiskit.";
+
+/**
+ * 정규화된 회로를 열 순서로 순회한다. 정규화가 이미 제어점을 접었으므로
+ * 여기서 CTRL 을 만날 일은 없다(만나면 정규화를 건너뛴 호출부의 버그다).
+ */
 function eachCell(qubitCount, grid, visit) {
-  let hasCtrl = false;
   for (let col = 0; col < grid.length; col++) {
     for (let row = 0; row < qubitCount; row++) {
       const cell = grid[col][row];
-      if (!cell) continue;
-      if (cell.gate === "CTRL") {
-        hasCtrl = true;
-        continue;
-      }
+      if (!cell || cell.gate === "CTRL") continue;
       visit(cell);
     }
   }
-  return hasCtrl;
 }
 
-// controls 패턴을 표준 게이트명으로 역매핑한다. X+1→cx, Z+1→cz, X+2→ccx (반드시).
-// 지원되지 않는 조합은 null을 반환해 주석 처리한다.
-function qasmControlled(gate, nc) {
-  if (gate === "X") return nc === 1 ? "cx" : nc === 2 ? "ccx" : null;
-  if (gate === "Z") return nc === 1 ? "cz" : null;
-  if (gate === "Y") return nc === 1 ? "cy" : null;
-  if (gate === "H") return nc === 1 ? "ch" : null;
-  if (gate === "RZ") return nc === 1 ? "crz" : null;
-  if (gate === "SWAP") return nc === 1 ? "cswap" : null;
-  return null;
+/** 조건부 연산이 하나라도 있는가. */
+function hasConditions(qubitCount, grid) {
+  let found = false;
+  eachCell(qubitCount, grid, (cell) => {
+    if (cell.params?.cif !== undefined) found = true;
+  });
+  return found;
 }
 
-export function toQASM(qubitCount, grid, clbitCount = qubitCount) {
-  const lines = [
-    "OPENQASM 2.0;",
-    'include "qelib1.inc";',
-    `qreg q[${qubitCount}];`,
-  ];
-  if (clbitCount > 0) lines.push(`creg c[${clbitCount}];`); // 고전 비트가 없으면 creg도 없다
+/**
+ * OpenQASM 2.0 코드.
+ * @returns {{code: string, warnings: string[]}} warnings 는 화면 배너용이다.
+ *   표현하지 못한 게이트를 조용히 주석 처리하고 넘어가면 사용자가 **틀린 코드를 복사해 간다**.
+ */
+export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
+  const { grid } = normalizeCircuit(qubitCount, rawGrid);
+  const warnings = [];
+  const lines = ["OPENQASM 2.0;", 'include "qelib1.inc";', `qreg q[${qubitCount}];`];
+  if (clbitCount > 0) lines.push(`creg c[${clbitCount}];`);
+
+  // 이 안내는 **코드 문자열 안에** 있어야 한다 — 배너는 화면에만 있으므로,
+  // Copy 로 붙여넣은 사람도 차이를 알 수 있어야 한다.
+  const conditional = hasConditions(qubitCount, grid);
+  if (conditional && clbitCount > 1) {
+    lines.push("", ...IF_SEMANTICS_NOTE);
+    warnings.push(IF_SEMANTICS_WARNING);
+  }
   lines.push("");
+
   const q = (i) => `q[${i}]`;
-  // 조건부 연산은 OpenQASM 2.0의 `if (c==N) …` 로 감싼다(단일 비트 조건 → N = 1<<k).
   const push = (stmt, params) =>
     lines.push(params?.cif !== undefined ? `if (c==${1 << params.cif}) ${stmt}` : stmt);
-  const hasCtrl = eachCell(qubitCount, grid, (cell) => {
+
+  eachCell(qubitCount, grid, (cell) => {
     const { gate, targets, controls = [], params = {} } = cell;
-    const nc = controls.length;
-    const theta = params.theta ?? GATE_INFO[gate]?.defaultTheta;
 
-    // 고유 상대위상 게이트: 역매핑(X+2→ccx)보다 먼저 검사 — ccx로 잘못 나가지 않게.
-    if (gate === "RCCX") { push(`rccx ${targets.map(q).join(",")};`, params); return; }
-    if (gate === "RC3X") { push(`rc3x ${targets.map(q).join(",")};`, params); return; }
-
-    if (nc === 0) {
-      if (SIMPLE[gate]) push(`${SIMPLE[gate]} ${q(targets[0])};`, params);
-      else if (PARAM[gate]) push(`${PARAM[gate]}(${fmt(theta)}) ${q(targets[0])};`, params);
-      else if (gate === "U") push(`u(${fmt(params.theta)},${fmt(params.phi)},${fmt(params.lambda)}) ${q(targets[0])};`, params);
-      else if (gate === "SWAP") push(`swap ${q(targets[0])},${q(targets[1])};`, params);
-      else if (gate === "RXX") push(`rxx(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`, params);
-      else if (gate === "RYY") push(`ryy(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`, params);
-      else if (gate === "RZZ") push(`rzz(${fmt(theta)}) ${q(targets[0])},${q(targets[1])};`, params);
-      // 측정 대상 고전 비트는 params.cbit (없으면 같은 인덱스). 고전 비트가 없으면 내보내지 않는다.
-      else if (gate === "MEASURE") {
-        const cb = params.cbit ?? targets[0];
-        if (clbitCount > 0 && cb < clbitCount) lines.push(`measure ${q(targets[0])} -> c[${cb}];`);
-      }
-      else if (gate === "RESET") lines.push(`reset ${q(targets[0])};`);
-      else if (gate === "BARRIER") lines.push(`barrier ${q(targets[0])};`);
+    if (gate === "MEASURE") {
+      const cb = params.cbit ?? targets[0];
+      if (clbitCount > 0 && cb < clbitCount) lines.push(`measure ${q(targets[0])} -> c[${cb}];`);
+      else warnings.push(`Measure on q[${targets[0]}] has no classical bit to write to.`);
       return;
     }
-    const name = qasmControlled(gate, nc);
-    if (name) {
-      const args = [...controls, ...targets].map(q).join(",");
-      push(`${name} ${args};`, params);
-    } else {
-      lines.push(`// unsupported in OpenQASM 2.0: ${gate} with ${nc} controls (needs decomposition)`);
+    if (gate === "RESET") { lines.push(`reset ${q(targets[0])};`); return; }
+    if (gate === "BARRIER") { lines.push(`barrier ${q(targets[0])};`); return; }
+
+    const op = opFor(gate, controls.length);
+    if (!op) {
+      const what = controls.length ? `${gate} with ${controls.length} control(s)` : gate;
+      lines.push(`// cannot be represented in OpenQASM 2.0: ${what}`);
+      warnings.push(`${what} cannot be represented in OpenQASM 2.0 — that line is a comment, not a gate.`);
+      return;
     }
+    const args = [...controls, ...targets].map(q).join(",");
+    const ps = (op.params ?? []).map((k) => fmt(params[k] ?? GATE_INFO[gate]?.defaultTheta));
+    const call = ps.length ? `${op.qasm}(${ps.join(",")})` : op.qasm;
+    push(`${call} ${args};`, params);
   });
-  if (hasCtrl) lines.push("// note: control-dot (•) column modifiers are not exported");
-  return lines.join("\n") + "\n";
+
+  return { code: lines.join("\n") + "\n", warnings };
 }
 
-export function toQiskit(qubitCount, grid, clbitCount = qubitCount) {
-  const lines = ["from qiskit import QuantumCircuit", "", `qc = QuantumCircuit(${qubitCount}${clbitCount > 0 ? `, ${clbitCount}` : ""})`];
-  // Qiskit 컨트롤드 메서드: X+n는 cx/ccx/mcx, Z+1 cz, 그 외 표준 매핑
-  const controlledQiskit = (gate, nc, controls, targets) => {
-    const cs = controls.join(", ");
-    const t = targets[0];
-    if (gate === "X") {
-      if (nc === 1) return `qc.cx(${controls[0]}, ${t})`;
-      if (nc === 2) return `qc.ccx(${controls[0]}, ${controls[1]}, ${t})`;
-      return `qc.mcx([${cs}], ${t})`;
-    }
-    if (gate === "Z") return nc === 1 ? `qc.cz(${controls[0]}, ${t})` : `qc.h(${t})\nqc.mcx([${cs}], ${t})\nqc.h(${t})`;
-    if (gate === "Y" && nc === 1) return `qc.cy(${controls[0]}, ${t})`;
-    if (gate === "H" && nc === 1) return `qc.ch(${controls[0]}, ${t})`;
-    if (gate === "SWAP" && nc === 1) return `qc.cswap(${controls[0]}, ${targets[0]}, ${targets[1]})`;
-    return null;
-  };
-  // 조건부 연산은 Qiskit의 .c_if(creg, value)로 내보낸다(단일 비트 조건 → value = 1<<k).
+/** Qiskit 메서드명은 QASM 이름과 거의 같다. 다른 것만 예외로 적는다. */
+const QISKIT_NAME = { id: "id", sdg: "sdg", sxdg: "sxdg", rc3x: "rcccx", c3x: "mcx", c4x: "mcx" };
+
+/**
+ * Qiskit(Python) 코드. 읽기 전용이므로 왕복 대상이 아니다 —
+ * Python 은 브라우저에서 파싱할 수 없어 이 앱은 생성만 한다.
+ */
+export function toQiskit(qubitCount, rawGrid, clbitCount = qubitCount) {
+  const { grid } = normalizeCircuit(qubitCount, rawGrid);
+  const warnings = [];
+  const lines = [
+    "from qiskit import QuantumCircuit",
+    "",
+    `qc = QuantumCircuit(${qubitCount}${clbitCount > 0 ? `, ${clbitCount}` : ""})`,
+  ];
+  const conditional = hasConditions(qubitCount, grid);
+  if (conditional && clbitCount > 1) {
+    lines.push(
+      "",
+      "# NOTE: This app treats a condition as \"bit c[k] is 1\" regardless of other bits.",
+      "# .c_if(creg, value) compares the whole register value.",
+      "# With 2+ classical bits these differ."
+    );
+    warnings.push(IF_SEMANTICS_WARNING);
+  }
+  lines.push("");
+
   const push = (stmt, params) =>
     lines.push(params?.cif !== undefined ? `${stmt}.c_if(qc.cregs[0], ${1 << params.cif})` : stmt);
-  const hasCtrl = eachCell(qubitCount, grid, (cell) => {
+
+  eachCell(qubitCount, grid, (cell) => {
     const { gate, targets, controls = [], params = {} } = cell;
-    const nc = controls.length;
-    const theta = params.theta ?? GATE_INFO[gate]?.defaultTheta;
 
-    // 고유 상대위상 게이트: 역매핑(X→ccx)보다 먼저. Qiskit: RCCXGate=rccx, RC3XGate=rcccx.
-    if (gate === "RCCX") { push(`qc.rccx(${targets.join(", ")})`, params); return; }
-    if (gate === "RC3X") { push(`qc.rcccx(${targets.join(", ")})`, params); return; }
-
-    if (nc === 0) {
-      if (SIMPLE[gate]) push(`qc.${SIMPLE[gate]}(${targets[0]})`, params);
-      else if (PARAM[gate]) push(`qc.${PARAM[gate]}(${fmt(theta)}, ${targets[0]})`, params);
-      else if (gate === "U") push(`qc.u(${fmt(params.theta)}, ${fmt(params.phi)}, ${fmt(params.lambda)}, ${targets[0]})`, params);
-      else if (gate === "SWAP") push(`qc.swap(${targets[0]}, ${targets[1]})`, params);
-      else if (gate === "RXX") push(`qc.rxx(${fmt(theta)}, ${targets[0]}, ${targets[1]})`, params);
-      else if (gate === "RYY") push(`qc.ryy(${fmt(theta)}, ${targets[0]}, ${targets[1]})`, params);
-      else if (gate === "RZZ") push(`qc.rzz(${fmt(theta)}, ${targets[0]}, ${targets[1]})`, params);
-      else if (gate === "MEASURE") {
-        const cb = params.cbit ?? targets[0];
-        if (clbitCount > 0 && cb < clbitCount) lines.push(`qc.measure(${targets[0]}, ${cb})`);
-      }
-      else if (gate === "RESET") lines.push(`qc.reset(${targets[0]})`);
-      else if (gate === "BARRIER") lines.push(`qc.barrier(${targets[0]})`);
+    if (gate === "MEASURE") {
+      const cb = params.cbit ?? targets[0];
+      if (clbitCount > 0 && cb < clbitCount) lines.push(`qc.measure(${targets[0]}, ${cb})`);
       return;
     }
-    const code = controlledQiskit(gate, nc, controls, targets);
-    if (code) push(code, params);
-    else lines.push(`# unsupported controlled gate: ${gate} with ${nc} controls`);
+    if (gate === "RESET") { lines.push(`qc.reset(${targets[0]})`); return; }
+    if (gate === "BARRIER") { lines.push(`qc.barrier(${targets[0]})`); return; }
+
+    const op = opFor(gate, controls.length);
+    if (!op) {
+      const what = controls.length ? `${gate} with ${controls.length} control(s)` : gate;
+      lines.push(`# cannot be represented: ${what}`);
+      warnings.push(`${what} cannot be represented in Qiskit's basic gate set here.`);
+      return;
+    }
+    const method = QISKIT_NAME[op.qasm] ?? op.qasm;
+    const ps = (op.params ?? []).map((k) => fmt(params[k] ?? GATE_INFO[gate]?.defaultTheta));
+    // mcx 는 제어 목록을 배열로 받는다 — 인자 모양이 다른 유일한 예외.
+    const qubits =
+      method === "mcx"
+        ? `[${controls.join(", ")}], ${targets[0]}`
+        : [...controls, ...targets].join(", ");
+    push(`qc.${method}(${[...ps, qubits].join(", ")})`, params);
   });
-  if (hasCtrl) lines.push("# note: control-dot (•) column modifiers are not exported");
-  return lines.join("\n") + "\n";
+
+  return { code: lines.join("\n") + "\n", warnings };
 }

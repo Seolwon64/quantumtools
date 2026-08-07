@@ -30,6 +30,49 @@
     </header>
 
     <div class="workspace" id="workspace">
+      <!-- 코드 패널: 왼쪽 열 자리를 차지한다(오버레이가 아니다). 넓히면 오른쪽 열이
+           좁아질 뿐 Circuit·Probabilities 는 1px도 가려지지 않는다.
+           .ws-left 는 DOM 에 남기고 display:none 으로만 숨긴다 — Three.js 캔버스가
+           DOM 에서 빠지면 WebGL 컨텍스트가 손실된다. -->
+      <section class="code-panel" id="code-panel" aria-label="Code editor" hidden>
+        <div class="code-tabs" role="tablist" aria-label="Code language">
+          <button class="code-tab is-active" id="tab-qasm" role="tab" aria-selected="true">QASM</button>
+          <button class="code-tab" id="tab-qiskit" role="tab" aria-selected="false">Qiskit</button>
+          <span class="code-badge hidden" id="code-modified">Modified</span>
+          <span class="code-actions">
+            <button class="icon-btn" id="code-apply" title="Apply to circuit (Ctrl+Enter)">Apply</button>
+            <button class="icon-btn" id="code-copy" title="Copy to clipboard">Copy</button>
+            <button class="icon-btn tool-icon-btn" id="code-close" title="Close (Esc)" aria-label="Close code editor"><span data-icon="x"></span></button>
+          </span>
+        </div>
+
+        <div class="code-banner hidden" id="code-banner"></div>
+
+        <div class="code-conflict hidden" id="code-conflict">
+          <span>Circuit changed.</span>
+          <button class="icon-btn" id="code-reload">Reload code</button>
+          <button class="icon-btn" id="code-keep">Keep my edits</button>
+        </div>
+
+        <div class="code-editor" id="code-editor">
+          <div class="code-gutter" id="code-gutter" aria-hidden="true"></div>
+          <div class="code-surface">
+            <div class="code-errorline hidden" id="code-errorline"></div>
+            <textarea class="code-text" id="code-text" spellcheck="false" wrap="off" aria-label="OpenQASM 2.0 source"></textarea>
+          </div>
+        </div>
+
+        <!-- Qiskit 은 Python 이라 브라우저에서 파싱할 수 없다 → 읽기 전용.
+             편집 가능해 보이는 UI(textarea·Apply)를 두지 않는다. -->
+        <div class="code-readonly hidden" id="code-readonly">
+          <p class="code-readonly-note">Read-only — copy to use in Python</p>
+          <pre class="code-pre" id="code-pre"></pre>
+        </div>
+
+        <div class="code-status" id="code-status" role="status"></div>
+      </section>
+      <div class="code-resizer" id="code-resizer" hidden role="separator" aria-orientation="vertical" aria-label="Resize code panel"></div>
+
       <div class="ws-col ws-left" id="ws-left">
       <section class="panel panel-palette">
         <div class="palette-header">
@@ -97,7 +140,6 @@
           <button class="icon-btn tool-icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><span data-icon="undo-2"></span></button>
           <button class="icon-btn tool-icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><span data-icon="redo-2"></span></button>
           <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
-          <button class="icon-btn tool-icon-btn" id="export-btn" title="Export to Qiskit / QASM" aria-label="Export to Qiskit or QASM"><span data-icon="code"></span></button>
           <button class="icon-btn" id="presets-btn" title="Load an example circuit" aria-label="Examples — load an example circuit" aria-haspopup="true" aria-expanded="false">Examples<span data-icon="chevron-down"></span></button>
           <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
         </div>
@@ -162,23 +204,7 @@
     <nav class="menu-drawer-body" id="menu-drawer-body"></nav>
   </aside>
 
-  <!-- 코드 드로어: 회로를 보면서 코드를 읽는 패널이라 **오버레이를 두지 않는다**.
-       메뉴와 반대쪽(오른쪽)에서 들어와 둘의 성격이 구분된다.
-       본문은 다음 작업에서 채운다. -->
-  <aside class="code-drawer" id="code-drawer" role="dialog" aria-label="Code editor">
-    <header class="code-drawer-header">
-      <h2 class="panel-title">Code</h2>
-      <button class="icon-btn tool-icon-btn" id="code-drawer-close" title="Close (Esc)" aria-label="Close code editor"><span data-icon="x"></span></button>
-    </header>
-    <div class="code-drawer-body" id="code-drawer-body"></div>
-  </aside>
-
   <div class="place-popover hidden" id="place-popover"></div>
-
-  <div class="export-menu hidden" id="export-menu">
-    <button class="export-menu-item" id="export-qasm">Copy OpenQASM 2.0</button>
-    <button class="export-menu-item" id="export-qiskit">Copy Qiskit (Python)</button>
-  </div>
 
   <div class="presets-menu hidden" id="presets-menu"></div>
 

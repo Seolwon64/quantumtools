@@ -333,8 +333,7 @@ html, body {
   transition: opacity var(--dur-drawer) var(--ease), visibility 0s;
 }
 
-.menu-drawer,
-.code-drawer {
+.menu-drawer {
   position: fixed;
   top: 0;
   bottom: 0;
@@ -345,17 +344,7 @@ html, body {
   box-shadow: var(--shadow-3);
   visibility: hidden;
   transition: transform var(--dur-drawer) var(--ease), visibility 0s linear var(--dur-drawer);
-}
-
-.menu-drawer.is-open,
-.code-drawer.is-open {
-  transform: none;
-  visibility: visible;
-  transition: transform var(--dur-drawer) var(--ease), visibility 0s;
-}
-
-/* 메뉴는 왼쪽에서. min() 이라 360px 화면에서도 드로어가 화면을 벗어나지 않는다. */
-.menu-drawer {
+  /* 왼쪽에서. min() 이라 360px 화면에서도 드로어가 화면을 벗어나지 않는다. */
   left: 0;
   width: min(260px, 86vw);
   /* 위쪽은 헤더 높이만큼 비운다 — 그 자리에 떠 있는 햄버거(=X)가 첫 항목을 덮지 않게.
@@ -364,12 +353,12 @@ html, body {
   transform: translateX(-100%);
 }
 
-/* 코드는 반대쪽(오른쪽)에서 — 메뉴와 성격이 다르다는 신호이기도 하다 */
-.code-drawer {
-  right: 0;
-  width: min(420px, 92vw);
-  transform: translateX(100%);
+.menu-drawer.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-drawer) var(--ease), visibility 0s;
 }
+
 
 .menu-drawer-body {
   display: flex;
@@ -401,26 +390,8 @@ html, body {
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
-.code-drawer-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--gray-6);
-}
 
-.code-drawer-header .panel-title {
-  margin: 0;
-}
 
-.code-drawer-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--space-4);
-}
 
 .workspace {
   flex: 1;
@@ -2367,6 +2338,7 @@ html, body {
 .export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .gate-menu-item:not(.is-danger):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
@@ -2388,6 +2360,7 @@ html, body {
 .export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
@@ -2416,6 +2389,7 @@ html, body {
 .pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
 .prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible, .qubit-tab:focus-visible,
 .export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
+.code-tab:focus-visible,
 .menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
 .shots-input:focus-visible, .prob-hide-toggle:focus-within {
@@ -2491,4 +2465,244 @@ html, body {
 .deferred-note .icon {
   display: inline-block;
   vertical-align: -3px; /* 광학 보정: 대문자 중앙에 맞춤 */
+}
+
+
+/* ==========================================================================
+   코드 패널 (QASM / Qiskit)
+
+   **오버레이가 아니다.** 왼쪽 열 자리를 차지하는 레이아웃 참여자라, 넓히면
+   오른쪽 열이 좁아질 뿐 Circuit·Probabilities 는 1px도 가려지지 않는다.
+   코드를 고치면서 회로·상태벡터·확률을 동시에 보는 게 이 기능의 목적이다.
+   ========================================================================== */
+.code-panel {
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--gray-2);
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-3);
+  padding: var(--space-4);
+  overflow: hidden;
+}
+
+.code-panel[hidden] { display: none; }
+
+/* .ws-left 는 DOM 에 남긴다 — Three.js 캔버스가 DOM 에서 빠지면 WebGL 컨텍스트가 손실된다. */
+.ws-col.is-hidden-by-code { display: none; }
+
+/* 폭 조절 핸들. 굵기와 커서는 기존 .col-splitter 규약을 그대로 따른다. */
+.code-resizer {
+  flex: none;
+  width: var(--space-3);
+  cursor: col-resize;
+  position: relative;
+  touch-action: none;
+}
+
+.code-resizer[hidden] { display: none; }
+
+.code-resizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  background: var(--text-faint);
+  opacity: 0.25;
+  border-radius: var(--radius-full);
+  transition: background-color var(--dur) var(--ease);
+}
+
+.code-resizer:hover::after {
+  background: var(--primary);
+  opacity: 0.6;
+}
+
+/* 드래그 중에는 전 화면 커서를 고정한다 — 포인터가 핸들을 벗어나도 흔들리지 않게 */
+body.is-col-resizing { cursor: col-resize; user-select: none; }
+
+.code-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.code-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-body);
+  font-size: var(--text-base);
+  font-weight: 700;
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.code-tab.is-active {
+  background: var(--primary);
+  color: var(--gray-1);
+}
+
+.code-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.code-badge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+/* 경고 배너: 표현 못 한 게이트, if 의미 차이 등. 같은 내용이 코드 주석에도 들어간다. */
+.code-banner {
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.code-conflict {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--accent-3);
+  color: var(--accent-11);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* --- 에디터: textarea + 줄번호 거터. 외부 에디터 라이브러리를 쓰지 않는다. --- */
+.code-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-2);
+  background: var(--gray-1);
+  overflow: hidden;
+}
+
+/* .hidden 은 이 프로젝트에서 전역 규칙이 아니라 요소별로 정의한다(.palette-header .hidden 과 같은 패턴).
+   Qiskit 탭에서 Apply 를 감추려면 여기에 명시해야 한다 — 없으면 .icon-btn 의 display 가 이긴다. */
+.code-tabs .hidden,
+.code-editor.hidden,
+.code-readonly.hidden,
+.code-banner.hidden,
+.code-conflict.hidden,
+.code-badge.hidden,
+.code-errorline.hidden { display: none; }
+
+/* 거터와 textarea 는 **같은 폰트·줄높이**여야 번호가 줄과 어긋나지 않는다. */
+.code-gutter,
+.code-text,
+.code-pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.code-gutter {
+  flex: none;
+  padding: var(--space-2) var(--space-1) var(--space-2) var(--space-2);
+  text-align: right;
+  color: var(--text-faint);
+  background: var(--gray-3);
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+}
+
+.code-surface {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.code-text {
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-title);
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.code-text:focus { outline: none; }
+
+/* 에러 줄 띠. textarea 뒤에 두고 같은 줄높이로 위치를 맞춘다. */
+.code-errorline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--space-2);
+  background: var(--danger-bg);
+  pointer-events: none;
+}
+
+/* --- Qiskit: 읽기 전용. 배경을 한 단계 낮춰 편집할 수 없다는 걸 보여준다. --- */
+.code-readonly {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-2);
+  background: var(--gray-3);
+  overflow: hidden;
+}
+
+.code-readonly-note {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--gray-6);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.code-pre {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-body);
+  overflow: auto;
+  white-space: pre;
+}
+
+.code-status {
+  flex: none;
+  min-height: var(--space-5);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.code-status.is-error {
+  color: var(--danger-fg);
+  font-weight: 600;
 }

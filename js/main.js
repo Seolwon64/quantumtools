@@ -1,6 +1,7 @@
 import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
 import { initMenu } from "./menu.js";
+import { initCodePanel } from "./codepanel.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
@@ -180,15 +181,17 @@ const resetShotsBtn = document.getElementById("reset-shots-btn");
 
 const gateButtons = [];
 
+// 코드 패널은 아래쪽에서 초기화된다. 그런데 render() 는 컨트롤러가 만들어질 때
+// 곧바로 한 번 불리므로, const 로 두면 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다).
+let codePanel = null;
+
 // ---------- 햄버거 메뉴 드로어 ----------
 // 열기/닫기·포커스 트랩·방향키는 js/menu.js 가 전부 갖고 있다.
-initMenu({
+const menu = initMenu({
   menuBtn,
   overlay: document.getElementById("menu-overlay"),
   drawer: document.getElementById("menu-drawer"),
   body: document.getElementById("menu-drawer-body"),
-  codeDrawer: document.getElementById("code-drawer"),
-  codeClose: document.getElementById("code-drawer-close"),
 });
 
 // ---------- Bloch / Q-sphere 뷰 ----------
@@ -2042,6 +2045,8 @@ function render(snapshot) {
   if (infoTarget && !cellAtHome(snapshot, infoTarget)) { infoTarget = null; expandedInfo = null; }
   renderGateInfo(snapshot);
   markSelection();
+  // 코드 패널이 열려 있으면 코드를 갱신한다(편집 중이면 덮어쓰지 않고 배너를 띄운다).
+  codePanel?.onCircuitChanged();
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
@@ -2202,8 +2207,6 @@ resetViewBtn.addEventListener("click", () => scene.resetView());
 // ---------- 공유 / 내보내기 ----------
 
 const shareBtn = document.getElementById("share-btn");
-const exportBtn = document.getElementById("export-btn");
-const exportMenu = document.getElementById("export-menu");
 const toastEl = document.getElementById("toast");
 let toastTimer = null;
 
@@ -2228,36 +2231,40 @@ shareBtn.addEventListener("click", () => {
   copyText(buildShareUrl(snap.qubitCount, snap.grid, snap.clbitCount), "Share link");
 });
 
-exportBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (!exportMenu.classList.contains("hidden")) {
-    exportMenu.classList.add("hidden");
-    return;
-  }
-  exportMenu.classList.remove("hidden");
-  const rect = exportBtn.getBoundingClientRect();
-  const menuRect = exportMenu.getBoundingClientRect();
-  exportMenu.style.left = `${Math.min(rect.left, window.innerWidth - menuRect.width - 8)}px`;
-  exportMenu.style.top = `${rect.bottom + 6}px`;
-});
 
-document.addEventListener("click", (e) => {
-  if (!exportMenu.classList.contains("hidden") && !exportMenu.contains(e.target)) {
-    exportMenu.classList.add("hidden");
-  }
+// ---------- 코드 패널 (QASM / Qiskit) ----------
+// QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전의 <> 버튼(복사 전용)은
+// 없앴다 — 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
+codePanel = initCodePanel({
+  circuit,
+  scene,
+  showToast,
+  onOpen: () => menu.close({ restoreFocus: false }),
+  els: {
+    panel: document.getElementById("code-panel"),
+    resizer: document.getElementById("code-resizer"),
+    wsLeft: document.getElementById("ws-left"),
+    workspace: document.getElementById("workspace"),
+    tabQasm: document.getElementById("tab-qasm"),
+    tabQiskit: document.getElementById("tab-qiskit"),
+    apply: document.getElementById("code-apply"),
+    copy: document.getElementById("code-copy"),
+    close: document.getElementById("code-close"),
+    text: document.getElementById("code-text"),
+    gutter: document.getElementById("code-gutter"),
+    errorLine: document.getElementById("code-errorline"),
+    pre: document.getElementById("code-pre"),
+    readonlyBox: document.getElementById("code-readonly"),
+    editor: document.getElementById("code-editor"),
+    banner: document.getElementById("code-banner"),
+    conflict: document.getElementById("code-conflict"),
+    reload: document.getElementById("code-reload"),
+    keep: document.getElementById("code-keep"),
+    badge: document.getElementById("code-modified"),
+    status: document.getElementById("code-status"),
+  },
 });
-
-document.getElementById("export-qasm").addEventListener("click", () => {
-  const snap = circuit.getSnapshot();
-  copyText(toQASM(snap.qubitCount, snap.grid, snap.clbitCount), "OpenQASM 2.0");
-  exportMenu.classList.add("hidden");
-});
-
-document.getElementById("export-qiskit").addEventListener("click", () => {
-  const snap = circuit.getSnapshot();
-  copyText(toQiskit(snap.qubitCount, snap.grid, snap.clbitCount), "Qiskit code");
-  exportMenu.classList.add("hidden");
-});
+menu.setAction("code", () => codePanel.open());
 
 // ---------- 회로 프리셋 드롭다운 ----------
 const presetsBtn = document.getElementById("presets-btn");

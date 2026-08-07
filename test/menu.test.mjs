@@ -38,8 +38,7 @@ function tag(id) {
 }
 
 test("드로어는 transform 만 애니메이션한다 (width/left 는 레이아웃을 재계산시킨다)", () => {
-  const shared = rule(".menu-drawer,\n.code-drawer");
-  const t = shared.match(/transition:([^;]+);/)[1];
+  const t = rule(".menu-drawer").match(/transition:([^;]+);/)[1];
   assert.match(t, /transform/, "transform 전환이 없다");
   assert.doesNotMatch(t, /\bwidth\b/, "width 를 애니메이션하고 있다");
   assert.doesNotMatch(t, /\bleft\b|\bright\b/, "left/right 를 애니메이션하고 있다");
@@ -47,16 +46,15 @@ test("드로어는 transform 만 애니메이션한다 (width/left 는 레이아
 });
 
 test("드로어가 display:none 으로 숨겨지지 않는다 (숨기면 전환이 실행되지 않는다)", () => {
-  for (const id of ["menu-drawer", "code-drawer", "menu-overlay"]) {
+  for (const id of ["menu-drawer", "menu-overlay"]) {
     assert.doesNotMatch(tag(id), /class="[^"]*\bhidden\b/, `#${id} 가 .hidden 을 쓴다`);
   }
-  const shared = rule(".menu-drawer,\n.code-drawer");
-  assert.match(shared, /visibility:\s*hidden/, "닫힘 상태가 visibility 로 표현되지 않는다");
+  assert.match(rule(".menu-drawer"), /visibility:\s*hidden/, "닫힘 상태가 visibility 로 표현되지 않는다");
 });
 
 test("전환 시간과 이징이 토큰에서 온다 (리터럴을 흩뿌리지 않는다)", () => {
   assert.match(CSS, /--dur-drawer:\s*180ms/, "--dur-drawer 토큰이 없다");
-  for (const sel of [".menu-drawer,\n.code-drawer", ".drawer-overlay"]) {
+  for (const sel of [".menu-drawer", ".drawer-overlay"]) {
     const t = rule(sel).match(/transition:([^;]+);/)[1];
     assert.match(t, /var\(--dur-drawer\)/, `${sel}: 시간이 토큰이 아니다`);
     assert.match(t, /var\(--ease\)/, `${sel}: 이징이 토큰이 아니다`);
@@ -66,17 +64,15 @@ test("전환 시간과 이징이 토큰에서 온다 (리터럴을 흩뿌리지 
 test("좁은 화면에서 드로어가 화면을 벗어나지 않는다", () => {
   // 고정 폭이면 360px 화면에서 잘린다. min() 으로 뷰포트에 묶어 둔다.
   assert.match(rule(".menu-drawer"), /width:\s*min\([^)]*vw\)/, "메뉴 드로어 폭이 뷰포트에 묶여 있지 않다");
-  assert.match(rule(".code-drawer"), /width:\s*min\([^)]*vw\)/, "코드 드로어 폭이 뷰포트에 묶여 있지 않다");
 });
 
 test("접근성 속성이 붙어 있다", () => {
-  for (const id of ["menu-drawer", "code-drawer"]) {
-    assert.match(tag(id), /role="dialog"/, `#${id}: role="dialog" 없음`);
-    assert.match(tag(id), /aria-label="[^"]+"/, `#${id}: aria-label 없음`);
-  }
-  // 메뉴만 모달이다 — 코드 드로어는 뒤 화면을 계속 쓸 수 있어야 한다.
+  assert.match(tag("menu-drawer"), /role="dialog"/, "menu-drawer: role=dialog 없음");
+  assert.match(tag("menu-drawer"), /aria-label="[^"]+"/, "menu-drawer: aria-label 없음");
+  // 메뉴만 모달이다 — 코드 패널은 레이아웃에 참여하는 도구라 뒤 화면을 계속 쓸 수 있어야 한다.
   assert.match(tag("menu-drawer"), /aria-modal="true"/);
-  assert.doesNotMatch(tag("code-drawer"), /aria-modal/);
+  assert.match(tag("code-panel"), /aria-label="[^"]+"/, "코드 패널에 aria-label 없음");
+  assert.doesNotMatch(tag("code-panel"), /aria-modal/, "코드 패널이 모달로 선언됐다");
   assert.match(tag("menu-btn"), /aria-expanded/, "햄버거에 aria-expanded 없음");
 });
 
@@ -84,7 +80,7 @@ test("메뉴 드로어에만 오버레이가 있다", () => {
   // 메뉴는 고르면 닫히는 일시적 UI라 뒤를 딤 처리하고,
   // 코드는 회로를 보면서 읽는 패널이라 뒤를 가리면 안 된다.
   assert.match(HTML, /id="menu-overlay"/, "메뉴 오버레이가 없다");
-  assert.doesNotMatch(HTML, /id="code-overlay"/, "코드 드로어에 오버레이가 생겼다");
+  assert.doesNotMatch(HTML, /id="code-overlay"/, "코드 패널에 오버레이가 생겼다");
   assert.match(rule(".drawer-overlay"), /background:/, "오버레이에 딤 색이 없다");
 });
 
@@ -97,8 +93,15 @@ test("자리표시자·비활성 항목이 없다", () => {
   const groups = MENU_JS.match(/export const MENU_GROUPS = \[([\s\S]*?)\n\];/)[1];
   const ids = [...groups.matchAll(/id:\s*"([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["code"], "이번 작업의 항목은 Code editor 하나다");
+  // 동작은 main.js 가 setAction 으로 주입한다 — 메뉴는 무엇이 열리는지 몰라도 된다.
+  // 그래도 **모든 항목에 실제 연결이 있어야** 한다(눌러도 아무 일 없는 항목은 자리표시자다).
+  const MAIN_JS = readFileSync(new URL("../js/main.js", import.meta.url), "utf8");
   for (const id of ids) {
-    assert.match(MENU_JS, new RegExp(`ACTIONS\\s*=\\s*\\{[^}]*\\b${id}\\b`), `${id}: 실행 대상이 없다`);
+    assert.match(
+      MAIN_JS,
+      new RegExp(`setAction\\(\\s*["']${id}["']`),
+      `${id}: main.js 가 동작을 연결하지 않는다`
+    );
   }
 });
 
@@ -114,7 +117,7 @@ test("메뉴 항목이 기존 5개 상태 규칙에 편입돼 있다 (별도 정
 
 test("드로어 스타일이 기존 토큰만 쓴다 (새 색·간격 값을 만들지 않는다)", () => {
   const start = CSS.indexOf(".drawer-overlay {");
-  const end = CSS.indexOf("}", CSS.indexOf(".code-drawer-body {")) + 1;
+  const end = CSS.indexOf("}", CSS.indexOf(".menu-drawer-item {")) + 1;
   // 주석은 뺀다 — 설명문에 적힌 "360px 화면에서도" 같은 숫자를 값으로 오인한다.
   const block = CSS.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(block, /#[0-9a-fA-F]{3,8}\b/, "하드코딩된 색이 있다");

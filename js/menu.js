@@ -1,14 +1,14 @@
-// 햄버거 메뉴 드로어 + 코드 드로어(껍데기).
+// 햄버거 메뉴 드로어.
 //
-// 두 드로어의 성격이 다르다:
-//   · 메뉴  — 고르면 바로 닫히는 일시적 UI라 **오버레이로 뒤를 딤 처리**해 집중시킨다.
-//   · 코드  — 회로를 보면서 읽는 패널이라 **오버레이를 두지 않는다**. 반대쪽에서 들어온다.
+// 고르면 바로 닫히는 일시적 UI라 **오버레이로 뒤를 딤 처리**해 집중시킨다.
+// (항목이 여는 패널들 — 예: 코드 패널 — 은 반대로 오버레이를 두지 않는다.
+//  회로를 보면서 쓰는 도구라 뒤를 가리면 목적이 사라지기 때문이다.)
 //
 // 애니메이션은 transform: translateX 만 쓴다. width/left 를 움직이면 매 프레임 레이아웃이
 // 다시 계산돼 끊긴다. `hidden`(display:none)도 쓰지 않는다 — display:none 에서는 transition 이
 // 아예 실행되지 않아 슬라이드가 사라진다. 열림은 .is-open, 닫힘은 visibility:hidden 이다.
 
-import { icon, hydrateIcons } from "./icons.js";
+import { icon } from "./icons.js";
 
 /**
  * 메뉴 항목 정의. 마크업이 아니라 **데이터**로 둔다 — 그룹이 늘어도 HTML을 손대지 않는다.
@@ -25,26 +25,14 @@ export const MENU_GROUPS = [
   [{ id: "code", label: "Code editor", icon: "code", kind: "panel" }],
 ];
 
-export function initMenu({ menuBtn, overlay, drawer, body, codeDrawer, codeClose }) {
+export function initMenu({ menuBtn, overlay, drawer, body }) {
   let items = [];
   let index = 0;
   let lastFocused = null;
 
-  // ---------- 코드 드로어 (껍데기) ----------
-  const codeOpen = () => codeDrawer.classList.contains("is-open");
-
-  function openCodeDrawer() {
-    codeDrawer.classList.add("is-open");
-    codeClose.focus();
-  }
-
-  function closeCodeDrawer({ restoreTo = null } = {}) {
-    if (!codeOpen()) return;
-    codeDrawer.classList.remove("is-open");
-    (restoreTo ?? menuBtn).focus();
-  }
-
-  const ACTIONS = { code: openCodeDrawer };
+  // 항목이 실행할 동작. main.js 가 setAction 으로 주입한다 —
+  // 메뉴는 "무엇을 여는지" 몰라도 되고, 패널 모듈도 메뉴를 몰라도 된다.
+  const ACTIONS = {};
 
   // ---------- 메뉴 드로어 ----------
   const isOpen = () => drawer.classList.contains("is-open");
@@ -122,17 +110,13 @@ export function initMenu({ menuBtn, overlay, drawer, body, codeDrawer, codeClose
   });
 
   overlay.addEventListener("click", () => close());
-  codeClose.addEventListener("click", () => closeCodeDrawer());
 
   // 포커스 트랩. 순환 대상에 menuBtn 을 넣는 이유: 열린 상태에서 이 버튼이 곧 X(닫기)라
   // 드로어 바깥에 있어도 논리적으로 이 다이얼로그의 일부다 — 빼면 키보드로 닫기에 갈 수 없다.
   const trapOrder = () => [...items, menuBtn];
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (isOpen()) { e.preventDefault(); close(); return; }
-      if (codeOpen()) { e.preventDefault(); closeCodeDrawer(); return; }
-    }
+    if (e.key === "Escape" && isOpen()) { e.preventDefault(); close(); return; }
     if (!isOpen()) return;
 
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -152,6 +136,10 @@ export function initMenu({ menuBtn, overlay, drawer, body, codeDrawer, codeClose
   });
 
   setHamburger(false);
-  hydrateIcons(codeDrawer);
-  return { open, close, openCodeDrawer, closeCodeDrawer };
+  return {
+    open,
+    close,
+    /** 항목 id 에 동작을 연결한다(main.js 가 패널을 만든 뒤 호출). */
+    setAction(id, fn) { ACTIONS[id] = fn; },
+  };
 }

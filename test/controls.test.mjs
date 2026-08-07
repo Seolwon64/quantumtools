@@ -25,7 +25,7 @@ test("3큐비트 q1의 Y 위에 • 드롭 → 후보 [0,2], q2를 고르면 CY(
   assert.deepEqual(cell.controls, [2]);
   assert.deepEqual(cell.targets, [1]);
   const s = c.getSnapshot();
-  assert.match(toQASM(s.qubitCount, s.grid), /cy q\[2\],q\[1\];/);
+  assert.match(toQASM(s.qubitCount, s.grid).code, /cy q\[2\],q\[1\];/);
 });
 
 test("2큐비트 q1의 Y 위에 • 드롭 → 후보가 q0 하나뿐(UI는 팝오버 없이 즉시 배치)", () => {
@@ -77,7 +77,7 @@ test("다중 선택: 여러 큐비트를 한 번에 제어로 붙인다(CCX)", (
   assert.equal(c.addControlToGate(0, 3, [0, 2]).ok, true);
   assert.deepEqual(cellAt(c, 0, 3).controls, [0, 2]);
   const s = c.getSnapshot();
-  assert.match(toQASM(s.qubitCount, s.grid), /ccx q\[0\],q\[2\],q\[3\];/);
+  assert.match(toQASM(s.qubitCount, s.grid).code, /ccx q\[0\],q\[2\],q\[3\];/);
 });
 
 test("다중 선택은 선택 순서와 무관하게 오름차순으로 정규화된다", () => {
