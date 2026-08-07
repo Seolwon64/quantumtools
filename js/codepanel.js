@@ -103,6 +103,11 @@ export function initCodePanel({ circuit, scene, els, onOpen, showToast }) {
   function setModified(value) {
     modified = value;
     badge.classList.toggle("hidden", !value);
+    // 편집이 시작되면 경고 배너를 감춘다. 배너는 **우리가 생성한 코드**에 대한 설명인데,
+    // 사용자가 손댄 순간 더 이상 그 코드가 아니다.
+    // (이걸 안 하면: 텔레포테이션에서 코드를 고친 뒤 다른 프리셋으로 바꿔도 — modified 라
+    //  refresh 가 건너뛰어지므로 — 조건 경고가 남아 "superdense 인데 if 경고가 뜬다"로 보인다.)
+    if (value) setBanner([]);
     updateApplyState();
   }
 

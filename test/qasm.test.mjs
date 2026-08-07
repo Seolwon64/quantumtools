@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 
 import { toQASM, toQiskit, IF_SEMANTICS_WARNING } from "../js/export.js";
 import { parseQASM, normalizeCircuit, sameCircuit, QASM_OPS, opFor } from "../js/qasm.js";
-import { MAX_COLUMNS } from "../js/circuit.js";
+import { MAX_COLUMNS, simulate } from "../js/circuit.js";
 import { PRESETS } from "../js/presets.js";
 import { decodeCircuit } from "../js/export.js";
 
@@ -298,4 +298,76 @@ test("Qiskit 코드는 생성되며 왕복 대상이 아니다", () => {
   const { code } = toQiskit(2, g, 0);
   assert.match(code, /from qiskit import QuantumCircuit/);
   assert.match(code, /qc\.cx\(0, 1\)/);
+});
+
+// ---------------------------------------------------------------- [3] 고전 레지스터 프리셋
+
+/** 두 상태벡터가 진폭 단위로 같은지. 확률만 보면 위상이 틀려도 통과한다. */
+function sameState(a, b, label) {
+  assert.equal(a.length, b.length, `${label}: 차원이 다르다`);
+  for (let i = 0; i < a.length; i++) {
+    assert.ok(
+      Math.abs(a[i].re - b[i].re) < 1e-6 && Math.abs(a[i].im - b[i].im) < 1e-6,
+      `${label}: idx ${i} (${a[i].re.toFixed(4)},${a[i].im.toFixed(4)}) → (${b[i].re.toFixed(4)},${b[i].im.toFixed(4)})`
+    );
+  }
+}
+
+test("[3] 고전 레지스터 프리셋이 왕복해도 **상태벡터**가 같다", () => {
+  // 구조(셀) 비교는 위에서 했다. 여기서는 의미까지 같은지 본다 —
+  // 구조가 같아 보여도 조건 비트나 측정 대상이 어긋나면 상태가 달라진다.
+  for (const name of ["Quantum teleportation", "Superdense coding"]) {
+    const preset = PRESETS.find((p) => p.name === name);
+    const dec = decodeCircuit(preset.circuit);
+    const parsed = parseQASM(toQASM(dec.qubitCount, dec.grid, dec.clbitCount).code);
+    assert.ok(parsed.ok, `${name}: ${parsed.message}`);
+    sameState(
+      simulate(dec.qubitCount, dec.grid, undefined, dec.clbitCount),
+      simulate(parsed.qubitCount, parsed.grid, undefined, parsed.clbitCount),
+      name
+    );
+  }
+});
+
+test("[3] creg 선언과 measure 문의 인덱스 쌍이 정확하다", () => {
+  const preset = PRESETS.find((p) => p.name === "Quantum teleportation");
+  const dec = decodeCircuit(preset.circuit);
+  const { code } = toQASM(dec.qubitCount, dec.grid, dec.clbitCount);
+
+  // 정규식보다 줄 단위 문자열 비교가 안전하다(대괄호 이스케이프가 조용히 깨지기 쉽다).
+  const lines = code.split("\n");
+  assert.ok(
+    lines.includes(`creg c[${dec.clbitCount}];`),
+    `creg 선언이 없거나 크기가 다르다 — 실제: ${lines.filter((l) => l.startsWith("creg")).join(" / ") || "없음"}`
+  );
+
+  // 원본의 (측정 큐비트 → 고전 비트) 쌍과 QASM 의 measure 줄이 정확히 대응해야 한다.
+  const want = dec.grid
+    .flat()
+    .filter((c) => c && c.gate === "MEASURE")
+    .map((c) => `measure q[${c.targets[0]}] -> c[${c.params.cbit ?? c.targets[0]}];`)
+    .sort();
+  const got = (code.match(/^measure .*$/gm) ?? []).sort();
+  assert.deepEqual(got, want, "measure 문의 인덱스 쌍이 원본과 다르다");
+  assert.ok(want.length > 0, "이 프리셋에는 measure 가 있어야 한다");
+});
+
+test("[3] if 줄이 왕복 전후로 문자열까지 같다", () => {
+  const ifLines = (src) => (src.match(/^if \(c==\d+\) .*$/gm) ?? []);
+
+  const tele = decodeCircuit(PRESETS.find((p) => p.name === "Quantum teleportation").circuit);
+  const first = toQASM(tele.qubitCount, tele.grid, tele.clbitCount).code;
+  const parsed = parseQASM(first);
+  assert.ok(parsed.ok, parsed.message);
+  const second = toQASM(parsed.qubitCount, parsed.grid, parsed.clbitCount).code;
+  assert.ok(ifLines(first).length === 2, `텔레포테이션의 if 줄이 ${ifLines(first).length}개 — 구성이 바뀌었다`);
+  assert.deepEqual(ifLines(second), ifLines(first), "if 줄이 왕복 후 달라졌다");
+
+  // superdense 에는 조건부 연산이 없다 — 왕복 후에도 0개여야 한다(있으면 회로가 틀린 것).
+  const sd = decodeCircuit(PRESETS.find((p) => p.name === "Superdense coding").circuit);
+  const sdFirst = toQASM(sd.qubitCount, sd.grid, sd.clbitCount).code;
+  const sdParsed = parseQASM(sdFirst);
+  assert.ok(sdParsed.ok, sdParsed.message);
+  assert.deepEqual(ifLines(sdFirst), [], "superdense 에 if 줄이 생겼다 — 이 프로토콜에는 조건부 연산이 없다");
+  assert.deepEqual(ifLines(toQASM(sdParsed.qubitCount, sdParsed.grid, sdParsed.clbitCount).code), []);
 });

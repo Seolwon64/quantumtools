@@ -67,10 +67,12 @@ export const PRESETS = [
   },
   {
     name: "Quantum Fourier Transform",
-    description: "3-qubit QFT — H · controlled-phase · SWAP",
+    // |000⟩ 에 QFT 를 걸면 위상이 전부 0이라 H⊗H⊗H 와 구별되지 않는다 —
+    // QFT 의 핵심인 위상 회전이 전혀 드러나지 않는다. 앞에 X 를 하나 두어 |001⟩ 로 넣는다.
+    description: "3-qubit QFT on |001⟩ — phases step by π/4 around the circle",
     category: "Algorithms",
     qubits: 3,
-    circuit: "eyJ2IjoyLCJuIjozLCJwIjpbeyJjIjowLCJnIjoiSCIsInRnIjpbMl19LHsiYyI6MSwiZyI6IlAiLCJ0ZyI6WzJdLCJ4IjpbMV0sInAiOnsidCI6MS41NzA3OTZ9fSx7ImMiOjIsImciOiJQIiwidGciOlsyXSwieCI6WzBdLCJwIjp7InQiOjAuNzg1Mzk4fX0seyJjIjozLCJnIjoiSCIsInRnIjpbMV19LHsiYyI6NCwiZyI6IlAiLCJ0ZyI6WzFdLCJ4IjpbMF0sInAiOnsidCI6MS41NzA3OTZ9fSx7ImMiOjUsImciOiJIIiwidGciOlswXX0seyJjIjo2LCJnIjoiU1dBUCIsInRnIjpbMCwyXX1dfQ",
+    circuit: "eyJ2IjoyLCJuIjozLCJwIjpbeyJjIjowLCJnIjoiWCIsInRnIjpbMF19LHsiYyI6MSwiZyI6IkgiLCJ0ZyI6WzJdfSx7ImMiOjIsImciOiJQIiwidGciOlsyXSwieCI6WzFdLCJwIjp7InQiOjEuNTcwNzk2fX0seyJjIjozLCJnIjoiUCIsInRnIjpbMl0sIngiOlswXSwicCI6eyJ0IjowLjc4NTM5OH19LHsiYyI6NCwiZyI6IkgiLCJ0ZyI6WzFdfSx7ImMiOjUsImciOiJQIiwidGciOlsxXSwieCI6WzBdLCJwIjp7InQiOjEuNTcwNzk2fX0seyJjIjo2LCJnIjoiSCIsInRnIjpbMF19LHsiYyI6NywiZyI6IlNXQVAiLCJ0ZyI6WzAsMl19XX0",
   },
 
   // ---- Protocols ----
