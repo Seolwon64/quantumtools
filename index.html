@@ -142,6 +142,9 @@
           <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
           <button class="icon-btn" id="presets-btn" title="Load an example circuit" aria-label="Examples — load an example circuit" aria-haspopup="true" aria-expanded="false">Examples<span data-icon="chevron-down"></span></button>
           <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
+          <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정). -->
+          <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
+          <button class="icon-btn tool-icon-btn hidden" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button>
         </div>
         <div class="circuit-body">
           <div class="circuit-scroll">

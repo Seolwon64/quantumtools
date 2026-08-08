@@ -2327,7 +2327,7 @@ html, body {
    같은 이유로 .is-danger(Delete)도 뺀다 — 파괴적 동작의 빨강 신호가 회색으로 덮인다. */
 .menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
@@ -2349,7 +2349,7 @@ html, body {
 /* --- active: 한 단계 더 + 눌리는 촉감(scale) --- */
 .menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
@@ -2377,8 +2377,10 @@ html, body {
 .gate-chip:hover { background-color: var(--chip-hover); }
 .gate-chip:active { transform: scale(0.98); }
 .placed-gate:active, .ctrl-dot:active { transform: scale(0.98); }
-.qubit-tab.active:hover, .segmented-btn.active:hover { background-color: var(--accent-10); }
-.qubit-tab.active:active, .segmented-btn.active:active {
+.qubit-tab.active:hover, .segmented-btn.active:hover,
+.inspect-toggle.is-on:hover { background-color: var(--accent-10); }
+.qubit-tab.active:active, .segmented-btn.active:active,
+.inspect-toggle.is-on:active {
   background-color: var(--accent-11);
   transform: scale(0.98);
 }
@@ -2389,6 +2391,7 @@ html, body {
 .pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
 .prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible, .qubit-tab:focus-visible,
 .export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
+.inspect-toggle:focus-visible,
 .code-tab:focus-visible,
 .menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
@@ -2705,4 +2708,36 @@ body.is-col-resizing { cursor: col-resize; user-select: none; }
 .code-status.is-error {
   color: var(--danger-fg);
   font-weight: 600;
+}
+
+
+/* ==========================================================================
+   Inspect 모드 — 측정을 실제로 수행하는 궤적 실행
+
+   두 모드는 **서로 다른 상태**를 보여주므로, 어느 쪽을 보고 있는지 한눈에
+   드러나야 한다. 켜짐은 액센트로 채워 다른 툴바 버튼과 확실히 구분한다.
+   ========================================================================== */
+.inspect-toggle.is-on {
+  background: var(--primary);
+  color: var(--gray-1);
+}
+
+.inspect-note b {
+  color: var(--accent-11);
+}
+
+/* 지연 측정으로 표현할 수 없는 회로의 에러 아래에 붙는 해결책 안내.
+   막다른 길로 두지 않는다 — 이 회로를 실제로 볼 방법을 함께 알려준다. */
+.state-error-hint {
+  margin-top: var(--space-2);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* Inspect 모드에서 확률 차트 아래 한 줄: 막대(이 궤적)와 샘플(여러 궤적)이
+   다른 것을 보여준다는 안내. 둘이 어긋나는 것 자체가 측정의 본질이다. */
+.prob-inspect-note {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }

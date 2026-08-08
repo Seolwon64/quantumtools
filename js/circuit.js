@@ -16,6 +16,7 @@ import {
 } from "./quantum.js";
 import { qubitBlochVector } from "./density.js";
 import { resolveDeferred } from "./classical.js";
+import { runTrajectory, makeRng, randomSeed } from "./trajectory.js";
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
@@ -190,6 +191,11 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   let selectedQubit = 0;
   let stepIndex = usedColumnCount(grid);
+  // Inspect 모드: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 경로를 쓴다.
+  // 시드는 **회로가 바뀌어도 유지**한다 — 게이트를 고쳤을 때 결과가 달라지면 그게 편집
+  // 때문인지 새 난수 때문인지 구분할 수 있어야 하고, 되감기도 결정론적이어야 한다.
+  let inspectMode = false;
+  let trajectorySeed = randomSeed();
   let isPlaying = false;
   let isAnimating = false;
   let runtimeError = null; // 재생/스텝 중 예상치 못한 예외가 났을 때 사용자에게 보여줄 사유
@@ -198,13 +204,20 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   // (예상 가능한 실패를 예외로 만들면 호출부마다 try/catch가 필요해지고, 하나라도 빠지면
   //  재생 루프가 죽어 앱이 조작 불가 상태로 남는다 — 실제로 그 버그가 있었다).
   function stateAt(step) {
+    if (inspectMode) {
+      // 궤적 경로는 지연 측정 변환을 타지 않으므로 그 제약(측정된 큐비트 재조작)도 없다.
+      // 같은 시드를 매번 처음부터 먹이므로 같은 step 이면 항상 같은 상태가 나온다.
+      const { state, clbits } = runTrajectory(qubitCount, clbitCount, grid, step, makeRng(trajectorySeed));
+      return { state, clbits, error: null };
+    }
     const resolved = resolveDeferred(qubitCount, clbitCount, grid);
     if (resolved.error) return { state: initialState(qubitCount), error: resolved.error };
-    return { state: simulateResolved(qubitCount, resolved.grid, step), error: null };
+    return { state: simulateResolved(qubitCount, resolved.grid, step), clbits: null, error: null };
   }
 
   // 회로가 시뮬레이션 가능한지 — addControl/setParams 등과 같은 { ok, reason } 패턴.
   function validate() {
+    if (inspectMode) return { ok: true }; // 궤적 실행은 어떤 측정 패턴이든 정확히 다룬다
     const { error } = resolveDeferred(qubitCount, clbitCount, grid);
     return error ? { ok: false, reason: error } : { ok: true };
   }
@@ -213,12 +226,14 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     const totalSteps = usedColumnCount(grid);
     // 지연 측정으로 표현할 수 없는 회로는 상태를 계산하지 않고 사유를 올린다.
     // UI가 숫자 대신 사유를 보여주므로 아래 placeholder 상태가 결과로 제시되는 일은 없다.
-    const { state, error } = stateAt(stepIndex);
+    const { state, clbits, error } = stateAt(stepIndex);
     const deferredError = error ?? runtimeError;
     return {
       qubitCount,
       clbitCount,
       deferredError,
+      inspectMode,
+      clbits, // 궤적 모드에서 이 스텝까지 기록된 고전 비트 값(지연 모드에서는 null)
       grid,
       selectedQubit,
       stepIndex,
@@ -637,6 +652,20 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   // 전환 애니메이션에 넘길 데이터. 중간 프레임은 시각적 트윈일 뿐이라 이전/다음 스텝의
   // 정확한 값(확률·블로흐·스텝열)을 함께 주고, 보간은 렌더 쪽(main.js)에서 한다.
+  /** Inspect 모드 전환. 시드는 건드리지 않는다 — 껐다 켜도 같은 궤적으로 돌아온다. */
+  function setInspectMode(on) {
+    const next = Boolean(on);
+    if (next === inspectMode) return;
+    inspectMode = next;
+    notify();
+  }
+
+  /** 새 궤적을 뽑는다. "같은 회로인데 실행마다 결과가 다르다"를 보여주는 버튼. */
+  function resample() {
+    trajectorySeed = randomSeed();
+    if (inspectMode) notify();
+  }
+
   function transitionData(fromIdx, toIdx) {
     const fs = stateAt(fromIdx).state;
     const ts = stateAt(toIdx).state;
@@ -709,6 +738,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     MAX_COLUMNS,
     getSnapshot: snapshot,
     validate,
+    setInspectMode,
+    resample,
     placeGate,
     removeGate,
     addControl,

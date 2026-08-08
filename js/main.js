@@ -2,6 +2,7 @@ import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
 import { initMenu } from "./menu.js";
 import { initCodePanel } from "./codepanel.js";
+import { runTrajectory, makeRng, randomSeed, needsTrajectorySampling } from "./trajectory.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
@@ -163,6 +164,9 @@ const dmMatrix = document.getElementById("dm-matrix");
 const dmMetrics = document.getElementById("dm-metrics");
 
 // 비트 순서(엔디언) 라벨: little-endian(q0이 오른쪽 끝) 표기를 명시한다.
+const INSPECT_NOTE =
+  "Inspect mode — one random trajectory. Measurements collapse the state. " +
+  "Press Resample for a different outcome.";
 const ENDIAN_TOOLTIP = "Little-endian: q0 is the rightmost bit (Qiskit convention)";
 function endianLabelText(n) {
   const parts = [];
@@ -180,6 +184,11 @@ const runBtn = document.getElementById("run-btn");
 const resetShotsBtn = document.getElementById("reset-shots-btn");
 
 const gateButtons = [];
+
+// render() 는 컨트롤러가 만들어질 때 곧바로 한 번 불린다. 아래쪽에서 const 로 선언하면
+// 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다) — DOM 참조는 여기서 미리 잡아 둔다.
+const inspectBtn = document.getElementById("inspect-btn");
+const resampleBtn = document.getElementById("resample-btn");
 
 // 코드 패널은 아래쪽에서 초기화된다. 그런데 render() 는 컨트롤러가 만들어질 때
 // 곧바로 한 번 불리므로, const 로 두면 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다).
@@ -278,6 +287,33 @@ async function sampleAsync(probabilities, shots) {
   }
   return total;
 }
+// 중간 측정이 있는 회로는 최종 상태벡터에서 뽑으면 **틀린다** — 붕괴가 이후 게이트에
+// 영향을 주기 때문이다. 그럴 때만 shot 마다 독립 궤적으로 회로를 처음부터 돌린다.
+// 표시용 궤적과 무관한 난수를 쓴다(1024개가 전부 같은 궤적이면 통계가 아니다).
+async function sampleTrajectories(snapshot, shots) {
+  const { qubitCount, clbitCount, grid } = snapshot;
+  const counts = new Array(1 << qubitCount).fill(0);
+  let done = 0;
+  while (done < shots) {
+    const chunk = Math.min(SAMPLE_CHUNK, shots - done);
+    for (let i = 0; i < chunk; i++) {
+      const rng = makeRng(randomSeed());
+      const { state } = runTrajectory(qubitCount, clbitCount, grid, undefined, rng);
+      // 최종 상태에서 기저를 하나 뽑는다(측정으로 이미 확정됐다면 그 하나가 확률 1이다).
+      let r = rng();
+      let idx = state.length - 1;
+      for (let k = 0; k < state.length; k++) {
+        r -= state[k].re * state[k].re + state[k].im * state[k].im;
+        if (r <= 0) { idx = k; break; }
+      }
+      counts[idx]++;
+    }
+    done += chunk;
+    if (done < shots) await new Promise((r) => setTimeout(r, 0)); // UI 프리즈 방지
+  }
+  return counts;
+}
+
 async function runSampling() {
   if (sampling) return;
   const snap = circuit.getSnapshot();
@@ -287,7 +323,9 @@ async function runSampling() {
   runBtn.disabled = true;
   runBtn.textContent = "Running…";
   try {
-    const counts = await sampleAsync(snap.probabilities, shots);
+    const counts = needsTrajectorySampling(snap.qubitCount, snap.grid)
+      ? await sampleTrajectories(snap, shots)
+      : await sampleAsync(snap.probabilities, shots);
     // 샘플링 도중 회로가 바뀌지 않았을 때만 반영(경합 방지)
     if (probSignature(circuit.getSnapshot()) === probSignature(snap)) {
       sampleResult = { counts, shots, signature: probSignature(snap) };
@@ -1653,6 +1691,16 @@ function renderProbabilities(snapshot) {
     note.textContent = `${hiddenZeroCount} state${hiddenZeroCount > 1 ? "s" : ""} hidden (${Math.round(hiddenZeroProb)}%)`;
     probFooter.appendChild(note);
   }
+  // Inspect 모드에서는 막대(이 궤적)와 샘플(여러 궤적)이 정면으로 어긋난다 —
+  // 예: 막대 100%, 샘플 50/50. 그게 측정의 본질이므로 가리지 않고 무엇이 무엇인지 밝힌다.
+  if (snapshot.inspectMode) {
+    const note = document.createElement("span");
+    note.className = "prob-inspect-note";
+    note.textContent = sampled
+      ? "Bars: this trajectory. Samples: independent runs."
+      : "Bars: this trajectory. Run samples independent runs.";
+    probFooter.appendChild(note);
+  }
   if (capActive) {
     probFooter.appendChild(makeShowAllButton(`Show all ${snapshot.probabilities.length} states`, true));
   } else if (probShowAll && snapshot.qubitCount >= 6 && visible.length > PROB_TOP_N) {
@@ -1957,6 +2005,11 @@ function renderStateFormula(snapshot) {
     const err = document.createElement("div");
     err.className = "state-error";
     err.textContent = snapshot.deferredError;
+    // 막다른 길로 두지 않는다 — 이 회로를 실제로 볼 수 있는 방법을 함께 알려준다.
+    const hint = document.createElement("div");
+    hint.className = "state-error-hint";
+    hint.textContent = "Turn on Inspect mode to simulate this circuit with real measurement collapse.";
+    err.appendChild(hint);
     stateFormula.appendChild(err);
     return;
   }
@@ -2000,6 +2053,22 @@ function renderStateFormula(snapshot) {
   endian.addEventListener("mouseenter", () => showTooltip(endian, ENDIAN_TOOLTIP));
   endian.addEventListener("mouseleave", hideTooltip);
   stateFormula.appendChild(endian);
+
+  // Inspect 모드: 화면은 **하나의 무작위 궤적**이다. 실행마다 달라진다는 걸 밝혀야
+  // 사용자가 "왜 아까와 다르지?"에서 멈추지 않는다.
+  if (snapshot.inspectMode) {
+    const note = document.createElement("div");
+    note.className = "deferred-note inspect-note";
+    note.innerHTML = `<b>${icon("triangle-alert")} Inspect mode</b> <span class="deferred-now">one random trajectory</span>`;
+    const full = document.createElement("div");
+    full.className = "deferred-note-text";
+    full.textContent = INSPECT_NOTE;
+    note.title = INSPECT_NOTE;
+    note.addEventListener("mouseenter", () => showTooltip(note, INSPECT_NOTE));
+    note.addEventListener("mouseleave", hideTooltip);
+    stateFormula.append(note, full);
+    return;
+  }
 
   // [5] 정직성: 측정이 있는 회로는 화면의 중간 상태가 "붕괴 전" 상태임을 반드시 밝힌다.
   if (hasMeasurement(snapshot.qubitCount, snapshot.grid)) {
@@ -2045,6 +2114,10 @@ function render(snapshot) {
   if (infoTarget && !cellAtHome(snapshot, infoTarget)) { infoTarget = null; expandedInfo = null; }
   renderGateInfo(snapshot);
   markSelection();
+  inspectBtn.classList.toggle("is-on", snapshot.inspectMode);
+  inspectBtn.setAttribute("aria-pressed", String(snapshot.inspectMode));
+  resampleBtn.classList.toggle("hidden", !snapshot.inspectMode);
+
   // 코드 패널이 열려 있으면 코드를 갱신한다(편집 중이면 덮어쓰지 않고 배너를 띄운다).
   codePanel?.onCircuitChanged();
 
@@ -2231,6 +2304,21 @@ shareBtn.addEventListener("click", () => {
   copyText(buildShareUrl(snap.qubitCount, snap.grid, snap.clbitCount), "Share link");
 });
 
+
+// ---------- Inspect 모드 ----------
+// 기본 경로(지연 측정)와 궤적 경로는 **서로 다른 것을 보여주며 둘 다 옳다.**
+// 어느 쪽을 보고 있는지 항상 알 수 있어야 해서 토글에 활성 표시를 준다.
+let inspectOn = false;
+
+inspectBtn.addEventListener("click", () => {
+  inspectOn = !inspectOn;
+  scene.clearTrail();
+  circuit.setInspectMode(inspectOn);
+});
+resampleBtn.addEventListener("click", () => {
+  scene.clearTrail();
+  circuit.resample();
+});
 
 // ---------- 코드 패널 (QASM / Qiskit) ----------
 // QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전의 <> 버튼(복사 전용)은

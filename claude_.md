@@ -38,6 +38,26 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **아이콘은 `aria-hidden="true"`, 의미는 버튼의 `aria-label`이 전달한다.** 아이콘만 있는 버튼은 예외 없이 `aria-label`을 가진다(팔레트의 글리프 칩 포함). 보이는 텍스트가 있으면 `aria-label`이 그 텍스트를 **포함**해야 한다(WCAG 2.5.3 Label in Name) — 그래서 Examples 버튼은 `"Examples — load an example circuit"`.
 - **경계**: `⊕`(CNOT 타깃)·`×`(SWAP)·`⋮`(Barrier)·`√`·`⟨⟩ψρθφ`는 **회로/수학 표기이지 UI 아이콘이 아니다.** Lucide로 바꾸면 오히려 관례에서 벗어난다. 측정 게이지(`MEASURE_SVG`)도 Qiskit 표기라 게이트 칩 크기를 따르며 Lucide 세트에 속하지 않는다. 이 문자들은 폴백 폰트를 **자체 호스팅**하므로 플랫폼 차이가 없다(3.x 참조).
 
+### 3.m. Inspect 모드 — 측정 붕괴를 실제로 시뮬레이션하는 두 번째 실행 경로
+기본 경로(지연 측정)와 궤적 경로는 **서로 다른 것을 보여주며 둘 다 옳다.** 하나가 다른 하나를 대체하지 않는다.
+- **기본(꺼짐)**: MEASURE 는 no-op, 조건부만 양자 제어로 바꾼다([classical.js](js/classical.js)). 전역 상태가 순수해 Q-sphere·축소 밀도행렬이 성립하지만 **붕괴를 볼 수 없다.**
+- **Inspect(켜짐)**: [js/trajectory.js](js/trajectory.js) 의 `runTrajectory` 가 회로를 순차 실행하며 측정에서 실제로 사영·정규화한다. 이후 게이트는 붕괴된 상태 위에서 적용된다.
+
+**되감기 결정론이 이 설계의 핵심이다.** 매번 새 난수를 뽑으면 스텝 재생이 성립하지 않는다.
+- 시드 하나(`trajectorySeed`)를 두고 `makeRng(seed)` 로 결정론적 수열을 만든다. `stateAt(step)` 이 매번 시퀀스를 처음부터 먹이므로 **같은 step 이면 항상 같은 상태**다. 스텝별 캐시가 필요 없다.
+- **시드는 회로가 바뀌어도 유지한다.** 게이트를 고쳤을 때 결과가 달라지면 그게 편집 때문인지 새 난수 때문인지 구분할 수 있어야 한다. `Resample` 로만 바뀐다.
+- 시드를 localStorage 에 저장하지 않는다 — 새로 열었는데 같은 궤적이면 오히려 혼란스럽다.
+
+**RESET 은 궤적 경로에서만 정확하다.** 기본 경로의 `applyReset` 은 `|0⟩` 성분만 남기는 **사후선택**이라, 얽힌 상대 큐비트의 확률까지 바꾼다(`0.6|00⟩+0.8|11⟩` 에서 q0 리셋 → q1 이 0 으로 확정). 궤적은 측정 후 1 이면 뒤집어 진짜 리셋을 한다.
+
+**조건부는 기록된 고전 비트를 그대로 읽는다.** 지연 측정 변환을 타지 않는다. 아직 기록된 적 없는 비트는 **0(거짓)** — 고전 레지스터는 0 으로 초기화되므로 그게 정확한 의미다(지연 경로는 같은 회로를 에러로 막는다).
+
+**제약 완화**: Inspect 모드에서는 `resolveDeferred` 를 아예 타지 않아 "측정된 큐비트 재조작" 제약이 사라진다. 지연 모드의 에러에는 **해결책을 함께** 붙인다 — `Turn on Inspect mode to simulate this circuit with real measurement collapse.` 막다른 길로 두지 않는다.
+
+**Run 은 중간 측정이 있을 때만 궤적을 돈다**(`needsTrajectorySampling`). 붕괴가 없거나 붕괴 뒤에 아무 연산도 없으면 최종 상태벡터 샘플링이 정확하므로 기존 빠른 경로를 쓴다. 판정은 **첫** 붕괴 기준이다 — 마지막 붕괴만 보면 "측정 → H → 측정" 을 빠른 경로로 잘못 분류한다(실제로 겪음). 궤적 샷은 표시용 시퀀스와 무관한 난수를 쓴다(1024개가 전부 같은 궤적이면 통계가 아니다). 성능은 shot 당 0.069ms — 10000 shots 427ms, 기존 청크 구조를 그대로 쓴다.
+
+**차트는 둘을 함께 보여준다.** 이론 막대는 *이 궤적*, 샘플 막대는 *여러 독립 궤적*이라 정면으로 어긋난다(막대 100% vs 샘플 50/50). 그게 측정의 본질이므로 가리지 않고 무엇이 무엇인지 밝힌다.
+
 ### 3.n. 프리셋 검증 원칙
 프리셋 회로가 조용히 틀리면 사용자는 알아챌 방법이 없다. `test/presets.test.mjs` 가 **상태벡터를 진폭(실수부·허수부)까지** 대조한다.
 - **확률만 보지 않는다.** 위상이 틀려도 확률은 맞을 수 있다. Grover 의 `|11⟩` 은 진폭이 **−1**(위상 π)이고, 그 부호가 곧 오라클+확산이 제대로 돌았다는 증거다.
@@ -124,7 +144,7 @@ QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전 툴
 - **focus는 `:focus-visible`만** 쓴다 — 마우스 클릭엔 링이 뜨지 않고 키보드 탐색에만 뜬다. 액센트 2px + `outline-offset: 2px`.
 - **disabled** `opacity .45` + `cursor: not-allowed`, **`pointer-events`는 유지**(사유 툴팁을 보여줘야 한다). 네이티브 `disabled` 속성은 브라우저가 마우스 이벤트를 막으므로, 툴팁이 필요한 곳은 `aria-disabled`+`.is-disabled`를 쓴다.
 - **비활성 요소는 hover/active 선택자에서 `:not()`으로 제외**한다. 반대로 "적용 후 되돌리기"(`background-color: inherit` 등)로 처리하면 **자기 색을 가진 버튼이 hover 시 투명해진다**(실제로 겪음).
-- **`:not()`은 특이도를 올린다.** `:not()` 3개를 붙인 중립 hover 규칙은 (0,5,0)이라 `.segmented-btn.active:hover`(0,3,0)를 이겨버렸고, **활성 탭이 hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라졌다**(대비 1.03). 같은 함정에 `.gate-menu-item.is-danger:hover`도 걸려 **Delete의 빨강 신호가 회색으로 덮여 있었다**. 자기 색을 가진 변형은 중립 규칙에서 `:not(.active)` / `:not(.is-danger)`로 **아예 제외**한다 — 뒤에서 되돌리려 하지 말고.
+- **`:not()`은 특이도를 올린다.** (이 함정에 **세 번** 걸렸다 — `.segmented-btn.active`, `.gate-menu-item.is-danger`, `.inspect-toggle.is-on`. 자기 색을 가진 변형을 만들 때는 **먼저** 중립 목록에서 제외하라.) `:not()` 3개를 붙인 중립 hover 규칙은 (0,5,0)이라 `.segmented-btn.active:hover`(0,3,0)를 이겨버렸고, **활성 탭이 hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라졌다**(대비 1.03). 같은 함정에 `.gate-menu-item.is-danger:hover`도 걸려 **Delete의 빨강 신호가 회색으로 덮여 있었다**. 자기 색을 가진 변형은 중립 규칙에서 `:not(.active)` / `:not(.is-danger)`로 **아예 제외**한다 — 뒤에서 되돌리려 하지 말고.
 - **전환은 `background-color`와 `transform`만**, `--dur: 120ms` + `--ease: cubic-bezier(0.16,1,0.3,1)`. `all`이나 CSS 기본 `ease`를 쓰지 않는다. (확률 막대·mixedness 미터의 height/width 전환은 인터랙션이 아니라 데이터 애니메이션이라 별개다.)
 - **커서**: 클릭 `pointer` · 드래그 `grab`/누르는 중 `grabbing`(팔레트 칩) · 비활성 `not-allowed`.
 - **버튼 3종**: Primary(액센트 채움 — 재생, 팝오버 Apply) · Secondary(중립+테두리 — Run·Clear all·Examples) · Ghost(배경 없이 hover 시에만 — 아이콘·스텝 버튼).
