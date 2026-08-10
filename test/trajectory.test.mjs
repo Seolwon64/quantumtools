@@ -7,7 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { runTrajectory, makeRng, needsTrajectorySampling } from "../js/trajectory.js";
+import {
+  runTrajectory, makeRng, needsTrajectorySampling,
+  aggregateTrajectories, marginalClassical,
+} from "../js/trajectory.js";
 import { simulate, MAX_COLUMNS } from "../js/circuit.js";
 import { reducedDensityInfo } from "../js/density.js";
 import { PRESETS } from "../js/presets.js";
@@ -218,4 +221,125 @@ test("빠른 경로 판정: 중간 붕괴가 있을 때만 궤적 샘플링이 �
     { col: 1, cell: cell("X", [1], [], { cif: 0 }) },
   ]);
   assert.equal(needsTrajectorySampling(2, cond), true, "조건부인데 빠른 경로를 쓴다");
+});
+
+// ---------------------------------------------------------------- 집계
+
+/** 고정 시드열 — 통계 테스트를 결정론적으로 만든다(±범위 대신 정확한 값을 assert 한다). */
+function seedSource(start) {
+  let n = start >>> 0;
+  return () => { n = (n + 0x9e3779b9) >>> 0; return n; };
+}
+const pct = (x) => +(x * 100).toFixed(1);
+
+/** [5] 핵심 회로: h q0 · measure→c0 · h q0 · measure→c1 */
+function twoBitCircuit() {
+  return build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
+    { col: 2, cell: cell("H", [0]) },
+    { col: 3, cell: cell("MEASURE", [0], [], { cbit: 1 }) },
+  ]);
+}
+
+test("[5] 고전 비트 네 결과가 각각 25% 근처다 (지연 계산이면 한쪽 100%)", () => {
+  const grid = twoBitCircuit();
+  const { classical } = aggregateTrajectories(2, 2, grid, 2000, seedSource(12345));
+  const shown = classical.map(pct);
+  // 고정 시드라 값이 결정론적이다 — 회귀로 못 박는다.
+  assert.deepEqual(shown, [24.6, 26.6, 25.7, 23.2], `실제 분포: ${shown.join(", ")}`);
+  for (const [i, v] of shown.entries()) {
+    assert.ok(v > 20 && v < 30, `c=${i.toString(2).padStart(2, "0")} 가 ${v}% — 25% 근처가 아니다`);
+  }
+});
+
+test("[5] 같은 회로의 큐비트 기저는 50/50 두 개다 (고전 분포와 다른 것이 정상)", () => {
+  const { qubitProbs } = aggregateTrajectories(2, 2, twoBitCircuit(), 2000, seedSource(12345));
+  const shown = qubitProbs.map(pct);
+  assert.deepEqual(shown, [51.2, 48.8, 0, 0], `실제 분포: ${shown.join(", ")}`);
+});
+
+test("Qubits 모드는 평균이지 샘플링이 아니다 — 분산이 더 작다", () => {
+  // 마지막에 측정이 없어 각 궤적의 최종 상태가 중첩인 회로.
+  // 평균은 각 궤적의 확률 벡터를 그대로 더하고, 샘플링은 기저 하나만 뽑아 버린다.
+  const grid = build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
+    { col: 2, cell: cell("H", [0]) },
+  ]);
+  const truth = [0.25, 0.25, 0, 0].map((v, i) => (i < 2 ? 0.5 : 0)); // q0 은 50/50, q1 은 0
+  const N = 200;
+  const err = (probs) => Math.hypot(...probs.map((p, i) => p - truth[i]));
+
+  let avgErr = 0, sampErr = 0;
+  for (let trial = 0; trial < 20; trial++) {
+    const seeds = seedSource(1000 + trial);
+    const { qubitProbs } = aggregateTrajectories(2, 2, grid, N, seeds);
+    avgErr += err(qubitProbs);
+
+    // 대조: 같은 궤적 수로 "기저 하나 샘플링" 방식을 흉내낸다.
+    const s2 = seedSource(1000 + trial);
+    const counts = new Array(4).fill(0);
+    for (let i = 0; i < N; i++) {
+      const rng = makeRng(s2());
+      const { state } = runTrajectory(2, 2, grid, undefined, rng);
+      let r = rng(), idx = state.length - 1;
+      for (let k = 0; k < state.length; k++) {
+        r -= state[k].re * state[k].re + state[k].im * state[k].im;
+        if (r <= 0) { idx = k; break; }
+      }
+      counts[idx]++;
+    }
+    sampErr += err(counts.map((c) => c / N));
+  }
+  assert.ok(avgErr < sampErr, `평균 오차 ${avgErr.toFixed(4)} 가 샘플링 ${sampErr.toFixed(4)} 보다 크다`);
+  // 실측: 평균 쪽이 대략 절반 이하여야 의미가 있다.
+  assert.ok(avgErr < sampErr * 0.7, `평균의 이점이 작다 (평균 ${avgErr.toFixed(4)} vs 샘플 ${sampErr.toFixed(4)})`);
+});
+
+test("측정 없는 회로에서 평균은 이론값과 정확히 같다", () => {
+  for (const preset of PRESETS) {
+    const dec = decodeCircuit(preset.circuit);
+    if (dec.grid.flat().some((c) => c && (c.gate === "MEASURE" || c.gate === "RESET"))) continue;
+    const theory = simulate(dec.qubitCount, dec.grid, undefined, dec.clbitCount)
+      .map((z) => z.re * z.re + z.im * z.im);
+    const { qubitProbs } = aggregateTrajectories(dec.qubitCount, dec.clbitCount, dec.grid, 4, seedSource(7));
+    for (let i = 0; i < theory.length; i++) {
+      assert.ok(Math.abs(theory[i] - qubitProbs[i]) < 1e-12,
+        `${preset.name} idx ${i}: ${theory[i]} ≠ ${qubitProbs[i]}`);
+    }
+  }
+});
+
+test("끝단 측정만 있는 회로: 이론 주변화 == 궤적 집계", () => {
+  // 붕괴가 이후에 영향을 주지 않으므로 궤적을 돌리지 않고도 정확히 계산된다.
+  const grid = build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("X", [1], [0]) },
+    { col: 2, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
+    { col: 2, cell: cell("MEASURE", [1], [], { cbit: 1 }) },
+  ]);
+  assert.equal(needsTrajectorySampling(2, grid), false, "이 회로는 빠른 경로여야 한다");
+
+  const theory = simulate(2, grid, undefined, 2).map((z) => z.re * z.re + z.im * z.im);
+  const marginal = marginalClassical(2, 2, grid, theory).map(pct);
+  const { classical } = aggregateTrajectories(2, 2, grid, 4000, seedSource(99));
+  for (let i = 0; i < marginal.length; i++) {
+    assert.ok(Math.abs(marginal[i] - pct(classical[i])) < 3,
+      `c=${i.toString(2).padStart(2, "0")}: 주변화 ${marginal[i]}% vs 궤적 ${pct(classical[i])}%`);
+  }
+  // Bell 상태라 00 과 11 만 50% 씩
+  assert.deepEqual(marginal, [50, 0, 0, 50], `주변화 결과: ${marginal.join(", ")}`);
+});
+
+test("집계는 시드에 둔감하다 (Resample 로 확률이 크게 안 변한다)", () => {
+  const grid = twoBitCircuit();
+  const runs = [1, 2, 3, 4].map((seed) =>
+    aggregateTrajectories(2, 2, grid, 2000, seedSource(seed)).classical.map(pct)
+  );
+  for (let i = 0; i < 4; i++) {
+    const vals = runs.map((r) => r[i]);
+    const spread = Math.max(...vals) - Math.min(...vals);
+    assert.ok(spread < 4, `c=${i.toString(2).padStart(2, "0")} 편차 ${spread.toFixed(1)}%p: ${vals.join(", ")}`);
+  }
 });

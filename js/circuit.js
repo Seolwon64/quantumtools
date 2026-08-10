@@ -16,7 +16,7 @@ import {
 } from "./quantum.js";
 import { qubitBlochVector } from "./density.js";
 import { resolveDeferred } from "./classical.js";
-import { runTrajectory, makeRng, randomSeed } from "./trajectory.js";
+import { runTrajectory, makeRng, randomSeed, needsTrajectorySampling } from "./trajectory.js";
 
 export const MIN_QUBITS = 2;
 export const MAX_QUBITS = 6;
@@ -191,8 +191,9 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   let selectedQubit = 0;
   let stepIndex = usedColumnCount(grid);
-  // Inspect 모드: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 경로를 쓴다.
-  // 시드는 **회로가 바뀌어도 유지**한다 — 게이트를 고쳤을 때 결과가 달라지면 그게 편집
+  // Inspect 는 "단계별로 들여다보는 모드"일 뿐이다 — 계산 방식을 정하지 않는다.
+  // **중간 측정이 있으면 Inspect 와 무관하게 궤적으로 계산한다**(지연 측정 값은 틀리다).
+  // 시드는 회로가 바뀌어도 유지한다 — 게이트를 고쳤을 때 결과가 달라지면 그게 편집
   // 때문인지 새 난수 때문인지 구분할 수 있어야 하고, 되감기도 결정론적이어야 한다.
   let inspectMode = false;
   let trajectorySeed = randomSeed();
@@ -204,7 +205,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   // (예상 가능한 실패를 예외로 만들면 호출부마다 try/catch가 필요해지고, 하나라도 빠지면
   //  재생 루프가 죽어 앱이 조작 불가 상태로 남는다 — 실제로 그 버그가 있었다).
   function stateAt(step) {
-    if (inspectMode) {
+    if (needsTrajectorySampling(qubitCount, grid)) {
       // 궤적 경로는 지연 측정 변환을 타지 않으므로 그 제약(측정된 큐비트 재조작)도 없다.
       // 같은 시드를 매번 처음부터 먹이므로 같은 step 이면 항상 같은 상태가 나온다.
       const { state, clbits } = runTrajectory(qubitCount, clbitCount, grid, step, makeRng(trajectorySeed));
@@ -217,7 +218,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   // 회로가 시뮬레이션 가능한지 — addControl/setParams 등과 같은 { ok, reason } 패턴.
   function validate() {
-    if (inspectMode) return { ok: true }; // 궤적 실행은 어떤 측정 패턴이든 정확히 다룬다
+    // 궤적 실행은 어떤 측정 패턴이든 정확히 다룬다 — 지연 변환 제약이 적용되지 않는다.
+    if (needsTrajectorySampling(qubitCount, grid)) return { ok: true };
     const { error } = resolveDeferred(qubitCount, clbitCount, grid);
     return error ? { ok: false, reason: error } : { ok: true };
   }
@@ -233,7 +235,11 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
       clbitCount,
       deferredError,
       inspectMode,
-      clbits, // 궤적 모드에서 이 스텝까지 기록된 고전 비트 값(지연 모드에서는 null)
+      // 이 회로가 궤적으로 계산되는가. UI 가 "One trajectory" 라벨·Inspect 토글·축 라벨을
+      // 이 값으로 가른다(Inspect 켜짐 여부와 별개다).
+      usesTrajectory: needsTrajectorySampling(qubitCount, grid),
+      hasMeasurement: gridHasMeasurement(qubitCount, grid),
+      clbits, // 궤적 경로에서 이 스텝까지 기록된 고전 비트 값(지연 경로에서는 null)
       grid,
       selectedQubit,
       stepIndex,
@@ -652,18 +658,31 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
 
   // 전환 애니메이션에 넘길 데이터. 중간 프레임은 시각적 트윈일 뿐이라 이전/다음 스텝의
   // 정확한 값(확률·블로흐·스텝열)을 함께 주고, 보간은 렌더 쪽(main.js)에서 한다.
+  /** 측정이 하나라도 있는가 — 확률 패널의 Classical/Qubits 토글 표시를 가른다. */
+  function gridHasMeasurement(n, g) {
+    for (const col of g) for (let q = 0; q < n; q++) if (col?.[q]?.gate === "MEASURE") return true;
+    return false;
+  }
+
   /** Inspect 모드 전환. 시드는 건드리지 않는다 — 껐다 켜도 같은 궤적으로 돌아온다. */
   function setInspectMode(on) {
     const next = Boolean(on);
     if (next === inspectMode) return;
     inspectMode = next;
+    // 끄면 스텝 컨트롤이 사라진다 — 중간 단계에 멈춘 채로 두면 되돌릴 방법이 없다.
+    if (!inspectMode) stepIndex = usedColumnCount(grid);
     notify();
   }
 
-  /** 새 궤적을 뽑는다. "같은 회로인데 실행마다 결과가 다르다"를 보여주는 버튼. */
+  /**
+   * 새 궤적을 뽑는다. "같은 회로인데 실행마다 결과가 다르다"를 보여주는 버튼.
+   * Inspect 여부와 무관하게 알린다 — 궤적으로 계산되는 회로면 꺼져 있어도 화면이
+   * 그 시드의 결과를 보여주고 있기 때문이다(예전엔 Inspect 켜짐일 때만 알려서,
+   * 꺼진 상태의 Resample 이 화면을 바꾸지 않은 채 시드만 조용히 바꿔 놨다).
+   */
   function resample() {
     trajectorySeed = randomSeed();
-    if (inspectMode) notify();
+    if (needsTrajectorySampling(qubitCount, grid)) notify();
   }
 
   function transitionData(fromIdx, toIdx) {

@@ -144,7 +144,7 @@
           <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
           <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정). -->
           <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
-          <button class="icon-btn tool-icon-btn hidden" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button>
+          <span class="traj-badge hidden" id="traj-badge">One trajectory<button class="icon-btn tool-icon-btn" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button></span>
         </div>
         <div class="circuit-body">
           <div class="circuit-scroll">
@@ -167,6 +167,12 @@
         <div class="prob-toolbar">
           <div class="prob-toolbar-left">
             <h2 class="panel-title" id="prob-panel-title">Probabilities</h2>
+            <!-- 측정이 있는 회로에서만 보인다. 라벨(|c1 c0⟩ / |q1 q0⟩)이 지금 무엇을
+                 보고 있는지 항상 명시하므로 패널 의미가 회로마다 바뀌지 않는다. -->
+            <div class="segmented prob-view-toggle hidden" id="prob-view-toggle">
+              <button class="segmented-btn active" data-view="classical">Classical</button>
+              <button class="segmented-btn" data-view="qubits">Qubits</button>
+            </div>
             <span class="endian-label" id="prob-endian"></span>
           </div>
           <div class="prob-toolbar-right">

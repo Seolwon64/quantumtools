@@ -2,7 +2,10 @@ import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
 import { initMenu } from "./menu.js";
 import { initCodePanel } from "./codepanel.js";
-import { runTrajectory, makeRng, randomSeed, needsTrajectorySampling } from "./trajectory.js";
+import {
+  runTrajectory, makeRng, randomSeed, needsTrajectorySampling,
+  aggregateTrajectories, marginalClassical,
+} from "./trajectory.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
@@ -164,13 +167,16 @@ const dmMatrix = document.getElementById("dm-matrix");
 const dmMetrics = document.getElementById("dm-metrics");
 
 // 비트 순서(엔디언) 라벨: little-endian(q0이 오른쪽 끝) 표기를 명시한다.
+// 궤적으로 계산되는 회로에서 상태 표시 아래에 붙는 설명. Inspect 켜짐 여부와 무관하다 —
+// 중간 측정이 있으면 언제나 궤적으로 계산하기 때문이다.
 const INSPECT_NOTE =
-  "Inspect mode — one random trajectory. Measurements collapse the state. " +
-  "Press Resample for a different outcome.";
+  "This circuit is simulated with real measurement collapse, so the state shown is " +
+  "one of several possible outcomes. Press Resample for a different one. " +
+  "The Probabilities panel aggregates many independent runs.";
 const ENDIAN_TOOLTIP = "Little-endian: q0 is the rightmost bit (Qiskit convention)";
-function endianLabelText(n) {
+function endianLabelText(n, prefix = "q") {
   const parts = [];
-  for (let i = n - 1; i >= 0; i--) parts.push(`q${i}`);
+  for (let i = n - 1; i >= 0; i--) parts.push(`${prefix}${i}`);
   return `|${parts.join(" ")}⟩`;
 }
 probEndian.addEventListener("mouseenter", () => showTooltip(probEndian, ENDIAN_TOOLTIP));
@@ -189,6 +195,23 @@ const gateButtons = [];
 // 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다) — DOM 참조는 여기서 미리 잡아 둔다.
 const inspectBtn = document.getElementById("inspect-btn");
 const resampleBtn = document.getElementById("resample-btn");
+const trajBadge = document.getElementById("traj-badge");
+const probViewToggle = document.getElementById("prob-view-toggle");
+const playbackControls = document.querySelector(".playback-controls");
+
+// 확률 패널이 무엇의 분포를 보여주는가. 측정이 있을 때만 고를 수 있고 기본은 Classical.
+// 엔디언 라벨(|c1 c0⟩ / |q1 q0⟩)이 항상 이 값을 드러내므로 패널 의미가 모호해지지 않는다.
+const PROB_VIEW_KEY = "bloch-prob-view-v1";
+let probView = (() => {
+  try { const v = localStorage.getItem(PROB_VIEW_KEY); if (v === "qubits" || v === "classical") return v; }
+  catch { /* localStorage 사용 불가 */ }
+  return "classical";
+})();
+
+// 궤적 집계 결과 캐시. 같은 (회로, shots, 배치 시드) 조합은 다시 돌리지 않는다.
+let aggregate = null;       // { qubitProbs, classical, shots, signature }
+let aggregateBatch = 0;     // Resample statistics 를 누를 때만 증가 → 새 난수 배치
+let aggregateTimer = null;
 
 // 코드 패널은 아래쪽에서 초기화된다. 그런데 render() 는 컨트롤러가 만들어질 때
 // 곧바로 한 번 불리므로, const 로 두면 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다).
@@ -287,6 +310,36 @@ async function sampleAsync(probabilities, shots) {
   }
   return total;
 }
+/** 집계 결과가 유효한지 판정하는 서명. 회로·shots·배치가 같으면 재계산하지 않는다. */
+function aggregateSignature(snapshot, shots) {
+  return `${snapshot.qubitCount}|${snapshot.clbitCount}|${shots}|${aggregateBatch}|` +
+    JSON.stringify(snapshot.grid);
+}
+
+/**
+ * 중간 측정이 있는 회로의 분포를 궤적으로 집계한다.
+ * 편집 중 매번 돌리면 버벅이므로 디바운스를 건다(최악 6큐비트 12열 1024샷 = 46ms).
+ */
+function scheduleAggregate(snapshot) {
+  if (!snapshot.usesTrajectory) { aggregate = null; return; }
+  const shots = clampShots(parseInt(shotsInput.value, 10));
+  const signature = aggregateSignature(snapshot, shots);
+  if (aggregate?.signature === signature) return; // 이미 같은 조건으로 계산해 뒀다
+
+  clearTimeout(aggregateTimer);
+  aggregateTimer = setTimeout(() => {
+    const snap = circuit.getSnapshot();
+    if (!snap.usesTrajectory) { aggregate = null; return; }
+    const sig = aggregateSignature(snap, shots);
+    const seeds = () => randomSeed();
+    const { qubitProbs, classical } = aggregateTrajectories(
+      snap.qubitCount, snap.clbitCount, snap.grid, shots, seeds
+    );
+    aggregate = { qubitProbs, classical, shots, signature: sig };
+    renderProbabilities(circuit.getSnapshot());
+  }, 150);
+}
+
 // 중간 측정이 있는 회로는 최종 상태벡터에서 뽑으면 **틀린다** — 붕괴가 이후 게이트에
 // 영향을 주기 때문이다. 그럴 때만 shot 마다 독립 궤적으로 회로를 처음부터 돌린다.
 // 표시용 궤적과 무관한 난수를 쓴다(1024개가 전부 같은 궤적이면 통계가 아니다).
@@ -319,6 +372,14 @@ async function runSampling() {
   const snap = circuit.getSnapshot();
   const shots = clampShots(parseInt(shotsInput.value, 10));
   shotsInput.value = String(shots);
+  // 궤적 회로: 화면의 막대가 이미 집계 결과다. 새 난수 배치로 다시 집계한다
+  // (표시용 궤적은 건드리지 않는다 — 그건 Resample 버튼의 몫이다).
+  if (snap.usesTrajectory) {
+    aggregateBatch++;
+    aggregate = null;
+    scheduleAggregate(snap);
+    return;
+  }
   sampling = true;
   runBtn.disabled = true;
   runBtn.textContent = "Running…";
@@ -333,8 +394,7 @@ async function runSampling() {
   } finally {
     sampling = false;
     runBtn.disabled = false;
-    runBtn.textContent = "Run";
-    renderProbabilities(circuit.getSnapshot());
+    render(circuit.getSnapshot()); // 버튼 라벨은 render 가 회로에 맞춰 정한다
   }
 }
 function resetSampling() {
@@ -1599,7 +1659,12 @@ function renderDensityMatrix(snapshot) {
       `<span class="dm-mixed-bar"><span class="dm-mixed-fill" style="width:${mixed * 100}%"></span></span>` +
       `<b>${Math.round(mixed * 100)}%</b></div>` +
     `<div class="dm-stat dm-bloch">r = (<b>${b.x.toFixed(2)}</b>, <b>${b.y.toFixed(2)}</b>, <b>${b.z.toFixed(2)}</b>) &middot; |r| = <b>${info.r.toFixed(3)}</b></div>` +
-    `<div class="dm-caption">${caption}</div>`;
+    `<div class="dm-caption">${caption}</div>` +
+    // 궤적 하나는 **순수 상태**라 Purity 가 늘 1.000 으로 나온다. 실제 앙상블은 혼합
+    // 상태인데도 그렇다 — 라벨이 없으면 "측정했는데 순수하다"는 잘못된 결론으로 이어진다.
+    (snapshot.usesTrajectory
+      ? `<div class="dm-caption dm-traj-note">One trajectory — the ensemble is mixed</div>`
+      : "");
 }
 
 // ---------- 확률 SVG 막대 차트 ----------
@@ -1644,25 +1709,78 @@ function showChartTooltip(anchorEl, html) {
 function hideChartTooltip() {
   chartTooltip.classList.add("hidden");
 }
-function barTooltipHTML(entry, sampled) {
-  const ph = phaseInfo(entry.re, entry.im);
-  const amp = `${entry.re.toFixed(3)} ${entry.im >= 0 ? "+" : "−"} ${Math.abs(entry.im).toFixed(3)}i`;
+function barTooltipHTML(entry, sampled, view) {
   const rows = [`<div class="tt-title">|${entry.label}⟩ <span class="tt-dim">· index ${entry.index}</span></div>`];
-  rows.push(`<div>Theoretical: <b>${entry.probability.toFixed(2)}%</b></div>`);
+  const estimated = view.axis.includes("shots");
+  rows.push(`<div>${estimated ? "Estimated" : "Theoretical"}: <b>${entry.probability.toFixed(2)}%</b></div>`);
   if (sampled) {
     const c = sampleResult.counts[entry.index] ?? 0;
     rows.push(`<div>Observed: <b>${c} / ${sampleResult.shots}</b> (${((c / sampleResult.shots) * 100).toFixed(2)}%)</div>`);
   }
-  rows.push(`<div>Amplitude: <b>${amp}</b></div>`);
-  rows.push(`<div>Phase: <b>${ph.defined ? `${ph.deg.toFixed(1)}° (${ph.rad.toFixed(2)} rad)` : "—"}</b></div>`);
+  // 고전 비트열은 측정 **결과**다 — 진폭도 위상도 없다. 0 을 넣어 있는 척하지 않는다.
+  if (entry.re !== null) {
+    const ph = phaseInfo(entry.re, entry.im);
+    const amp = `${entry.re.toFixed(3)} ${entry.im >= 0 ? "+" : "−"} ${Math.abs(entry.im).toFixed(3)}i`;
+    rows.push(`<div>Amplitude: <b>${amp}</b></div>`);
+    rows.push(`<div>Phase: <b>${ph.defined ? `${ph.deg.toFixed(1)}° (${ph.rad.toFixed(2)} rad)` : "—"}</b></div>`);
+  }
   return rows.join("");
+}
+
+/**
+ * 확률 패널이 **무엇의** 분포를 그리는지 한 곳에서 정한다.
+ *
+ * | 회로 | 모드 | 값 | 축 |
+ * |---|---|---|---|
+ * | 측정 없음 | (토글 숨김) | 이론 큐비트 확률 | `Probability (%)` |
+ * | 측정 있음 | Classical | 궤적 집계 or 이론 주변화 | `% of N shots` / `Probability (%)` |
+ * | 측정 있음 | Qubits | 궤적 확률벡터 **평균** or 이론 | 위와 같음 |
+ *
+ * 라벨(`|c1 c0⟩` / `|q1 q0⟩`)이 항상 이 표의 어느 줄인지 드러내므로 값의 의미가 모호해지지 않는다.
+ */
+function probDisplay(snapshot) {
+  const qubitsMode = !snapshot.hasMeasurement || probView === "qubits";
+  const traj = snapshot.usesTrajectory && aggregate !== null;
+
+  // 큐비트 기저: 궤적이 있으면 |ψ_i|² 평균(= 앙상블 밀도행렬 대각), 없으면 이론값 그대로.
+  if (qubitsMode) {
+    const entries = traj
+      ? snapshot.probabilities.map((e, i) => ({ ...e, probability: aggregate.qubitProbs[i] * 100 }))
+      : snapshot.probabilities;
+    return {
+      entries, bits: snapshot.qubitCount, kind: "qubits",
+      endian: endianLabelText(snapshot.qubitCount, "q"),
+      axis: traj ? `Probability (% of ${aggregate.shots} shots)` : "Probability (%)",
+    };
+  }
+
+  // 고전 비트: 궤적이 있으면 clbits 를 세고, 중간 붕괴가 없으면 이론 확률을 주변화한다
+  // (붕괴가 없을 때 주변화는 **정확**하고 비용이 0이다 — 궤적을 돌릴 이유가 없다).
+  const probs = traj
+    ? aggregate.classical
+    : marginalClassical(snapshot.qubitCount, snapshot.clbitCount, snapshot.grid, snapshot.probabilities.map((e) => e.probability / 100));
+  const entries = [];
+  for (let i = 0; i < probs.length; i++) {
+    let label = "";
+    for (let k = snapshot.clbitCount - 1; k >= 0; k--) label += (i >> k) & 1;
+    // re/im 은 없다 — 고전 비트열에는 진폭도 위상도 없다. 툴팁이 이 null 을 보고 행을 뺀다.
+    entries.push({ index: i, label, re: null, im: null, probability: probs[i] * 100 });
+  }
+  return {
+    entries, bits: snapshot.clbitCount, kind: "classical",
+    endian: endianLabelText(snapshot.clbitCount, "c"),
+    axis: traj ? `Probability (% of ${aggregate.shots} shots)` : "Probability (%)",
+  };
 }
 
 function renderProbabilities(snapshot) {
   probFooter.innerHTML = "";
   hideChartTooltip();
 
-  const sampled = sampleResult !== null;
+  const view = probDisplay(snapshot);
+  // 궤적 회로에서는 Run 자리가 Resample statistics 라 샘플 병기가 없다.
+  // 고전 비트 차트에 큐비트 기저 샘플을 겹치면 인덱스가 서로 다른 것을 가리킨다.
+  const sampled = sampleResult !== null && !snapshot.usesTrajectory && view.kind === "qubits";
   // 관측된 기저(count>0)는 어떤 필터로도 숨기지 않는다.
   const observed = new Set();
   if (sampled) {
@@ -1670,8 +1788,8 @@ function renderProbabilities(snapshot) {
   }
 
   const { visible, hiddenZeroCount, hiddenZeroProb, capActive } = computeVisibleProbabilities(
-    snapshot.probabilities,
-    { hideZero: hideZeroProb, qubitCount: snapshot.qubitCount, topN: PROB_TOP_N, showAll: probShowAll, observed }
+    view.entries,
+    { hideZero: hideZeroProb, qubitCount: view.bits, topN: PROB_TOP_N, showAll: probShowAll, observed }
   );
 
   resetShotsBtn.classList.toggle("hidden", !sampled);
@@ -1693,17 +1811,17 @@ function renderProbabilities(snapshot) {
   }
   // Inspect 모드에서는 막대(이 궤적)와 샘플(여러 궤적)이 정면으로 어긋난다 —
   // 예: 막대 100%, 샘플 50/50. 그게 측정의 본질이므로 가리지 않고 무엇이 무엇인지 밝힌다.
-  if (snapshot.inspectMode) {
+  if (snapshot.usesTrajectory && aggregate) {
     const note = document.createElement("span");
     note.className = "prob-inspect-note";
-    note.textContent = sampled
-      ? "Bars: this trajectory. Samples: independent runs."
-      : "Bars: this trajectory. Run samples independent runs.";
+    note.textContent = view.kind === "classical"
+      ? `Classical outcomes counted over ${aggregate.shots} independent runs.`
+      : `Averaged state probabilities over ${aggregate.shots} independent runs.`;
     probFooter.appendChild(note);
   }
   if (capActive) {
-    probFooter.appendChild(makeShowAllButton(`Show all ${snapshot.probabilities.length} states`, true));
-  } else if (probShowAll && snapshot.qubitCount >= 6 && visible.length > PROB_TOP_N) {
+    probFooter.appendChild(makeShowAllButton(`Show all ${view.entries.length} states`, true));
+  } else if (probShowAll && view.bits >= 6 && visible.length > PROB_TOP_N) {
     probFooter.appendChild(makeShowAllButton(`Show top ${PROB_TOP_N}`, false));
   }
 
@@ -1712,15 +1830,15 @@ function renderProbabilities(snapshot) {
   const H = probList.clientHeight;
   probList.innerHTML = "";
   if (W < 40 || H < 40 || visible.length === 0) return;
-  probList.appendChild(buildProbChart(visible, snapshot, sampled, W, H));
+  probList.appendChild(buildProbChart(visible, view, sampled, W, H));
 }
 
-function buildProbChart(visible, snapshot, sampled, W, H) {
+function buildProbChart(visible, view, sampled, W, H) {
   const n = visible.length;
   const M = { top: 12, right: 10, left: 42 };
   const plotW = W - M.left - M.right;
   const bandW = plotW / n;
-  const labelChars = snapshot.qubitCount + 2; // "|" + bits + "⟩"
+  const labelChars = view.bits + 2; // "|" + bits + "⟩"
   const mode = pickLabelMode(n, bandW, labelChars * 6.2);
   const bottom = mode === "rot45" ? 46 : 24;
   const plotH = H - M.top - bottom;
@@ -1749,7 +1867,7 @@ function buildProbChart(visible, snapshot, sampled, W, H) {
     x: 12, y: (py0 + py1) / 2, "text-anchor": "middle",
     transform: `rotate(-90, 12, ${(py0 + py1) / 2})`, class: "prob-axis-title",
   });
-  yTitle.textContent = "Probability (%)";
+  yTitle.textContent = view.axis;
   svg.appendChild(yTitle);
 
   // 막대 + hover 히트영역 + 라벨
@@ -1813,7 +1931,7 @@ function buildProbChart(visible, snapshot, sampled, W, H) {
 
     // hover 히트영역(밴드 전체 높이) — 마크보다 큰 타겟
     const hit = svgEl("rect", { x: bandX, y: py0, width: bandW, height: plotH, fill: "transparent", class: "prob-hit" });
-    hit.addEventListener("mouseenter", () => showChartTooltip(hit, barTooltipHTML(entry, sampled)));
+    hit.addEventListener("mouseenter", () => showChartTooltip(hit, barTooltipHTML(entry, sampled, view)));
     hit.addEventListener("mouseleave", hideChartTooltip);
     svg.appendChild(hit);
   });
@@ -1938,7 +2056,10 @@ function highlightColumn(col) {
 function runStepTransition(tr) {
   const duration = stepDuration();
   const W = probList.clientWidth, H = probList.clientHeight;
-  const tween = (W > 40 && H > 40) ? buildProbTween(tr.fromProbs, tr.toProbs, tr.qubitCount, W, H) : null;
+  // 확률 패널이 고전 비트를 보고 있으면 큐비트 기저 막대를 트윈하지 않는다 —
+  // 축이 다른 두 분포를 보간하는 셈이라 라벨과 막대가 어긋난다. 전환 후 다시 그려진다.
+  const chartIsQubits = probDisplay(circuit.getSnapshot()).kind === "qubits";
+  const tween = (W > 40 && H > 40 && chartIsQubits) ? buildProbTween(tr.fromProbs, tr.toProbs, tr.qubitCount, W, H) : null;
   if (tween) { probList.innerHTML = ""; probList.appendChild(tween.svg); }
 
   // 구/노드: Bloch 모드는 화살표 트윈, Q-sphere 모드는 짧은 크로스페이드([3], 위치·색 보간 없음)
@@ -2005,10 +2126,11 @@ function renderStateFormula(snapshot) {
     const err = document.createElement("div");
     err.className = "state-error";
     err.textContent = snapshot.deferredError;
-    // 막다른 길로 두지 않는다 — 이 회로를 실제로 볼 수 있는 방법을 함께 알려준다.
+    // 중간 측정은 이제 궤적으로 계산되므로 여기 오는 사유는 **재생 중 예외**뿐이다.
+    // Inspect 를 켜라는 옛 안내는 더는 맞지 않는다.
     const hint = document.createElement("div");
     hint.className = "state-error-hint";
-    hint.textContent = "Turn on Inspect mode to simulate this circuit with real measurement collapse.";
+    hint.textContent = "Step back or edit the circuit to continue.";
     err.appendChild(hint);
     stateFormula.appendChild(err);
     return;
@@ -2054,12 +2176,13 @@ function renderStateFormula(snapshot) {
   endian.addEventListener("mouseleave", hideTooltip);
   stateFormula.appendChild(endian);
 
-  // Inspect 모드: 화면은 **하나의 무작위 궤적**이다. 실행마다 달라진다는 걸 밝혀야
-  // 사용자가 "왜 아까와 다르지?"에서 멈추지 않는다.
-  if (snapshot.inspectMode) {
+  // 궤적으로 계산 중이면 화면의 상태는 **여러 결과 중 하나**다. 실행마다 달라진다는 걸
+  // 밝혀야 사용자가 "왜 아까와 다르지?"에서 멈추지 않는다. 옛 `Deferred measurement`
+  // 경고는 없앴다 — 이제 지연 계산으로 틀린 값을 보여주지 않으므로 경고할 일이 아니다.
+  if (snapshot.usesTrajectory) {
     const note = document.createElement("div");
     note.className = "deferred-note inspect-note";
-    note.innerHTML = `<b>${icon("triangle-alert")} Inspect mode</b> <span class="deferred-now">one random trajectory</span>`;
+    note.innerHTML = `<b>${icon("triangle-alert")} One trajectory</b> <span class="deferred-now">measurement collapse is simulated</span>`;
     const full = document.createElement("div");
     full.className = "deferred-note-text";
     full.textContent = INSPECT_NOTE;
@@ -2070,13 +2193,14 @@ function renderStateFormula(snapshot) {
     return;
   }
 
-  // [5] 정직성: 측정이 있는 회로는 화면의 중간 상태가 "붕괴 전" 상태임을 반드시 밝힌다.
+  // 측정은 있지만 그 뒤에 아무 조작도 없는 회로: 지연 측정이 **정확**하다.
+  // 다만 화면의 상태는 붕괴 전 상태이므로 그 사실만 짧게 밝힌다.
   if (hasMeasurement(snapshot.qubitCount, snapshot.grid)) {
     const note = document.createElement("div");
     note.className = "deferred-note";
     const atMeasure = measurementColumns(snapshot.qubitCount, snapshot.grid).has(snapshot.stepIndex - 1);
     note.innerHTML =
-      `<b>${icon("triangle-alert")} Deferred measurement</b>${atMeasure ? ' <span class="deferred-now">measured here — the state shown is NOT collapsed</span>' : ""}`;
+      `<b>${icon("triangle-alert")} Pre-measurement state</b>${atMeasure ? ' <span class="deferred-now">measured here — the state shown is NOT collapsed</span>' : ""}`;
     note.title = DEFERRED_NOTE;
     note.addEventListener("mouseenter", () => showTooltip(note, DEFERRED_NOTE));
     note.addEventListener("mouseleave", hideTooltip);
@@ -2101,7 +2225,14 @@ function render(snapshot) {
   clbitCountLabel.textContent = String(snapshot.clbitCount);
   clbitMinusBtn.disabled = !snapshot.canRemoveClbit;
   clbitPlusBtn.disabled = !snapshot.canAddClbit;
-  probEndian.textContent = endianLabelText(snapshot.qubitCount);
+  const view = probDisplay(snapshot);
+  probEndian.textContent = view.endian;
+  // 토글은 **선택지가 있을 때만** 보인다. 측정이 없으면 고전 비트 분포라는 개념 자체가 없다.
+  probViewToggle.classList.toggle("hidden", !snapshot.hasMeasurement);
+  for (const b of probViewToggle.querySelectorAll(".segmented-btn")) {
+    b.classList.toggle("active", b.dataset.view === view.kind);
+  }
+  scheduleAggregate(snapshot);
   updatePaletteAvailability(snapshot.qubitCount);
 
   buildCircuitGrid(snapshot);
@@ -2114,9 +2245,16 @@ function render(snapshot) {
   if (infoTarget && !cellAtHome(snapshot, infoTarget)) { infoTarget = null; expandedInfo = null; }
   renderGateInfo(snapshot);
   markSelection();
+  // [2] Inspect 는 "계산을 가능하게 하는 스위치"가 아니라 **단계별로 들여다보는 모드**다.
+  // 측정이 없으면 모든 중간 상태가 결정론적이라 감출 이유가 없다 → 토글 자체를 숨기고
+  // 스텝 컨트롤은 늘 보인다. 측정이 있을 때만 Inspect 가 스텝 컨트롤을 여닫는다.
+  inspectBtn.classList.toggle("hidden", !snapshot.hasMeasurement);
   inspectBtn.classList.toggle("is-on", snapshot.inspectMode);
   inspectBtn.setAttribute("aria-pressed", String(snapshot.inspectMode));
-  resampleBtn.classList.toggle("hidden", !snapshot.inspectMode);
+  playbackControls?.classList.toggle("hidden", snapshot.hasMeasurement && !snapshot.inspectMode);
+  // 상태 표시 영역이 **하나의 궤적**임을 밝히는 배지. Inspect 와 무관하다 —
+  // 궤적으로 계산하는 순간 화면의 상태벡터는 여러 결과 중 하나이기 때문이다.
+  trajBadge.classList.toggle("hidden", !snapshot.usesTrajectory);
 
   // 코드 패널이 열려 있으면 코드를 갱신한다(편집 중이면 덮어쓰지 않고 배너를 띄운다).
   codePanel?.onCircuitChanged();
@@ -2124,6 +2262,14 @@ function render(snapshot) {
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
   runBtn.disabled = busy || sampling; // 재생/애니메이션 중엔 샘플링 비활성
+  // 궤적 회로는 이미 집계 결과를 보고 있다 — Run 은 같은 일을 두 번 하는 셈이다.
+  // 대신 **새 난수 배치로 다시 집계**해 집계 자체에도 통계 오차가 있음을 보여준다.
+  if (!sampling) {
+    runBtn.textContent = snapshot.usesTrajectory ? "Resample statistics" : "Run";
+    runBtn.title = snapshot.usesTrajectory
+      ? "Re-run the aggregation with a fresh batch of random numbers"
+      : "Sample the theoretical distribution";
+  }
   undoBtn.disabled = busy || !snapshot.canUndo;
   redoBtn.disabled = busy || !snapshot.canRedo;
   qubitMinusBtn.disabled = busy || !snapshot.canRemoveQubit;
@@ -2315,9 +2461,20 @@ inspectBtn.addEventListener("click", () => {
   scene.clearTrail();
   circuit.setInspectMode(inspectOn);
 });
+// Resample 은 **표시용 궤적 하나만** 다시 뽑는다. 확률 집계(1024회)는 그대로 둔다 —
+// 집계는 시드에 둔감해 다시 돌려도 값이 거의 같고 비용만 든다.
 resampleBtn.addEventListener("click", () => {
   scene.clearTrail();
   circuit.resample();
+});
+
+probViewToggle.addEventListener("click", (e) => {
+  const btn = e.target.closest(".segmented-btn");
+  if (!btn || btn.dataset.view === probView) return;
+  probView = btn.dataset.view;
+  try { localStorage.setItem(PROB_VIEW_KEY, probView); } catch { /* 저장 불가 — 세션 한정으로 동작 */ }
+  sampleResult = null; // 축이 바뀌면 이전 샘플의 인덱스는 다른 것을 가리킨다
+  render(circuit.getSnapshot());
 });
 
 // ---------- 코드 패널 (QASM / Qiskit) ----------

@@ -176,13 +176,20 @@ test("거부: 레지스터 밖 고전 비트를 조건으로 쓰면 거부", () 
   assert.match(resolveDeferred(2, 2, g).error, /outside the classical register/);
 });
 
-test("컨트롤러: 거부 회로는 deferredError를 올리고 상태를 결과로 제시하지 않는다", () => {
+test("컨트롤러: 측정 뒤 조작이 있는 회로는 거부하지 않고 궤적으로 계산한다", () => {
+  // 예전에는 이 회로를 deferredError 로 막았다. 지금은 궤적 경로가 정확히 다루므로
+  // 에러 없이 **붕괴된** 상태를 돌려준다 — 그게 이 회로의 실제 답이다.
   const c = mk();
   c.placeGate(0, 0, "MEASURE");
-  c.placeGate(1, 0, "H"); // 측정 후 조작 → 거부
+  c.placeGate(1, 0, "H"); // 측정 후 조작
   const snap = c.getSnapshot();
-  assert.ok(snap.deferredError, "deferredError가 있어야 한다");
-  assert.match(snap.deferredError, /is measured/);
+  assert.equal(snap.deferredError, null, `여전히 거부한다: ${snap.deferredError}`);
+  assert.equal(snap.usesTrajectory, true, "궤적 경로로 계산되지 않는다");
+  assert.equal(c.validate().ok, true, "재생이 막혀 있다");
+
+  // resolveDeferred 자체는 여전히 이 회로를 거부한다(지연 변환은 표현할 수 없으므로).
+  // 바뀐 것은 컨트롤러가 그 경로를 **쓰지 않는다**는 점이다.
+  assert.match(resolveDeferred(2, 2, snap.grid).error, /is measured/);
 });
 
 // ---------- 고전 레지스터 상태 ----------
@@ -286,21 +293,40 @@ test("Qiskit: c_if와 measure 대상 비트", () => {
 function invalidController() {
   const c = mk();
   c.placeGate(0, 1, "X");
-  c.setCondition(0, 1, 0); // c[0]에 아무도 기록하지 않은 조건 → 시뮬레이션 불가
+  c.setCondition(0, 1, 0); // c[0]에 아무도 기록하지 않은 조건
   return c;
 }
 
-test("유효하지 않은 회로: play() 후에도 isPlaying/isAnimating이 풀려 있다", async () => {
-  const c = invalidController();
-  assert.ok(c.getSnapshot().deferredError, "전제: 검증 실패 상태");
+/**
+ * 재생 도중 예외가 나는 컨트롤러.
+ *
+ * 예전에는 "지연 변환이 거부하는 회로"로 이 안전망을 시험했지만, 이제 그런 회로는 전부
+ * 궤적 경로로 가서 정상 계산된다 — 전제가 사라졌다. 안전망 자체(runPlayback 의 finally 가
+ * 플래그를 반드시 푸는 것)는 여전히 중요하므로, 애니메이션 콜백에서 직접 터뜨려 시험한다.
+ * 이게 원래 이 테스트가 막으려던 회귀다: 예외로 플래그가 고정되면 앱이 조작 불가가 된다.
+ */
+function throwingController() {
+  const c = createCircuitController({
+    onChange: () => {},
+    onAnimateStep: async () => { throw new Error("animation exploded"); },
+  });
+  c.placeGate(0, 0, "H");
+  c.placeGate(1, 0, "X");
+  c.reset();
+  return c;
+}
+
+test("재생 중 예외가 나도 isPlaying/isAnimating 이 풀려 있다", async () => {
+  const c = throwingController();
   await c.play();
   const s = c.getSnapshot();
   assert.equal(s.isPlaying, false, "isPlaying이 고정되면 앱이 멈춘다");
   assert.equal(s.isAnimating, false, "isAnimating이 고정되면 앱이 멈춘다");
+  assert.match(s.deferredError ?? "", /animation exploded/, "사유가 사용자에게 전달되지 않는다");
 });
 
-test("유효하지 않은 회로: stepForward/stepBackward 후에도 플래그가 풀려 있다", async () => {
-  const c = invalidController();
+test("스텝 이동 중 예외가 나도 플래그가 풀려 있다", async () => {
+  const c = throwingController();
   await c.stepForward();
   await c.stepBackward();
   const s = c.getSnapshot();
@@ -345,25 +371,21 @@ test("onChange(렌더)가 예외를 던져도 컨트롤러가 죽지 않는다",
   assert.ok(c.getSnapshot().grid[0][0], "회로 변경은 반영되어야 한다");
 });
 
-test("validate(): 조건을 지우거나 Measure를 추가하면 즉시 유효해진다", () => {
+test("validate(): 조건이 있는 회로는 궤적으로 계산되므로 항상 유효하다", () => {
+  // 조건부 연산이 있으면 needsTrajectorySampling 이 true 라 지연 변환을 타지 않는다.
+  // 기록된 적 없는 비트의 조건은 0(거짓)으로 처리되며, 그게 고전 레지스터의 정확한 의미다.
   const c = invalidController();
-  const bad = c.validate();
-  assert.equal(bad.ok, false);
-  assert.match(bad.reason, /nothing has measured into c\[0\]/);
+  assert.equal(c.validate().ok, true, "조건 회로가 여전히 막혀 있다");
+  assert.equal(c.getSnapshot().usesTrajectory, true);
 
-  c.setCondition(0, 1, null); // 조건 제거
-  assert.equal(c.validate().ok, true);
-
-  c.setCondition(0, 1, 0);    // 다시 유효하지 않게
-  assert.equal(c.validate().ok, false);
-  c.placeGate(0, 0, "MEASURE"); // 같은 열이라 아직 기록 전 → 여전히 무효
-  assert.equal(c.validate().ok, false);
-  c.removeGate(0, 0);
-  c.placeGate(0, 0, "MEASURE");
+  // 조건을 지우면 측정도 조건도 없으므로 지연(빠른) 경로로 돌아간다.
   c.setCondition(0, 1, null);
-  c.placeGate(1, 1, "X");
-  c.setCondition(1, 1, 0);    // 앞 열에서 기록한 c[0] 조건 → 유효
   assert.equal(c.validate().ok, true);
+  assert.equal(c.getSnapshot().usesTrajectory, false, "조건을 지웠는데 궤적 경로를 쓴다");
+
+  // 지연 변환 자체는 여전히 이 회로를 거부한다 — 컨트롤러가 그 경로를 안 쓸 뿐이다.
+  c.setCondition(0, 1, 0);
+  assert.match(resolveDeferred(2, 2, c.getSnapshot().grid).error, /nothing has measured into c\[0\]/);
 });
 
 test("정상 회로의 재생은 예전과 동일하게 끝까지 진행된다", async () => {
@@ -378,4 +400,46 @@ test("정상 회로의 재생은 예전과 동일하게 끝까지 진행된다",
   assert.equal(s.isPlaying, false);
   assert.equal(s.isAnimating, false);
   assert.equal(s.deferredError, null);
+});
+
+test("Resample 은 Inspect 가 꺼져 있어도 화면을 갱신한다", () => {
+  // 예전엔 Inspect 켜짐일 때만 notify() 해서, 꺼진 상태의 Resample 이 시드만 조용히
+  // 바꿔 놓고 화면은 그대로였다. 그러다 Inspect 를 켜는 순간 상태가 튀었다.
+  let notified = 0;
+  const c = createCircuitController({
+    onChange: () => { notified++; },
+    onAnimateStep: async () => {},
+  });
+  c.placeGate(0, 0, "H");
+  c.placeGate(1, 0, "MEASURE");
+  c.placeGate(2, 0, "H"); // 측정 뒤 조작 → 궤적 경로
+  assert.equal(c.getSnapshot().usesTrajectory, true);
+
+  const before = notified;
+  c.resample();
+  assert.ok(notified > before, "궤적 회로인데 Resample 이 알리지 않았다");
+
+  // 궤적을 쓰지 않는 회로에서는 화면이 바뀌지 않으므로 알릴 것도 없다.
+  const plain = mk();
+  let n2 = 0;
+  const p = createCircuitController({ onChange: () => { n2++; }, onAnimateStep: async () => {} });
+  p.placeGate(0, 0, "H");
+  assert.equal(p.getSnapshot().usesTrajectory, false);
+  const b2 = n2;
+  p.resample();
+  assert.equal(n2, b2, "이론 경로인데 Resample 이 불필요하게 다시 그렸다");
+  void plain;
+});
+
+test("Inspect 를 끄면 스텝이 끝으로 간다 (컨트롤이 사라지므로)", () => {
+  const c = mk();
+  c.placeGate(0, 0, "H");
+  c.placeGate(1, 0, "MEASURE");
+  c.placeGate(2, 0, "H");
+  c.setInspectMode(true);
+  c.reset();
+  assert.equal(c.getSnapshot().stepIndex, 0);
+  c.setInspectMode(false);
+  const s = c.getSnapshot();
+  assert.equal(s.stepIndex, s.totalSteps, "스텝 컨트롤이 사라졌는데 중간 단계에 멈춰 있다");
 });

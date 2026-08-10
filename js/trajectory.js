@@ -167,7 +167,76 @@ export function needsTrajectorySampling(qubitCount, grid) {
       }
     }
   }
-  if (firstCollapse === Infinity) return false; // 붕괴가 없다 → 기존 경로가 정확하다
-  if (hasCondition) return true;                // 조건부는 측정 결과에 의존한다
+  // 조건부는 붕괴 유무보다 **먼저** 본다. 기록된 적 없는 비트를 조건으로 쓰면 지연 변환이
+  // 값을 내는 게 아니라 **에러를 낸다** — 그런 회로도 궤적은 정확히 다룬다(조건이 거짓일 뿐).
+  // 순서를 뒤집으면 그 회로가 계산 자체를 못 하고 막힌다.
+  if (hasCondition) return true;
+  if (firstCollapse === Infinity) return false; // 붕괴도 조건도 없다 → 기존 경로가 정확하다
   return lastOperation > firstCollapse;         // 붕괴 뒤에 연산이 남아 있다
+}
+
+// ---------------------------------------------------------------- 집계
+
+/**
+ * 여러 궤적을 돌려 두 분포를 **한 번에** 만든다.
+ *
+ * 두 분포는 성격이 달라 집계 방식도 다르다:
+ *  · classical — 각 궤적의 clbits 를 비트열로 **센다**. 측정 결과는 본질적으로 이산적이다.
+ *  · qubits    — 각 궤적의 확률 벡터를 **평균**한다: P(x) = (1/N) Σ |⟨x|ψᵢ⟩|².
+ *                궤적마다 기저 하나를 뽑아 세지 **않는다** — 기대값은 같지만 분산이 훨씬 크다.
+ *                같은 shot 수로 더 정확한 값을 얻을 수 있는데 버릴 이유가 없다.
+ *                이 값은 앙상블 밀도행렬의 대각 성분과 정확히 일치한다.
+ *                (측정이 없으면 모든 궤적이 같은 상태라 평균이 이론값과 **정확히** 같아진다.)
+ *
+ * @param nextSeed 시드를 주는 함수. 테스트가 고정 시드를 넣어 결정론적으로 만들 수 있도록
+ *   난수원을 주입받는다 — 통계 테스트를 "±4%" 같은 느슨한 범위로 두지 않기 위해서다.
+ * @returns {{qubitProbs: number[], classical: number[], shots}} 둘 다 합이 1인 분포.
+ */
+export function aggregateTrajectories(qubitCount, clbitCount, grid, shots, nextSeed) {
+  const dim = 1 << qubitCount;
+  const qubitProbs = new Array(dim).fill(0);
+  const classical = new Array(clbitCount > 0 ? 1 << clbitCount : 1).fill(0);
+
+  for (let s = 0; s < shots; s++) {
+    const { state, clbits } = runTrajectory(qubitCount, clbitCount, grid, undefined, makeRng(nextSeed()));
+    for (let i = 0; i < dim; i++) {
+      qubitProbs[i] += state[i].re * state[i].re + state[i].im * state[i].im;
+    }
+    let word = 0;
+    for (let k = 0; k < clbits.length; k++) if (clbits[k]) word |= 1 << k;
+    classical[word]++;
+  }
+
+  for (let i = 0; i < dim; i++) qubitProbs[i] /= shots;
+  for (let i = 0; i < classical.length; i++) classical[i] /= shots;
+  return { qubitProbs, classical, shots };
+}
+
+/**
+ * 중간 붕괴가 없는 회로의 고전 비트 분포는 **궤적을 돌리지 않고** 구할 수 있다.
+ * 측정은 상태를 바꾸지 않고 읽기만 하므로, 이론 확률을 측정된 큐비트로 주변화하면 정확하다.
+ * needsTrajectorySampling 이 false 인 회로에서만 쓴다.
+ */
+export function marginalClassical(qubitCount, clbitCount, grid, probs) {
+  const out = new Array(clbitCount > 0 ? 1 << clbitCount : 1).fill(0);
+  // c[k] 에 마지막으로 기록하는 큐비트를 찾는다(같은 비트에 두 번 쓰면 나중 것이 남는다).
+  const writer = new Array(Math.max(0, clbitCount)).fill(-1);
+  for (let col = 0; col < grid.length; col++) {
+    for (let q = 0; q < qubitCount; q++) {
+      const cell = grid[col]?.[q];
+      if (cell?.gate !== "MEASURE") continue;
+      const cb = cell.params?.cbit ?? cell.targets[0];
+      if (cb >= 0 && cb < writer.length) writer[cb] = cell.targets[0];
+    }
+  }
+  for (let i = 0; i < probs.length; i++) {
+    const p = probs[i];
+    if (p <= 0) continue;
+    let word = 0;
+    for (let k = 0; k < writer.length; k++) {
+      if (writer[k] >= 0 && (i >> writer[k]) & 1) word |= 1 << k;
+    }
+    out[word] += p;
+  }
+  return out;
 }

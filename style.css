@@ -1316,6 +1316,26 @@ html, body {
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
+/* 측정이 있는 회로에서 Inspect 가 꺼져 있으면 감춘다. 매 단계가 무작위로 붕괴하므로
+   "지금 몇 단계인가"만 보여주는 컨트롤은 오히려 오해를 만든다. */
+.playback-controls.hidden { display: none; }
+
+/* 상태 표시가 여러 결과 중 **하나**임을 밝히는 배지 + 다시 뽑기.
+   Inspect 토글 옆에 두어 "이 회로는 궤적으로 계산된다"는 사실이 회로 툴바에서 읽힌다. */
+.traj-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 2px 2px var(--space-2);
+  border: 1px solid var(--gray-6);
+  border-radius: var(--radius-2);
+  background: var(--gray-3);
+  color: var(--gray-11);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.traj-badge.hidden { display: none; }
 
 /* [6] 모션 최소화 선호 시 CSS 전환/애니메이션도 사실상 끈다(자바스크립트 트윈은 별도 처리). */
 @media (prefers-reduced-motion: reduce) {
@@ -1407,6 +1427,12 @@ html, body {
   cursor: pointer;
 }
 
+/* 패널 제목 옆에 놓이므로 뷰 토글 옆의 3D 뷰 토글보다 한 단계 작게 — 제목의 위계를
+   넘지 않아야 한다. */
+.prob-view-toggle .segmented-btn {
+  padding: 3px var(--space-2);
+  font-size: var(--text-xs);
+}
 .prob-toolbar-left {
   display: flex;
   align-items: baseline;
@@ -1852,6 +1878,11 @@ html, body {
   font-weight: 600;
   color: var(--primary);
   line-height: 1.4;
+}
+/* 궤적 하나의 값이라는 단서. 본문 캡션(액센트)보다 약하게 — 결론이 아니라 조건이다. */
+.dm-traj-note {
+  color: var(--gray-10);
+  font-weight: 500;
 }
 
 .prob-bar-col {
@@ -2717,6 +2748,8 @@ body.is-col-resizing { cursor: col-resize; user-select: none; }
    두 모드는 **서로 다른 상태**를 보여주므로, 어느 쪽을 보고 있는지 한눈에
    드러나야 한다. 켜짐은 액센트로 채워 다른 툴바 버튼과 확실히 구분한다.
    ========================================================================== */
+/* 측정이 없는 회로에는 붕괴시킬 것이 없다 — 토글 자체를 감춘다. */
+.inspect-toggle.hidden { display: none; }
 .inspect-toggle.is-on {
   background: var(--primary);
   color: var(--gray-1);

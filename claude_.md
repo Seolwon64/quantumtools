@@ -38,10 +38,31 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 - **아이콘은 `aria-hidden="true"`, 의미는 버튼의 `aria-label`이 전달한다.** 아이콘만 있는 버튼은 예외 없이 `aria-label`을 가진다(팔레트의 글리프 칩 포함). 보이는 텍스트가 있으면 `aria-label`이 그 텍스트를 **포함**해야 한다(WCAG 2.5.3 Label in Name) — 그래서 Examples 버튼은 `"Examples — load an example circuit"`.
 - **경계**: `⊕`(CNOT 타깃)·`×`(SWAP)·`⋮`(Barrier)·`√`·`⟨⟩ψρθφ`는 **회로/수학 표기이지 UI 아이콘이 아니다.** Lucide로 바꾸면 오히려 관례에서 벗어난다. 측정 게이지(`MEASURE_SVG`)도 Qiskit 표기라 게이트 칩 크기를 따르며 Lucide 세트에 속하지 않는다. 이 문자들은 폴백 폰트를 **자체 호스팅**하므로 플랫폼 차이가 없다(3.x 참조).
 
-### 3.m. Inspect 모드 — 측정 붕괴를 실제로 시뮬레이션하는 두 번째 실행 경로
-기본 경로(지연 측정)와 궤적 경로는 **서로 다른 것을 보여주며 둘 다 옳다.** 하나가 다른 하나를 대체하지 않는다.
-- **기본(꺼짐)**: MEASURE 는 no-op, 조건부만 양자 제어로 바꾼다([classical.js](js/classical.js)). 전역 상태가 순수해 Q-sphere·축소 밀도행렬이 성립하지만 **붕괴를 볼 수 없다.**
-- **Inspect(켜짐)**: [js/trajectory.js](js/trajectory.js) 의 `runTrajectory` 가 회로를 순차 실행하며 측정에서 실제로 사영·정규화한다. 이후 게이트는 붕괴된 상태 위에서 적용된다.
+### 3.m. 중간 측정이 있으면 **언제나** 궤적으로 계산한다 — Inspect 는 단계별 보기일 뿐
+경로 선택은 **회로가 정한다. 사용자 스위치가 아니다.** `needsTrajectorySampling(qubitCount, grid)` 하나가 판정하고 `stateAt`·`validate`·확률 패널·UI 표시가 모두 이 값을 본다.
+- **궤적 경로** (중간 붕괴 또는 조건부가 있음): [js/trajectory.js](js/trajectory.js) 의 `runTrajectory` 가 회로를 순차 실행하며 측정에서 실제로 사영·정규화한다. 이후 게이트는 붕괴된 상태 위에서 적용된다.
+- **이론 경로** (그 외): MEASURE 는 no-op, 조건부만 양자 제어로 바꾼다([classical.js](js/classical.js)). 붕괴가 없거나 붕괴 뒤에 아무 연산이 없으면 이 값이 **정확**하고 비용이 0이다.
+
+**예전 설계의 실패**: Inspect 가 꺼져 있으면 `h/measure/h/measure` 같은 회로를 지연 측정으로 계산해 `|00⟩ 100%` 를 보여줬다. **그 값은 틀렸다** — 정답은 네 결과 각각 25% 다. "정확한 답을 보려면 스위치를 켜라"는 역할 배분 자체가 잘못이었다. 지금 Inspect 는 **스텝 컨트롤을 여닫는 것**만 한다.
+- 측정이 **있는** 회로: Inspect 꺼짐 → 최종 상태만(스텝 컨트롤 숨김). 켜짐 → 스텝 컨트롤 표시. 두 모드가 **같은 캐시 궤적**을 쓰므로 최종 상태가 반드시 일치한다. 끌 때 `stepIndex` 를 끝으로 되돌린다 — 중간 단계에 멈춘 채 컨트롤이 사라지면 되돌릴 방법이 없다.
+- 측정이 **없는** 회로: 모든 중간 상태가 결정론적이라 감출 이유가 없다 → **Inspect 토글 자체를 숨기고** 스텝 컨트롤은 늘 보인다.
+
+**확률 패널은 두 분포를 다르게 집계한다** — `aggregateTrajectories` 가 궤적 한 번 순회로 둘 다 만든다.
+- **Classical**: 각 궤적의 `clbits` 를 비트열로 **센다**. 측정 결과는 본질적으로 이산적이다.
+- **Qubits**: 각 궤적의 최종 순수 상태에서 `|⟨x|ψ_i⟩|²` 를 구해 **평균**한다 — `P(x) = (1/N) Σ_i |⟨x|ψ_i⟩|²`. **궤적마다 기저 하나를 샘플링해 세지 않는다.** 기대값은 같지만 분산이 훨씬 크다. 이 값은 앙상블 **밀도행렬의 대각 성분과 정확히 일치**하고, 측정 없는 회로에서는 모든 궤적이 같아 이론값과 **정확히** 같아진다(테스트가 고정).
+- 궤적이 필요 없으면 궤적을 돌리지 않는다. Qubits 는 이론값 그대로, Classical 은 `marginalClassical` 로 이론 확률을 **주변화**한다(비트별 마지막 기록 큐비트 기준) — 붕괴가 없으면 그게 정확하고 비용이 0이다.
+
+**패널 헤더의 `[Classical | Qubits]` 토글** — 측정이 **있을 때만** 보이고 기본은 Classical, 선택은 localStorage(`bloch-prob-view-v1`). 고전 비트만 보면 측정하지 않은 큐비트가 사라지고(텔레포테이션의 q2), 둘 다 그리면 차트가 두 배가 되어 레이아웃에 안 들어간다. **엔디언 라벨이 모드를 항상 드러낸다**: Classical → `|c1 c0⟩`, Qubits → `|q1 q0⟩`. 이 라벨 덕분에 "패널 의미가 회로마다 바뀐다"는 문제가 사라진다. 축 제목도 함께 간다 — 궤적이면 `Probability (% of N shots)`, 이론이면 `Probability (%)`.
+
+**고전 비트 막대에는 진폭도 위상도 없다.** 툴팁에서 `entry.re === null` 이면 Amplitude·Phase 행을 **뺀다**(0 을 넣어 있는 척하지 않는다). 같은 이유로 스텝 전환 트윈은 Classical 모드에서 **그리지 않는다** — 축이 다른 두 분포를 보간하는 셈이라 라벨과 막대가 어긋난다.
+
+**Run / Resample 의 역할 분리** — 둘 다 "다시 뽑기"라 헷갈리기 쉬우므로 무엇을 바꾸는지가 다르다.
+| 버튼 | 궤적 회로 | 바꾸는 것 | 바꾸지 않는 것 |
+|---|---|---|---|
+| `Run` → **`Resample statistics`** | 새 난수 배치로 **재집계** | 확률 패널 | 표시용 궤적 |
+| `Resample`(주사위) | 표시용 궤적만 다시 뽑기 | 상태벡터·Q-sphere·블로흐·밀도행렬 | 확률 패널 |
+
+집계 shot 수는 **기존 shots 입력 필드 값을 그대로 쓴다**(별도 상수를 두면 화면의 숫자와 실제 계산이 어긋난다). 궤적이 필요 없는 회로에서는 `Run` 그대로 — 이론값 + 샘플 병기.
 
 **되감기 결정론이 이 설계의 핵심이다.** 매번 새 난수를 뽑으면 스텝 재생이 성립하지 않는다.
 - 시드 하나(`trajectorySeed`)를 두고 `makeRng(seed)` 로 결정론적 수열을 만든다. `stateAt(step)` 이 매번 시퀀스를 처음부터 먹이므로 **같은 step 이면 항상 같은 상태**다. 스텝별 캐시가 필요 없다.
@@ -52,11 +73,15 @@ AI 에이전트는 모든 컴포넌트와 화면을 구성할 때 아래의 토�
 
 **조건부는 기록된 고전 비트를 그대로 읽는다.** 지연 측정 변환을 타지 않는다. 아직 기록된 적 없는 비트는 **0(거짓)** — 고전 레지스터는 0 으로 초기화되므로 그게 정확한 의미다(지연 경로는 같은 회로를 에러로 막는다).
 
-**제약 완화**: Inspect 모드에서는 `resolveDeferred` 를 아예 타지 않아 "측정된 큐비트 재조작" 제약이 사라진다. 지연 모드의 에러에는 **해결책을 함께** 붙인다 — `Turn on Inspect mode to simulate this circuit with real measurement collapse.` 막다른 길로 두지 않는다.
+**제약이 사라졌다**: 궤적 경로는 `resolveDeferred` 를 아예 타지 않으므로 "측정된 큐비트 재조작" 제약이 없다. 그 제약에 걸리던 회로는 전부 궤적으로 라우팅되므로 **`resolveDeferred` 의 에러는 컨트롤러에서 도달 불가능**하다 — `deferredError` 에 남는 것은 재생 중 예외(`runtimeError`)뿐이다.
 
-**Run 은 중간 측정이 있을 때만 궤적을 돈다**(`needsTrajectorySampling`). 붕괴가 없거나 붕괴 뒤에 아무 연산도 없으면 최종 상태벡터 샘플링이 정확하므로 기존 빠른 경로를 쓴다. 판정은 **첫** 붕괴 기준이다 — 마지막 붕괴만 보면 "측정 → H → 측정" 을 빠른 경로로 잘못 분류한다(실제로 겪음). 궤적 샷은 표시용 시퀀스와 무관한 난수를 쓴다(1024개가 전부 같은 궤적이면 통계가 아니다). 성능은 shot 당 0.069ms — 10000 shots 427ms, 기존 청크 구조를 그대로 쓴다.
+**`needsTrajectorySampling` 의 판정 순서가 두 번 틀렸다.**
+1. **마지막** 붕괴 기준이라 "측정 → H → 측정" 을 빠른 경로로 잘못 분류했다 → **첫** 붕괴 기준으로 고쳤다.
+2. 조건부 검사가 "붕괴 없음" 조기 반환보다 **뒤**에 있었다. 기록된 적 없는 비트를 조건으로 쓰면 지연 변환은 값을 내는 게 아니라 **에러를 낸다** — 그런 회로도 궤적은 정확히 다룬다(조건이 거짓일 뿐). → `hasCondition` 을 **맨 앞**으로 옮겼다.
 
-**차트는 둘을 함께 보여준다.** 이론 막대는 *이 궤적*, 샘플 막대는 *여러 독립 궤적*이라 정면으로 어긋난다(막대 100% vs 샘플 50/50). 그게 측정의 본질이므로 가리지 않고 무엇이 무엇인지 밝힌다.
+**성능**: 최악 6큐비트 12열 1024샷 = 46ms. 회로 변경 시 **150ms 디바운스** + `(회로, shots, 배치)` 서명 캐시면 충분하고, 축소 shot 미리보기는 두지 않는다(두 단계 표시는 값이 튀어 보여 오히려 혼란스럽다). 실측: 6큐비트 회로에 게이트 12개를 연속 배치할 때 longtask 12개/최장 177ms 로, **측정 없는 같은 회로(13개/170ms)와 구분되지 않는다** — 집계가 추가 비용을 만들지 않는다.
+
+**`resample()` 은 Inspect 가 꺼져 있어도 알린다.** 예전엔 `if (inspectMode) notify()` 였다. 궤적 경로가 상시가 된 뒤로는 꺼진 상태의 Resample 이 화면을 바꾸지 않은 채 **시드만 조용히 바꿔 놨고**, 나중에 Inspect 를 켜는 순간 상태가 튀었다. 지금은 `needsTrajectorySampling` 이면 알린다(이론 경로에서는 화면이 안 바뀌므로 알리지 않는다). 회귀 테스트로 고정.
 
 ### 3.n. 프리셋 검증 원칙
 프리셋 회로가 조용히 틀리면 사용자는 알아챌 방법이 없다. `test/presets.test.mjs` 가 **상태벡터를 진폭(실수부·허수부)까지** 대조한다.
@@ -266,7 +291,10 @@ QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전 툴
   - 기록 없는 c[k]를 조건으로 쓰거나(열 순서 기준), 레지스터 밖 비트를 참조해도 거부한다.
 - **데이터 모델:** 셀 구조는 그대로 두고 `params`만 확장한다(targets/controls는 **큐비트 인덱스 전용**이라 고전 비트를 넣으면 안 된다) — Measure는 `params.cbit`(기록 대상), 조건부 연산은 `params.cif`(조건 비트). 컨트롤러가 `clbitCount`(0…6, 기본 = 큐비트 수)를 들고 `setClbitCount`로 바꾸며, 줄일 때 범위 밖 `cbit`/`cif` 참조를 정리한다.
 - **`if` 조작:** 팔레트의 `if`를 **이미 배치된 게이트 위에 드롭**해 조건을 붙인다(`•` Control과 같은 방식). 조건 비트는 팝오버에서 고르고, 컨텍스트 메뉴에도 "Add/Change condition"·"Set classical bit"이 있다. (`GATE_INFO.IF`가 `ready:true`로 활성화됨.)
-- **[정직성] 화면 표시:** 측정이 있는 회로에는 상태벡터 옆에 **"⚠ Deferred measurement" + 전체 안내문**을 항상 띄우고, 스텝이 측정 열을 막 지났을 때는 "measured here — the state shown is NOT collapsed"를 덧붙인다. 이 도구가 보여주는 중간 상태가 붕괴 전 상태임을 숨기지 않는 것이 이 기능의 전제다.
+- **[정직성] 화면 표시:** 옛 `⚠ Deferred measurement` **경고 배너는 없앴다** — 이제 그런 회로를 지연 계산으로 틀리게 보여주지 않으므로 경고할 일이 아니다. 대신 상황에 맞는 라벨을 붙인다.
+  - 궤적으로 계산되는 회로: 회로 툴바에 **`One trajectory` 배지 + Resample**, 상태 수식 아래에 `⚠ One trajectory — measurement collapse is simulated`.
+  - **축소 밀도행렬 영역에도 같은 라벨**(`One trajectory — the ensemble is mixed`). 궤적 하나는 순수 상태라 **Purity 가 늘 1.000** 으로 나오는데 실제 앙상블은 혼합 상태다. 라벨이 없으면 "측정했는데도 순수하다"는 잘못된 결론으로 이어진다.
+  - 측정은 있지만 그 뒤에 조작이 없는 회로(지연 계산이 **정확**한 경우): `⚠ Pre-measurement state` — 화면의 상태가 붕괴 전임을 밝히되 경고하지 않는다.
 - **렌더링:** 캔버스 맨 아래 **고전 레지스터 와이어 1줄(이중선, `c / n` 라벨)** — `clbitCount === 0`이면 아예 그리지 않는다. 회로 패널 높이가 워크스페이스 비율 고정(`--row-right`)이라 행이 늘면 마지막 와이어가 화면 밖으로 밀리므로, `render()`가 **`(큐비트수 + 고전행) × ROW_PITCH + CIRCUIT_CHROME`으로 패널 `min-height`를 잡아준다**(워크스페이스의 72%로 상한). Measure/조건부 게이트에서 고전 와이어까지 **이중선**을 내리고 도착점에 대상 비트 번호 배지를 둔다(측정=회색, 조건=파랑). **한 열에 여러 개가 내려오면 좌우로 벌려** 겹치지 않게 한다(텔레포테이션의 두 측정).
 - **직렬화/export:** URL은 `{v:2, n, c:clbitCount, p:[…]}` + params `cb`/`ci`. **`c`가 없는 기존 URL은 `clbitCount = n`으로 열리고**, `clbitCount === n`이면 `c`를 넣지 않아 기존과 동일한 문자열이 나온다. QASM은 `creg c[n];`(0이면 생략) + `measure q[t] -> c[k];` + `if (c==1<<k) …`, Qiskit은 `.c_if(qc.cregs[0], 1<<k)`.
 - **범위 밖(이번 미포함):** 복합 조건(c0 AND c1), 측정 후 큐비트 재사용/중간 RESET, 밀도행렬 기반 혼합 상태, 단일 궤적 붕괴 모드.
@@ -280,7 +308,7 @@ QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전 툴
 - **시뮬레이션 엔진(`quantum.js applyPlacement`)은 컨트롤을 일반적으로 처리한다:** n개 컨트롤 = "모든 control 비트가 1인 기저 상태 쌍에만 base 게이트 적용"(`applyUnitary`의 controlMask). 게이트별 컨트롤 특수 분기는 없다. 순수 함수 `circuit.js simulate(qubitCount, grid, steps)`가 그리드→상태벡터를 계산한다.
 - **제약:** Measure/Reset/Barrier/CTRL은 컨트롤을 붙일 수 없다. `isValidPlacement`가 거르고, `applyPlacement`는 위반 시 `"<gate> cannot be controlled"` 에러를 던진다.
 - **하위 호환:** 구버전 셀(`{gate:"CNOT", controls, partner}`)은 `migrateCell`이 canonical로 변환한다. localStorage 로드·URL 디코드 시 자동 마이그레이션되며, 배포된 v:1 URL은 `decodeCircuit`의 v:1 분기로 계속 열린다(현재 인코딩은 v:2). **RCCX/RC3X는 v:1에서 `gate`명이 보존되므로**(`{g:"RCCX", x:[a,b]}`) `migrateCell`의 `decomposed` 분기가 `targets:[a,b,homeRow]`로 정확히 복원한다 — 예전처럼 CCX로 흡수되지 않는다. v:1 디코드는 홈=`targets[0]`에 저장한다. QASM/Qiskit export는 controls 패턴을 표준명으로 역매핑하되(X+1→cx, Z+1→cz, X+2→ccx, X+n→Qiskit mcx, 미지원 조합은 주석), **RCCX/RC3X는 역매핑보다 먼저 고유 분기로** `rccx`/`rc3x`(Qiskit `qc.rccx`/`qc.rcccx`)로 내보낸다(ccx로 잘못 나가지 않음). CTRL(•) 칼럼 수정자는 export하지 않는다.
-- **테스트:** `test/` 디렉터리(`node --test test/*.test.mjs`로 실행 — 이 Node 버전은 디렉터리 인자를 모듈 경로로 오인하므로 glob으로 파일들을 넘긴다). `circuit-refactor.test.mjs`: CNOT/CCX/CZ 동작, 컨트롤 미만족 불변, 마이그레이션 회귀, 구 URL 복원, 제약 에러, export 역매핑을 검증한다. **RCCX/RC3X:** 8/16개 기저 정확 진폭(RCCX |011>→+i|111>, |101>→−1, |111>→−i|011> 등), 유니터리성 U†U=I, RCCX≠CCX, H⊗H⊗H 후 상대위상 3개(π/2·π·3π/2), 구 v:1 URL 복원, `rccx` export를 검증한다. **RYY:** RYY(π/2)|00>=(|00>+i|11>)/√2(Qiskit RYYGate 일치)·|01>=(|01>−i|10>)/√2·유니터리성·`ryy` export. **CSWAP:** control q0=1이면 q1,q2 교환·control=0 불변·프리셋 migrateCell→SWAP+controls·`cswap` export. `probabilities.test.mjs`: `computeVisibleProbabilities`의 영확률 숨김·임계값 경계·숨긴 개수/확률·6큐비트 top-N cap·showAll·observed 예외·index 순서 보존을 검증한다. `sampling.test.mjs`: `sampleCounts`의 합=shots·확률0 미샘플링·shots=1 단일 기저·정규화(합≠100)·H 50/50 근사(정확히 512 아님)·seed 결정론/변동성을 검증한다. `history.test.mjs`: Undo/Redo(배치·제거·Clear undo·큐비트수·제어·redo 무효화·비변경 제외·50 제한·no-op·스냅샷 격리). `bloch.test.mjs`: 축약 밀도행렬 블로흐 벡터([2]의 |00>·|+i>·Bell·곱상태·cos/sin·GHZ·|r|≤1). `chart.test.mjs`: 확률 차트 X라벨 모드(`pickLabelMode`)·sparse 눈금 간격(`niceTickStep`)·위상(`phaseInfo`). `density.test.mjs`: 축소 밀도행렬/순도([4]의 |00>·Bell·곱상태·GHZ·|+i>·0.5≤Purity≤1, `reducedDensityInfo`). `presets.test.mjs`: 각 회로 프리셋 로드 후 상태벡터 검증(Bell·GHZ·W·Phase kickback·Deutsch–Jozsa·QFT). `classical.test.mjs`: 고전 레지스터/지연 측정 — **무측정 회로의 진폭 회귀 고정**(`test/fixtures-baseline.json`의 작업 전 스냅샷과 실/허수부 비교), `resolveDeferred`가 조건 없을 때 원본 그리드를 그대로 반환, 조건→양자 제어 변환, **텔레포테이션 4가지 입력**(|0⟩·|1⟩·|+⟩·T|+⟩) q2 일치·purity 1, **초고밀도 부호화 4메시지 확정 구분**, 측정 큐비트를 제어로만 쓰는 회로 허용, 거부 4종(측정 후 타깃/RESET/미기록 c[k]/범위 밖), `deferredError` 노출, clbitCount·setCondition·setClassicalBit + undo, 직렬화 왕복·기존 URL 호환, QASM/Qiskit(creg·measure 대상·if/c_if·고전 비트 0). `controls.test.mjs`: "•" 배치 UI — 게이트 위 드롭의 후보 목록(3큐비트 `[0,2]`→q2 선택 시 `cy q[2],q[1];`, 2큐비트는 후보 1개, 0개면 거부), **`controlOptions`는 회로·undo 스택 불변**(Esc 취소의 근거), 고를 수 없는 큐비트 거부, **다중 선택**(CCX·오름차순 정규화·undo 한 단계·중복/비후보/빈 선택 거부), **두 경로 결과 셀/직렬화 동일**, 누적, Measure/Reset/Barrier·순수 CTRL 거부, CZ 두 점의 후보·결과 동일, 선택한 제어의 시뮬레이션 반영, 최근접 규칙 회귀, 세 동작의 개별 Undo, `setParams`(파라미터만 교체·상태 반영·Undo), `expandGate`(분해 교체 후 상태벡터가 **상대위상까지 완전히 동일**·Undo 1회 복원·분해 없음/열 부족 거부). `gatematrix.test.mjs`: H·CZ·CNOT·RX(π/2) 정확 행렬, 지원 게이트 전반의 **유니터리성 U†U=I**, 컨트롤 순서 교환(CZ·CCX 동일 / RCCX 상이), 8×8 초과 `tooLarge`, 기저 라벨·`localOrder`, 비유니터리 거부, `formatComplex`/`symbolicComplex`, **분해 데이터가 엔진 동작과 일치**(추출 회귀 고정).
+- **테스트:** `test/` 디렉터리(`node --test test/*.test.mjs`로 실행 — 이 Node 버전은 디렉터리 인자를 모듈 경로로 오인하므로 glob으로 파일들을 넘긴다). `circuit-refactor.test.mjs`: CNOT/CCX/CZ 동작, 컨트롤 미만족 불변, 마이그레이션 회귀, 구 URL 복원, 제약 에러, export 역매핑을 검증한다. **RCCX/RC3X:** 8/16개 기저 정확 진폭(RCCX |011>→+i|111>, |101>→−1, |111>→−i|011> 등), 유니터리성 U†U=I, RCCX≠CCX, H⊗H⊗H 후 상대위상 3개(π/2·π·3π/2), 구 v:1 URL 복원, `rccx` export를 검증한다. **RYY:** RYY(π/2)|00>=(|00>+i|11>)/√2(Qiskit RYYGate 일치)·|01>=(|01>−i|10>)/√2·유니터리성·`ryy` export. **CSWAP:** control q0=1이면 q1,q2 교환·control=0 불변·프리셋 migrateCell→SWAP+controls·`cswap` export. `probabilities.test.mjs`: `computeVisibleProbabilities`의 영확률 숨김·임계값 경계·숨긴 개수/확률·6큐비트 top-N cap·showAll·observed 예외·index 순서 보존을 검증한다. `sampling.test.mjs`: `sampleCounts`의 합=shots·확률0 미샘플링·shots=1 단일 기저·정규화(합≠100)·H 50/50 근사(정확히 512 아님)·seed 결정론/변동성을 검증한다. `history.test.mjs`: Undo/Redo(배치·제거·Clear undo·큐비트수·제어·redo 무효화·비변경 제외·50 제한·no-op·스냅샷 격리). `bloch.test.mjs`: 축약 밀도행렬 블로흐 벡터([2]의 |00>·|+i>·Bell·곱상태·cos/sin·GHZ·|r|≤1). `chart.test.mjs`: 확률 차트 X라벨 모드(`pickLabelMode`)·sparse 눈금 간격(`niceTickStep`)·위상(`phaseInfo`). `density.test.mjs`: 축소 밀도행렬/순도([4]의 |00>·Bell·곱상태·GHZ·|+i>·0.5≤Purity≤1, `reducedDensityInfo`). `presets.test.mjs`: 각 회로 프리셋 로드 후 상태벡터 검증(Bell·GHZ·W·Phase kickback·Deutsch–Jozsa·QFT). `classical.test.mjs`: 고전 레지스터/지연 측정 — **무측정 회로의 진폭 회귀 고정**(`test/fixtures-baseline.json`의 작업 전 스냅샷과 실/허수부 비교), `resolveDeferred`가 조건 없을 때 원본 그리드를 그대로 반환, 조건→양자 제어 변환, **텔레포테이션 4가지 입력**(|0⟩·|1⟩·|+⟩·T|+⟩) q2 일치·purity 1, **초고밀도 부호화 4메시지 확정 구분**, 측정 큐비트를 제어로만 쓰는 회로 허용, 거부 4종(측정 후 타깃/RESET/미기록 c[k]/범위 밖), `deferredError` 노출, clbitCount·setCondition·setClassicalBit + undo, 직렬화 왕복·기존 URL 호환, QASM/Qiskit(creg·measure 대상·if/c_if·고전 비트 0), **궤적 라우팅**(측정 뒤 조작이 있는 회로를 거부하지 않고 `usesTrajectory=true` 로 계산 — `resolveDeferred` 자체는 여전히 거부한다), **Resample 이 Inspect 꺼짐에도 알린다**, **Inspect 를 끄면 stepIndex 가 끝으로 간다**. `trajectory.test.mjs`: 궤적 실행(붕괴 후 H 가 다시 중첩·되감기 결정론·시드 변동성·진짜 RESET·조건부·텔레포테이션 4결과) + **고정 시드 집계** — 핵심 회로 `h/measure/h/measure` 의 고전 4결과 각 25% 근처, 같은 회로의 큐비트 기저는 50/50 두 개, **Qubits 는 평균이지 샘플링이 아니다**(같은 시드에서 분산 비교), 측정 없는 회로에서 평균 == 이론값 **정확히**, `marginalClassical` == 궤적 집계, 시드 4개에 둔감(4%p 이내). **통계 테스트에 난수를 넣지 않는다** — 난수원을 주입 가능하게 두고 고정 시드를 넣어 정확한 값을 assert 한다(실패 시 회로가 틀렸는지 그냥 운이 나빴는지 구분된다). `controls.test.mjs`: "•" 배치 UI — 게이트 위 드롭의 후보 목록(3큐비트 `[0,2]`→q2 선택 시 `cy q[2],q[1];`, 2큐비트는 후보 1개, 0개면 거부), **`controlOptions`는 회로·undo 스택 불변**(Esc 취소의 근거), 고를 수 없는 큐비트 거부, **다중 선택**(CCX·오름차순 정규화·undo 한 단계·중복/비후보/빈 선택 거부), **두 경로 결과 셀/직렬화 동일**, 누적, Measure/Reset/Barrier·순수 CTRL 거부, CZ 두 점의 후보·결과 동일, 선택한 제어의 시뮬레이션 반영, 최근접 규칙 회귀, 세 동작의 개별 Undo, `setParams`(파라미터만 교체·상태 반영·Undo), `expandGate`(분해 교체 후 상태벡터가 **상대위상까지 완전히 동일**·Undo 1회 복원·분해 없음/열 부족 거부). `gatematrix.test.mjs`: H·CZ·CNOT·RX(π/2) 정확 행렬, 지원 게이트 전반의 **유니터리성 U†U=I**, 컨트롤 순서 교환(CZ·CCX 동일 / RCCX 상이), 8×8 초과 `tooLarge`, 기저 라벨·`localOrder`, 비유니터리 거부, `formatComplex`/`symbolicComplex`, **분해 데이터가 엔진 동작과 일치**(추출 회귀 고정).
 - 회로는 큐비트(행) × 시간 칼럼(열)의 그리드다. 최대 열 개수는 12개.
 - 배치: 팔레트에서 게이트를 그리드 셀로 드래그 앤 드롭.
 - 삭제: 배치된 게이트 칩을 클릭하면 즉시 제거된다 ("마지막 삭제" 대신 임의 위치 직접 삭제). 별도로 "전체 삭제" 버튼을 제공한다.
@@ -358,7 +386,7 @@ QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전 툴
 - Density Matrix(cityscape) 뷰에서는 확률 필터가 무의미하므로 토글·푸터·샘플링 컨트롤을 숨긴다. 토글/버튼 조작 시 `renderProbabilities(circuit.getSnapshot())`로 즉시 다시 그린다.
 
 ### 4.14. 측정 샘플링 (Run / shots)
-- **의미:** 회로 끝(현재 표시 중인 최종 상태벡터) 샘플링이다. **Measure 게이트는 시뮬레이션에서 no-op**(붕괴 없음, [quantum.js](js/quantum.js) `applyPlacement`에서 `return state`)이라 중간 측정은 분포에 영향을 주지 않는다 — 실제 붕괴(per-shot trajectory)는 구현하지 않았다(사용자 승인).
+- **의미:** **궤적이 필요 없는 회로에서만** 이 경로를 쓴다 — 회로 끝(현재 표시 중인 최종 상태벡터) 샘플링이다. 중간 측정이 있는 회로는 버튼이 `Resample statistics` 가 되고 3.m 의 궤적 집계가 값을 만든다.
 - **순수 함수 `quantum.js`의 `sampleCounts(probabilities, shots, rng = Math.random)`**: `probability`(퍼센트)를 |amp|²로 보고 합으로 나눠 **정규화**한 뒤 누적분포(CDF, 마지막=1로 float 보정)를 만들고, 균등난수로 **이진 탐색**해 shots번 뽑는다. 반환 `counts[i]`(probabilities[i]에 정렬). 확률 0 구간은 CDF가 앞과 같아 절대 선택되지 않는다. `rng` 주입으로 결정론적 테스트(`test/sampling.test.mjs`).
 - **UI(Probabilities 툴바):** `shots` 입력(기본 1024, 1~100000 clamp), **Run**·**Reset** 버튼. Run은 현재 분포에서 샘플링해 이론 막대(연한 파랑, 전체폭) 위에 관측 막대(진한 파랑, 좁게 중앙)를 겹쳐 그리고 각 막대에 관측 횟수("261/1024")를 표시한다. Reset은 `sampleResult=null`로 이론값만 보이게 한다(관측이 있을 때만 노출).
 - **비동기:** `shots > SAMPLE_CHUNK(10000)`이면 청크로 나눠 `setTimeout(0)`으로 이벤트 루프에 양보하며 누적(UI 프리즈 방지). Run 중엔 버튼 비활성.
