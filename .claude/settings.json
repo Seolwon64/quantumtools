@@ -1,0 +1,70 @@
+{
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "allow": [
+      "Bash(node --check:*)",
+      "Bash(node --test:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Edit(./js/**)",
+      "Write(./js/**)",
+      "Edit(./test/**)",
+      "Write(./test/**)",
+      "Edit(./index.html)",
+      "Edit(./style.css)"
+    ],
+    "ask": [
+      "Edit(./test/fixtures-baseline.json)",
+      "Write(./test/fixtures-baseline.json)",
+      "Edit(./package.json)",
+      "Write(./package.json)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(**/.env*)",
+      "Read(./secrets/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Edit(./CLAUDE.md)",
+      "Write(./CLAUDE.md)",
+      "Edit(./.claude/**)",
+      "Write(./.claude/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/syntax-check.mjs\"",
+            "timeout": 15,
+            "statusMessage": "문법 검사 중..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/run-tests.mjs\"",
+            "timeout": 120,
+            "statusMessage": "테스트 실행 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
