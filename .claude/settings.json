@@ -10,20 +10,17 @@
       "Bash(git show:*)",
       "Bash(git branch:*)",
       "Edit(./js/**)",
-      "Write(./js/**)",
       "Edit(./test/**)",
-      "Write(./test/**)",
       "Edit(./index.html)",
       "Edit(./style.css)"
     ],
     "ask": [
       "Edit(./test/fixtures-baseline.json)",
-      "Write(./test/fixtures-baseline.json)",
       "Edit(./package.json)",
-      "Write(./package.json)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Edit(./.claude/**)"
     ],
     "deny": [
       "Read(./.env)",
@@ -35,9 +32,9 @@
       "Bash(git reset --hard:*)",
       "Bash(git clean -fd:*)",
       "Edit(./CLAUDE.md)",
-      "Write(./CLAUDE.md)",
-      "Edit(./.claude/**)",
-      "Write(./.claude/**)"
+      "Edit(./.claude/settings.json)",
+      "Edit(./.claude/settings.local.json)",
+      "Edit(./.claude/hooks/**)"
     ]
   },
   "hooks": {
