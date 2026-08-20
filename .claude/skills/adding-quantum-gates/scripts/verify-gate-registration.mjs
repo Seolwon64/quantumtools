@@ -96,7 +96,8 @@ report(
   Object.entries(GATE_INFO)
     .filter(([g, i]) => !qasmGates.has(g) && !QASM_EXEMPT_KINDS.has(i.kind))
     .map(([g]) => g),
-  "js/qasm.js 의 QASM_OPS 에 행을 추가해라. 없으면 QASM/Qiskit 내보내기에서 조용히 빠진다.",
+  "js/qasm.js 의 QASM_OPS 에 행을 추가해라. 없으면 내보내기에서 게이트가 아니라 " +
+    "'cannot be represented' 주석으로 나간다(경고도 함께).",
 );
 
 report(

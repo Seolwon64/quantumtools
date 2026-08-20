@@ -1,8 +1,14 @@
 # 게이트 등록 상세 레퍼런스
 
+출처는 **파일 + 심볼 이름**으로 적는다. 줄 번호는 쓰지 않는다 — 이 스킬이 하는 일이
+`GATE_INFO` 에 항목을 넣는 것이라, 게이트를 하나 추가할 때마다 아래 좌표가 전부 밀려
+스킬이 성공할 때마다 자기 문서를 무효화하게 된다.
+
 ## `kind` 별 필수 필드
 
 `kind` 가 나머지 필드와 행렬 필요 여부를 결정한다.
+정의처는 `js/quantum.js` 의 `GATE_INFO`, 행렬은 같은 파일의 `FIXED_MATRICES` ·
+`PARAM_MATRIX_BUILDERS` · `uMatrix` 다.
 
 | `kind` | 추가 필수 필드 | 행렬 | 예 |
 |---|---|---|---|
@@ -36,7 +42,8 @@
 
 ## 함정 — 분류 체계가 둘이다
 
-`GATE_INFO[].group` 과 `PALETTE_CATEGORIES[].id` 는 **별개이고 값도 다르다.**
+`js/quantum.js` 의 `GATE_INFO[].group` 과 `js/main.js` 의 `PALETTE_CATEGORIES[].id` 는
+**별개이고 값도 다르다.**
 
 | 게이트 | `group` (quantum.js) | 팔레트 카테고리 (main.js) |
 |---|---|---|
@@ -51,10 +58,12 @@
 카테고리는 `PALETTE_CATEGORIES` 에서 직접 고른다.
 
 `GATE_CATEGORY` 는 `PALETTE_CATEGORIES` 에서 파생되지만, **팔레트에 없는 게이트는
-수동으로 넣어야 한다.** `js/main.js:44` 의 `GATE_CATEGORY.CZ = "multi"` 가 그 예다 —
+수동으로 넣어야 한다.** `js/main.js` 의 `GATE_CATEGORY.CZ` 수동 지정이 그 예다 —
 CZ 는 팔레트에 없지만 공유 회로로 캔버스에 올 수 있어 색이 필요하다.
 
 ## `QASM_OPS` 행
+
+`js/qasm.js` 의 `QASM_OPS`.
 
 ```js
 { qasm: "rzz", gate: "RZZ", nc: 0, nt: 2, params: ["theta"] }
@@ -83,8 +92,34 @@ CZ 는 팔레트에 없지만 공유 회로로 캔버스에 올 수 있어 색�
 표준 qelib1.inc 를 넘어 Qiskit 확장까지 커버한다 — 표준만 고집하면 MCX 같은 게이트가
 주석으로 빠져 **내보낸 코드가 다른 회로**가 된다.
 
+## 제어형이 실제로 전개되는 지점 — `migrateCell`
+
+`js/circuit.js` 의 `migrateCell` 이 배치 시점에 `kind: "controlled"` 를 **base + 컨트롤로
+바꾼다.** 그리드에는 `gate: "CNOT"` 이 아니라 `gate: "X", controls: [...]` 가 들어간다.
+
+```
+migrateCell({gate:"CNOT", controls:[0]}, 1) → {gate:"X", targets:[1], controls:[0]}
+migrateCell({gate:"CZ",   controls:[0]}, 1) → {gate:"Z", targets:[1], controls:[0]}
+```
+
+그래서 내보내기는 `js/qasm.js` 의 `opFor(base, controlCount)` 로 조회한다.
+**`opFor` 가 `null` 이면 표현 불가**이고, 그 자리는 게이트가 아니라 주석으로 나간다.
+
+```
+opFor("Y", 1) → { qasm: "cy", ... }     CY 는 정상 내보내짐
+opFor("S", 1) → null                    CS 는 주석 + 경고
+opFor("Z", 2) → null                    CCZ 도 마찬가지
+```
+
+**검증 스크립트는 이걸 잡지 못한다** — 검사 D 가 `controlled` 를 면제하므로 exit 0 이
+나온다. 제어형을 추가하기 전에 `opFor(base, controls)` 를 직접 확인해야 하는 이유다.
+
+`GATE_INFO` 항목을 손으로 만든 그리드 셀로 시험하면 이 전개를 우회해 잘못된 결론이
+나온다. 반드시 `migrateCell` 을 통과시켜 확인한다.
+
 ## `QISKIT_NAME`
 
+`js/export.js` 의 `QISKIT_NAME`.
 QASM 이름과 Qiskit 메서드명이 다를 때만 쓰는 예외 표지다. 게이트 목록이 아니다.
 
 ```js
@@ -95,8 +130,10 @@ const QISKIT_NAME = { id: "id", sdg: "sdg", sxdg: "sxdg", rc3x: "rcccx", c3x: "m
 
 ## `gatematrix.js` 가 행렬을 얻는 방식
 
+`js/gatematrix.js` 의 `gateMatrix` · `localLayout`.
+
 게이트별 2^n 행렬을 새로 유도하지 않는다. 관여 큐비트를 로컬 인덱스로 리맵한 뒤
-**엔진(`applyPlacement`)에 기저 벡터 e_j 를 통과시켜 j번째 열**을 얻는다.
+**엔진(`js/quantum.js` 의 `applyPlacement`)에 기저 벡터 e_j 를 통과시켜 j번째 열**을 얻는다.
 SWAP·RXX·RCCX 처럼 "행렬이 코드에 없는" 게이트도 자동으로 정확하다.
 
 로컬 비트 순서는 **타깃이 최하위 비트**(로컬 q0), 그 위로 컨트롤이다.
@@ -110,7 +147,7 @@ SWAP·RXX·RCCX 처럼 "행렬이 코드에 없는" 게이트도 자동으로 �
 
 ## 카테고리 CSS 변수
 
-`PALETTE_CATEGORIES` 의 `id` 마다 `style.css` 에 3종이 필요하다:
+`js/main.js` 의 `PALETTE_CATEGORIES` 의 `id` 마다 `style.css` 의 `--cat-*` 3종이 필요하다:
 
 ```css
 --cat-<id>: …;          /* 배경 */
