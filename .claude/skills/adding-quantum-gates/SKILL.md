@@ -68,15 +68,14 @@ when_to_use: >-
    - 이름이 나오면 진행한다. 팔레트 슬롯을 줄 만큼 흔한 게이트인지만 판단한다.
    - `null` 이면 추가하지 마라. 내보내기에서 게이트가 아니라 `cannot be represented`
      **주석**으로 나간다 — 경고가 함께 나오지만 **회로가 온전히 내보내지지 않는 건
-     같다.** 그리고 검사 D 가 `controlled` 를 면제하므로 **검증 스크립트는 exit 0 으로
-     통과한다** — 위험은 내보내기의 침묵이 아니라 이 거짓 통과다.
+     같다.** 검사 D 는 `controlled` 를 면제하므로, 이 실패는 **검사 H 가 잡는다.**
      내보내기까지 지원하려면 별도 방출 경로가 필요하고 이 스킬의 범위 밖이다.
 
    "표현 가능하면 추가하지 마라"는 규칙이 아니다 — `CNOT`·`CZ`·`CCX`·`CSWAP` 이
    전부 base + `CTRL` 로 표현 가능한데도 `GATE_INFO` 에 있다.
 
 1. `js/quantum.js` 의 `GATE_INFO` 에 항목을 추가한다. `kind` 를 먼저 정하면
-   나머지 필수 필드가 따라온다 → [reference.md](./reference.md)
+   나머지 필수 필드가 따라온다 → [reference.md](./reference.md) 의 `kind` 표
 2. `kind` 가 `fixed`/`param` 이면 같은 파일에 행렬을 추가한다.
    1큐비트 유니터리면 `SINGLE_QUBIT_GATES` 에도 이름을 넣는다.
 3. `js/main.js` 의 `PALETTE_CATEGORIES` 에서 알맞은 카테고리의 `gates` 에 넣는다.
@@ -109,11 +108,12 @@ node ${CLAUDE_SKILL_DIR}/scripts/verify-gate-registration.mjs
 | D | `GATE_INFO` 에 있는데 QASM 표에 없다 |
 | E | 행렬이 있어야 하는데 `matrixFor` 가 실패한다 |
 | F | 팔레트 카테고리에 대응하는 CSS 변수가 없다 |
+| G | 1큐비트 게이트인데 `SINGLE_QUBIT_GATES` 에 없다 |
+| H | `controlled` 인데 `opFor(base, controls)` 가 `null` 이다 |
 
-**exit 0 이어도 확인해야 하는 것** — 검사 범위 밖이다:
+**알려진 한계 — exit 0 이어도 확인해야 하는 것.** 검사 범위 밖이다:
 - `qasm` 값이 실재하는 OpenQASM 연산자인지 (행의 존재만 본다)
-- 제어형의 `opFor(base, controls)` 가 `null` 인지 (검사 D 가 면제한다)
-- `SINGLE_QUBIT_GATES`·`PALETTE_GLYPHS`·`QISKIT_NAME` 등록 여부
+- `PALETTE_GLYPHS`·`QISKIT_NAME` 등록 여부
 
 ```bash
 node --test    # 220개 기준선
@@ -141,10 +141,12 @@ CY: { label: "CY", targetLabel: "Y", kind: "controlled", base: "Y", controls: 1,
 
 ## 반례 — CS 는 추가하지 않는다
 
-`CS` 는 `base: "S", controls: 1` 인데 `opFor("S", 1)` 이 `null` 이다. 넣으면
-내보내기가 `// cannot be represented in OpenQASM 2.0: S with 1 control(s)` 주석과
-경고를 낸다. **그런데 검증 스크립트는 exit 0 으로 통과한다** — 검사 D 가
-`controlled` 를 면제하기 때문이다. 같은 `controlled` 인데 CY 는 되고 CS 는 안 된다
-— **`kind` 만 보고 판단하지 마라. 절차 0번을 거쳐라.**
+`opFor("S", 1)` 이 `null` 이다. **같은 `controlled` 인데 CY 는 되고 CS 는 안 된다**
+— `kind` 만 보고 판단하면 틀린다. 절차 0번을 거쳐라.
 
-상세 레퍼런스: [reference.md](./reference.md)
+## reference.md 를 언제 여는가
+
+- `kind` 를 정하고 필수 필드를 확인할 때 → **`kind` 별 필수 필드** 표
+- 내보내기를 직접 시험할 때 → **제어형이 실제로 전개되는 지점 — `migrateCell`**
+
+[reference.md](./reference.md)
