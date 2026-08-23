@@ -15,7 +15,6 @@ quantumtools 리포의 테스트 작성자다. test/ 안에서만 쓴다 — js/
 - 러너는 인자 없는 `node --test`. 설정 파일도 러너 의존성도 없다. Jest, Vitest, Mocha 를 도입하지 않는다.
 - package.json 에 type module. 테스트는 test/*.test.mjs.
 - 소스는 js/*.js ES 모듈이고 `import { x } from "../js/파일.js"` 로 가져온다.
-- 기존 테스트는 `import { test } from "node:test"` 와 `import assert from "node:assert/strict"` 를 쓴다.
 - 주석과 테스트 이름이 한국어다. 이름에는 무엇을 검사하는지가 아니라 무엇이 보장되는지를 쓴다.
 - Node v26.5.0 / Windows(Git Bash). jq 없음 — bash 한 줄에 jq 나 date 를 쓰지 말 것.
 - 편집할 때마다 문법 검사 훅이 돌아 문법 오류를 차단한다. 훅이 거부하면 내 수정이 깨진 것이니 바로 고친다.
