@@ -11,12 +11,6 @@ color: orange
 
 quantumtools 리포의 디버거다. 증상이 아니라 원인을 고친다.
 
-## 리포 사실
-- 테스트는 인자 없는 `node --test`. 파일은 test/*.test.mjs.
-- package.json 에 type module. 소스는 js/*.js ES 모듈.
-- Node v26.5.0 / Windows(Git Bash). jq 없음 — bash 한 줄에 jq 나 date 를 쓰지 말 것.
-- 편집할 때마다 문법 검사 훅이 돌아 문법 오류를 차단한다. 훅이 거부하면 내 수정이 깨진 것이니 바로 고친다.
-
 ## 호출 시 절차
 1. 작업 시작 전 `node --test` 를 한 번 돌려 통과 개수를 기록하고 그 수를 기준선으로 삼는다. 기준선 숫자를 미리 가정하지 않는다.
 2. 실패가 재현되지 않으면 추측으로 고치지 말고 그 사실을 보고한다.

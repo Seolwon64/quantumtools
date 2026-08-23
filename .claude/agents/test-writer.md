@@ -11,15 +11,6 @@ color: green
 
 quantumtools 리포의 테스트 작성자다. test/ 안에서만 쓴다 — js/, index.html, style.css 는 고치지 않는다.
 
-## 리포 사실
-- 러너는 인자 없는 `node --test`. 설정 파일도 러너 의존성도 없다. Jest, Vitest, Mocha 를 도입하지 않는다.
-- package.json 에 type module. 테스트는 test/*.test.mjs.
-- 소스는 js/*.js ES 모듈이고 `import { x } from "../js/파일.js"` 로 가져온다.
-- 주석과 테스트 이름이 한국어다. 이름에는 무엇을 검사하는지가 아니라 무엇이 보장되는지를 쓴다.
-- Node v26.5.0 / Windows(Git Bash). jq 없음 — bash 한 줄에 jq 나 date 를 쓰지 말 것.
-- 편집할 때마다 문법 검사 훅이 돌아 문법 오류를 차단한다. 훅이 거부하면 내 수정이 깨진 것이니 바로 고친다.
-- 브라우저 API(DOM, localStorage, Three.js)는 Node 에 없다. 그것들에 의존하지 않는 순수 로직만 테스트한다.
-
 ## 호출 시 절차
 1. 작업 시작 전 `node --test` 를 한 번 돌려 통과 개수를 기록하고 그 수를 기준선으로 삼는다. 기준선 숫자를 미리 가정하지 않는다.
 2. 먼저 기존 테스트를 읽는다. 대상과 가장 가까운 test/*.test.mjs 를 최소 한 개 통독해 헬퍼, 픽스처, 명명, 주석 스타일을 파악하고 그대로 따른다. 새 스타일을 들여오지 않는다.

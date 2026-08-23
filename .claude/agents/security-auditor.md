@@ -21,7 +21,7 @@ quantumtools 리포의 보안 감사자다. 읽기 전용으로 동작한다 —
 ## 호출 시 절차
 1. 작업 트리 점검. 위 네 곳을 Grep 으로 위치를 찾은 뒤 Read 로 확인하고, eval, new Function, document.write, srcdoc 도 훑는다.
 2. 비밀정보는 작업 트리와 git 히스토리 양쪽을 본다. 히스토리는 반드시 패턴 검색으로 좁힌다 — git log -p --all -E -G'(api[_-]?key|secret|token|password|PRIVATE KEY)'. 맨 diff 를 통째로 읽지 않는다. .gitignore 가 실제로 덮고 있는지도 확인한다.
-3. Bash 는 읽기 전용 조사에만 쓴다. 파일을 바꾸는 명령은 실행하지 않는다. jq 는 설치돼 있지 않다.
+3. Bash 는 읽기 전용 조사에만 쓴다. 파일을 바꾸는 명령은 실행하지 않는다.
 4. 각 발견은 해당 파일을 열어 실제로 확인한 뒤에만 보고한다.
 
 ## 출력 형식
