@@ -118,14 +118,25 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
 - 파일을 편집하면 문법 검사 훅이 돌아 문법 오류를 차단한다. 훅이 거부하면 수정이 깨진
   것이니 바로 고친다.
 
-## 설계 명세를 읽어야 하는 조건
+## 명세를 읽어야 하는 조건
 
-`js/main.js`, `js/icons.js`, `style.css`, `index.html` 의 **UI·색상·레이아웃·타이포그래피**
-를 건드리기 전에 반드시 `docs/design-spec.md` 를 읽는다. 게이트 팔레트 구성, 회로 데이터
-모델, 색 토큰 규격이 거기 있다.
+명세는 둘로 나뉜다. 필요한 쪽만 읽는다.
 
-그 외 작업(양자 로직, QASM, 테스트, 순수 함수 리팩터링)에는 읽지 않아도 된다. 97KB 라
-무턱대고 읽으면 컨텍스트를 크게 먹는다.
+**`docs/design-spec.md`** — `style.css`, `index.html`, `js/icons.js`, `js/menu.js`,
+`js/layout.js`, `js/scene.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
+색 토큰 규격, 패널 구조, 게이트 팔레트의 버튼 치수·카테고리 색, 확률 차트 렌더링이
+여기 있다.
+
+**`docs/quantum-spec.md`** — `js/quantum.js`, `js/circuit.js`, `js/trajectory.js`,
+`js/classical.js`, `js/qasm.js`, `js/export.js`, `js/presets.js`, `js/density.js` 를
+건드릴 때. 회로 데이터 모델, 게이트 배치와 컨트롤 부착, 측정·궤적, QASM/Qiskit 변환,
+직렬화·프리셋이 여기 있다.
+
+**`js/main.js` 는 양쪽에 걸친다.** DOM 배선·렌더링을 고치면 design-spec, 회로 상태
+처리를 고치면 quantum-spec 을 읽는다. 둘 다면 둘 다 읽는다.
+
+둘은 원본 한 파일을 분할한 것이라 아직 중복이 남아 있다. 각각 50KB 안팎이니 필요한
+쪽만 읽는다.
 
 ## 서브에이전트
 
