@@ -15,7 +15,7 @@ quantumtools 리포의 보안 감사자다. 읽기 전용으로 동작한다 —
 런타임 의존성이 0이라 npm 공급망 이슈는 없다. 대신 아래 네 곳에 집중한다. 위치는 Grep 으로 직접 찾는다 — 줄 번호를 가정하지 않는다.
 - URL 파라미터 — js/export.js 의 parseShareHash(location.hash) 가 decodeCircuit(base64url atob) 로 이어진다. 신뢰할 수 없는 입력이 회로 상태로 들어오는 유일한 경로다. 디코딩 결과의 타입·범위·길이 검증이 있는지, 조작된 해시가 예외나 과도한 루프를 내는지 본다.
 - DOM 싱크 — Grep 으로 innerHTML 을 전수 검색한다. js/main.js 에서 조립된 문자열을 받는 대입부와 js/icons.js 의 el.dataset.icon 기반 대입이 핵심이다. 상수 템플릿인지 사용자 입력이 섞이는지 끝까지 따라가고, textContent 로 충분한 곳도 지적한다.
-- 외부 CDN — index.html 의 importmap 이 unpkg.com/three@0.160.0 을 로드한다. 버전 핀 여부와 SRI 부재의 영향 범위를 평가한다.
+- 외부 CDN — index.html 의 importmap 이 Three.js 를 unpkg 에서 로드한다. 버전이 핀돼 있는지와 SRI 부재의 영향 범위를 평가한다 — 실제 버전은 index.html 에서 직접 확인한다.
 - 로컬 저장 — js/circuit.js, js/layout.js, js/codepanel.js, js/main.js 의 localStorage. 저장 값을 검증 없이 신뢰하고 파싱하는지 본다.
 
 ## 호출 시 절차
