@@ -1,3 +1,4 @@
+// 앱 진입점. DOM 배선과 이벤트 핸들러 — 컨트롤러 콜백을 받아 화면 전체를 갱신한다.
 import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
 import { initMenu } from "./menu.js";
@@ -6,7 +7,7 @@ import {
   runTrajectory, makeRng, randomSeed, needsTrajectorySampling,
   aggregateTrajectories, marginalClassical,
 } from "./trajectory.js";
-import { createCircuitController, MAX_COLUMNS, involvedQubits } from "./circuit.js";
+import { createCircuitController, MAX_COLUMNS, involvedQubits, homeOf, cellAtHome } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
 import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
 import { reducedDensityInfo } from "./density.js";
@@ -655,11 +656,6 @@ function openControlPopover(column, qubit, candidates, clientX, clientY) {
 // 선택은 셀의 홈 좌표로 들고 있는다. 회로가 바뀌면 render에서 유효성을 다시 확인한다.
 let selectedGate = null; // { column, home }
 
-function cellAtHome(snapshot, sel) {
-  if (!sel) return null;
-  return snapshot.grid[sel.column]?.[sel.home] ?? null;
-}
-
 // "Show info"로 정보를 열 때만 설정된다. null이면 Operations 패널은 팔레트를 보여준다.
 let infoTarget = null; // { column, home }
 
@@ -672,15 +668,6 @@ function closeGateInfo() {
   infoTarget = null;
   expandedInfo = null;
   renderGateInfo(circuit.getSnapshot());
-}
-
-// 열에서 qubit을 점유한 placement의 홈 행 (컨트롤러 밖에서도 필요해 여기서 다시 계산)
-function homeOf(snapshot, column, qubit) {
-  for (let t = 0; t < snapshot.qubitCount; t++) {
-    const cell = snapshot.grid[column]?.[t];
-    if (cell && involvedQubits(cell).includes(qubit)) return t;
-  }
-  return -1;
 }
 
 function markSelection() {

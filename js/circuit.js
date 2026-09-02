@@ -48,6 +48,24 @@ export function involvedQubits(cell) {
   return [...(cell.targets ?? []), ...(cell.controls ?? [])];
 }
 
+// 스냅샷만 읽는 순수 조회 둘. 스냅샷을 만드는 곳이 여기라 여기 둔다 —
+// UI 쪽에 두면 팝오버·메뉴가 서로를 import 하게 되어 순환이 생긴다.
+
+// 열에서 qubit을 점유한 placement의 홈 행. 없으면 -1.
+export function homeOf(snapshot, column, qubit) {
+  for (let t = 0; t < snapshot.qubitCount; t++) {
+    const cell = snapshot.grid[column]?.[t];
+    if (cell && involvedQubits(cell).includes(qubit)) return t;
+  }
+  return -1;
+}
+
+// { column, home } 선택자가 가리키는 셀. 회로가 바뀌어 사라졌으면 null.
+export function cellAtHome(snapshot, sel) {
+  if (!sel) return null;
+  return snapshot.grid[sel.column]?.[sel.home] ?? null;
+}
+
 // 구버전 셀({gate:"CNOT", controls, partner, theta,...}) → canonical. 이미 canonical이면 정규화만.
 // homeRow: 그 셀이 저장돼 있던 행(구버전은 타깃 행).
 export function migrateCell(cell, homeRow) {
