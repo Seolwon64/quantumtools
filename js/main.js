@@ -5,11 +5,12 @@ import { initMenu } from "./menu.js";
 import { initCodePanel } from "./codepanel.js";
 import {
   runTrajectory, makeRng, randomSeed, needsTrajectorySampling,
-  aggregateTrajectories, marginalClassical,
+  aggregateTrajectories,
 } from "./trajectory.js";
 import { createCircuitController, MAX_COLUMNS, involvedQubits, homeOf, cellAtHome } from "./circuit.js";
 import { GATE_INFO, computeVisibleProbabilities, sampleCounts } from "./quantum.js";
-import { pickLabelMode, niceTickStep, phaseInfo } from "./chart.js";
+import { pickLabelMode, niceTickStep } from "./chart.js";
+import { probDisplay, barTooltipHTML, endianLabelText } from "./probmodel.js";
 import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
@@ -177,11 +178,6 @@ const INSPECT_NOTE =
   "one of several possible outcomes. Press Resample for a different one. " +
   "The Probabilities panel aggregates many independent runs.";
 const ENDIAN_TOOLTIP = "Little-endian: q0 is the rightmost bit (Qiskit convention)";
-function endianLabelText(n, prefix = "q") {
-  const parts = [];
-  for (let i = n - 1; i >= 0; i--) parts.push(`${prefix}${i}`);
-  return `|${parts.join(" ")}⟩`;
-}
 probEndian.addEventListener("mouseenter", () => showTooltip(probEndian, ENDIAN_TOOLTIP));
 probEndian.addEventListener("mouseleave", hideTooltip);
 const probHideToggle = document.getElementById("prob-hide-toggle");
@@ -1302,75 +1298,12 @@ function showChartTooltip(anchorEl, html) {
 function hideChartTooltip() {
   chartTooltip.classList.add("hidden");
 }
-function barTooltipHTML(entry, sampled, view) {
-  const rows = [`<div class="tt-title">|${entry.label}⟩ <span class="tt-dim">· index ${entry.index}</span></div>`];
-  const estimated = view.axis.includes("shots");
-  rows.push(`<div>${estimated ? "Estimated" : "Theoretical"}: <b>${entry.probability.toFixed(2)}%</b></div>`);
-  if (sampled) {
-    const c = sampleResult.counts[entry.index] ?? 0;
-    rows.push(`<div>Observed: <b>${c} / ${sampleResult.shots}</b> (${((c / sampleResult.shots) * 100).toFixed(2)}%)</div>`);
-  }
-  // 고전 비트열은 측정 **결과**다 — 진폭도 위상도 없다. 0 을 넣어 있는 척하지 않는다.
-  if (entry.re !== null) {
-    const ph = phaseInfo(entry.re, entry.im);
-    const amp = `${entry.re.toFixed(3)} ${entry.im >= 0 ? "+" : "−"} ${Math.abs(entry.im).toFixed(3)}i`;
-    rows.push(`<div>Amplitude: <b>${amp}</b></div>`);
-    rows.push(`<div>Phase: <b>${ph.defined ? `${ph.deg.toFixed(1)}° (${ph.rad.toFixed(2)} rad)` : "—"}</b></div>`);
-  }
-  return rows.join("");
-}
-
-/**
- * 확률 패널이 **무엇의** 분포를 그리는지 한 곳에서 정한다.
- *
- * | 회로 | 모드 | 값 | 축 |
- * |---|---|---|---|
- * | 측정 없음 | (토글 숨김) | 이론 큐비트 확률 | `Probability (%)` |
- * | 측정 있음 | Classical | 궤적 집계 or 이론 주변화 | `% of N shots` / `Probability (%)` |
- * | 측정 있음 | Qubits | 궤적 확률벡터 **평균** or 이론 | 위와 같음 |
- *
- * 라벨(`|c1 c0⟩` / `|q1 q0⟩`)이 항상 이 표의 어느 줄인지 드러내므로 값의 의미가 모호해지지 않는다.
- */
-function probDisplay(snapshot) {
-  const qubitsMode = !snapshot.hasMeasurement || probView === "qubits";
-  const traj = snapshot.usesTrajectory && aggregate !== null;
-
-  // 큐비트 기저: 궤적이 있으면 |ψ_i|² 평균(= 앙상블 밀도행렬 대각), 없으면 이론값 그대로.
-  if (qubitsMode) {
-    const entries = traj
-      ? snapshot.probabilities.map((e, i) => ({ ...e, probability: aggregate.qubitProbs[i] * 100 }))
-      : snapshot.probabilities;
-    return {
-      entries, bits: snapshot.qubitCount, kind: "qubits",
-      endian: endianLabelText(snapshot.qubitCount, "q"),
-      axis: traj ? `Probability (% of ${aggregate.shots} shots)` : "Probability (%)",
-    };
-  }
-
-  // 고전 비트: 궤적이 있으면 clbits 를 세고, 중간 붕괴가 없으면 이론 확률을 주변화한다
-  // (붕괴가 없을 때 주변화는 **정확**하고 비용이 0이다 — 궤적을 돌릴 이유가 없다).
-  const probs = traj
-    ? aggregate.classical
-    : marginalClassical(snapshot.qubitCount, snapshot.clbitCount, snapshot.grid, snapshot.probabilities.map((e) => e.probability / 100));
-  const entries = [];
-  for (let i = 0; i < probs.length; i++) {
-    let label = "";
-    for (let k = snapshot.clbitCount - 1; k >= 0; k--) label += (i >> k) & 1;
-    // re/im 은 없다 — 고전 비트열에는 진폭도 위상도 없다. 툴팁이 이 null 을 보고 행을 뺀다.
-    entries.push({ index: i, label, re: null, im: null, probability: probs[i] * 100 });
-  }
-  return {
-    entries, bits: snapshot.clbitCount, kind: "classical",
-    endian: endianLabelText(snapshot.clbitCount, "c"),
-    axis: traj ? `Probability (% of ${aggregate.shots} shots)` : "Probability (%)",
-  };
-}
 
 function renderProbabilities(snapshot) {
   probFooter.innerHTML = "";
   hideChartTooltip();
 
-  const view = probDisplay(snapshot);
+  const view = probDisplay(snapshot, { probView, aggregate });
   // 궤적 회로에서는 Run 자리가 Resample statistics 라 샘플 병기가 없다.
   // 고전 비트 차트에 큐비트 기저 샘플을 겹치면 인덱스가 서로 다른 것을 가리킨다.
   const sampled = sampleResult !== null && !snapshot.usesTrajectory && view.kind === "qubits";
@@ -1524,7 +1457,7 @@ function buildProbChart(visible, view, sampled, W, H) {
 
     // hover 히트영역(밴드 전체 높이) — 마크보다 큰 타겟
     const hit = svgEl("rect", { x: bandX, y: py0, width: bandW, height: plotH, fill: "transparent", class: "prob-hit" });
-    hit.addEventListener("mouseenter", () => showChartTooltip(hit, barTooltipHTML(entry, sampled, view)));
+    hit.addEventListener("mouseenter", () => showChartTooltip(hit, barTooltipHTML(entry, sampled ? sampleResult : null, view)));
     hit.addEventListener("mouseleave", hideChartTooltip);
     svg.appendChild(hit);
   });
@@ -1743,7 +1676,7 @@ function render(snapshot) {
   clbitCountLabel.textContent = String(snapshot.clbitCount);
   clbitMinusBtn.disabled = !snapshot.canRemoveClbit;
   clbitPlusBtn.disabled = !snapshot.canAddClbit;
-  const view = probDisplay(snapshot);
+  const view = probDisplay(snapshot, { probView, aggregate });
   probEndian.textContent = view.endian;
   // 토글은 **선택지가 있을 때만** 보인다. 측정이 없으면 고전 비트 분포라는 개념 자체가 없다.
   probViewToggle.classList.toggle("hidden", !snapshot.hasMeasurement);
@@ -1851,7 +1784,8 @@ const { runStepTransition, delay, stepPause, stepIndicatorX, attachIndicator } =
   getSnapshot: () => circuit.getSnapshot(),
   getSphereMode: () => sphereMode,
   scene,
-  probDisplay,
+  // probView·aggregate 는 main 이 소유하는 가변 상태라 호출 시점에 읽어 넘긴다.
+  probDisplay: (s) => probDisplay(s, { probView, aggregate }),
   buildProbTween,
   els: { circuitGrid, probList },
 });
