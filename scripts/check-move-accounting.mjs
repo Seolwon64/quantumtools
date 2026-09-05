@@ -3,8 +3,9 @@
 // 없어졌는지는 보지 않았다(줄 수가 16줄 어긋났다). 이 스크립트가 그 반대편을 본다.
 //
 // 사용법:
-//   git show HEAD~1:js/main.js > /tmp/old-main.js
+//   git show <직전 단계 커밋 해시>:js/main.js > /tmp/old-main.js
 //   node scripts/check-move-accounting.mjs /tmp/old-main.js js/main.js js/probview.js
+// HEAD~n 을 쓰지 마라 — 커밋이 하나만 쌓여도 다른 스냅샷과 비교하고 결과는 통과로 보인다.
 //
 // 판정: 옛 main.js 에 있었으나 새 main.js 에도, 옮긴 파일 어디에도 없는 줄이 있으면 실패.
 // 빈 줄과 순수 공백 줄은 세지 않는다(블록을 떼면 필연적으로 어긋난다).
