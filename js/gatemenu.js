@@ -285,7 +285,20 @@ const MENU_ICONS = {
 };
 
 let menuIndex = 0;
+
+// 메뉴가 붙인 리스너의 수명 손잡이. 예전에는 openGateMenu 가 gateMenu 에 keydown 을
+// 붙이기만 하고 여기서 떼지 않아, 열 때마다 하나씩 쌓였다. gateMenu 는 <body> 직속
+// 요소라 innerHTML = "" 로는 **자식만** 지워지고 자신에게 붙은 리스너는 그대로 남는다.
+// 그렇게 쌓인 옛 핸들러들이 공유 menuIndex 를 연달아 덮어써서 방향키 한 번에 포커스가
+// 열어본 횟수만큼 건너뛰었다. 분리된 옛 버튼의 .focus() 는 조용한 무동작이라 콘솔
+// 에러가 0이었고, 그래서 눈으로도 잡히지 않았다.
+// 붙이는 곳과 떼는 곳이 떨어져 있던 것이 원인이므로 수명을 이 손잡이 하나로 묶는다 —
+// 나중에 메뉴에 리스너를 더 붙여도 같은 signal 에 실으면 여기서 함께 끊긴다.
+let menuKeys = null;
+
 function closeGateMenu() {
+  menuKeys?.abort(); // 이 메뉴가 붙인 리스너를 전부 해제
+  menuKeys = null;
   gateMenu.classList.add("hidden");
   gateMenu.innerHTML = "";
   hideTooltip(); // 아이콘 툴팁이 남아 떠 있지 않게
@@ -411,10 +424,11 @@ function openGateMenu(column, home, clientX, clientY) {
     buttons[menuIndex].focus();
   };
   if (buttons.length) focusAt(0);
+  menuKeys = new AbortController();
   gateMenu.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); focusAt(menuIndex + 1); }
     else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); focusAt(menuIndex - 1); }
-  });
+  }, { signal: menuKeys.signal });
 }
 
 
