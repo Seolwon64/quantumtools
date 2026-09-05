@@ -109,6 +109,11 @@ function scheduleAggregate(snapshot) {
   const signature = aggregateSignature(snapshot, shots);
   if (aggregate?.signature === signature) return; // 이미 같은 조건으로 계산해 뒀다
 
+  // 여기 왔다는 건 서명이 어긋났다는 뜻이다. 옛 집계를 **즉시** 버린다 —
+  // render 는 이 함수 직후 동기로 renderProbabilities 를 부르므로, 150ms 를 기다리는
+  // 동안 옛 qubitProbs 를 새 인덱스로 읽어 NaN 막대가 떴다.
+  aggregate = null;
+
   clearTimeout(aggregateTimer);
   aggregateTimer = setTimeout(() => {
     const snap = getSnapshot();

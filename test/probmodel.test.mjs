@@ -1,6 +1,7 @@
 // 확률 표시 정책 순수 로직 테스트. 계약의 출처는 docs/quantum-spec.md §6 이다.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { probDisplay, barTooltipHTML, endianLabelText } from "../js/probmodel.js";
 import { marginalClassical } from "../js/trajectory.js";
 
@@ -176,14 +177,33 @@ test("probDisplay: 고전 라벨은 clbitCount 자리를 빠짐없이 채운다"
   assert.deepEqual(view.entries.map((e) => e.label), ["00", "01", "10", "11"]);
 });
 
-// ── 방어하지 않는 것 ──────────────────────────────────────────────
+// ── 경계를 누가 지키는가 ──────────────────────────────────────────
 
-test("probDisplay: 길이가 안 맞는 aggregate 는 걸러지지 않는다 — 호출자 책임이다", () => {
-  // 큐비트 수가 바뀐 직후 옛 집계가 남아 있으면 이렇게 된다. 원인은 scheduleAggregate 의
-  // 무효화 누락이고, 고치는 자리도 거기다. probDisplay 는 길이를 검사하지 않는다.
+test("probDisplay: aggregate 길이를 검사하지 않는다 — 어긋난 집계는 scheduleAggregate 가 먼저 버린다", () => {
+  // 길이가 맞는지 보는 것은 이 함수의 일이 아니다. 그 무효화는 scheduleAggregate 가
+  // 서명 불일치 직후에 한다(js/probview.js). 여기 남긴 단언은 그 무효화가 사라지면
+  // 화면에 무엇이 뜨는지를 말해준다 — NaN 막대다.
   const four = [0, 1, 2, 3].map((i) => ({ index: i, label: "", re: 0.5, im: 0, probability: 25 }));
   const snap = snapshot({ hasMeasurement: true, usesTrajectory: true, qubitCount: 2, probabilities: four });
   const view = probDisplay(snap, { probView: "qubits", aggregate: AGG }); // qubitProbs 는 2개뿐
   assert.equal(view.entries.length, 4);
   assert.ok(Number.isNaN(view.entries[2].probability));
+});
+
+test("probDisplay: 넘겨받은 aggregate 를 변형하지 않는다 — probview 가 내부 객체를 그대로 넘긴다", () => {
+  // probview 의 getAggregate() 는 방어 복사 없이 캐시 객체 참조를 그대로 준다.
+  // 그 캐시를 지키는 것은 probDisplay 의 순수성뿐이라 여기서 고정한다.
+  const snap = snapshot({ hasMeasurement: true, usesTrajectory: true, clbitCount: 1, grid: MEASURE_GRID });
+  // 공유 상수 AGG 를 쓰지 않는다 — 변형이 실제로 일어나면 다른 테스트까지 오염된다.
+  const agg = { qubitProbs: [0.3, 0.7], classical: [0.25, 0.75], shots: 512 };
+
+  // 두 분기가 읽는 필드가 다르다(qubitProbs vs classical). 한쪽이 어겨도 다른 쪽의
+  // 결과를 볼 수 있도록 둘 다 돌린 뒤 모아서 단언한다 — 어느 분기가 범인인지 나온다.
+  const touched = [];
+  for (const probView of ["qubits", "classical"]) {
+    const before = structuredClone(agg);
+    probDisplay(snap, { probView, aggregate: agg });
+    if (!isDeepStrictEqual(agg, before)) touched.push(probView);
+  }
+  assert.deepStrictEqual(touched, []);
 });
