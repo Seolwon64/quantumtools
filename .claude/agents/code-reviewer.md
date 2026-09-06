@@ -3,7 +3,7 @@ name: code-reviewer
 description: 방금 작성하거나 수정한 코드의 가독성, 중복, 오류 처리, 네이밍을 검토할 때 사용한다. code review, 코드 리뷰, 방금 짠 거 봐줘, 이 diff 리뷰해줘 같은 요청이 여기 해당한다. 보안 취약점 전문 점검은 하지 않는다(그건 security-auditor 담당), 에러 원인 추적이나 코드 수정도 하지 않는다.
 tools: Read, Grep, Glob, Bash
 model: opus
-effort: high
+effort: medium
 permissionMode: plan
 maxTurns: 15
 color: blue
