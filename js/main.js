@@ -10,7 +10,7 @@ import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
-import { accentAlpha } from "./tokens.js";
+import { accentAlpha, tokenPx } from "./tokens.js";
 import { hasMeasurement, measurementColumns, DEFERRED_NOTE } from "./classical.js";
 import { initPopover } from "./popover.js";
 import { initPlayback } from "./playback.js";
@@ -96,7 +96,6 @@ const PALETTE_GLYPHS = {
 };
 
 // 회로 패널에서 캔버스 말고 나머지가 쓰는 세로 공간(툴바 + 재생 컨트롤 + 패딩)
-const CIRCUIT_CHROME = 132;
 
 const sphereContainer = document.getElementById("sphere-container");
 const scene = createBlochScene(sphereContainer);
@@ -634,8 +633,10 @@ function render(snapshot) {
   // (패널 높이가 워크스페이스 비율 고정이라 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
   // buildCircuitGrid가 위에서 이미 돌았으므로 그리드의 실제 높이를 그대로 쓴다
   // (행 높이·gap을 JS에서 다시 계산하지 않는다 — 그게 어긋남의 원인이었다).
-  const needed = circuitGrid.scrollHeight + CIRCUIT_CHROME;
-  const cap = Math.round((workspace.clientHeight || 0) * 0.72);
+  // 크롬 높이는 style.css 의 --circuit-chrome 에서 읽는다. 모듈 로드 시점에 캐시하지
+  // 않는다 — 스타일시트가 아직 적용되기 전일 수 있고, 재작성으로 값이 바뀔 수도 있다.
+  const needed = circuitGrid.scrollHeight + tokenPx("--circuit-chrome");
+  const cap = Math.round((workspace.clientHeight || 0) * 0.72); // 워크스페이스의 72%를 상한
   circuitPanel.style.minHeight = `${cap > 0 ? Math.min(needed, cap) : needed}px`;
 }
 

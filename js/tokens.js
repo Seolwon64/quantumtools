@@ -9,6 +9,20 @@ export function token(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/**
+ * CSS 변수 값을 px 숫자로 (예: tokenPx("--circuit-chrome") → 132).
+ * 변수가 없으면 getPropertyValue 가 빈 문자열을 주고 parseFloat 가 NaN 이 된다.
+ * 그 NaN 이 style 에 들어가면 브라우저가 무효 값으로 조용히 무시해 원인을 찾기 어렵다 —
+ * 그래서 경고를 남기고 0 을 돌려준다. 0 이면 계산 결과가 눈에 띄게 작아져 증상이 보인다.
+ * 대체값을 인자로 받지 않는다 — 받으면 그 값이 JS 로 되살아나 정의처가 둘이 된다.
+ */
+export function tokenPx(name) {
+  const v = parseFloat(token(name));
+  if (Number.isFinite(v)) return v;
+  console.warn(`tokenPx: ${name} 를 px 로 읽지 못했다 (값: "${token(name)}").`);
+  return 0;
+}
+
 /** CSS 변수 값을 three.js용 숫자 색으로 (예: 0xd7dbdf). #RGB 축약형도 처리한다. */
 export function tokenHex(name) {
   let v = token(name);
