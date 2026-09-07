@@ -142,13 +142,13 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
 명세는 둘로 나뉜다. 필요한 것만 읽는다.
 
 **`docs/design-spec.md`** — `style.css`, `index.html`, `js/icons.js`, `js/menu.js`,
-`js/layout.js`, `js/scene.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
-색 토큰 규격, 패널 구조, 게이트 팔레트의 버튼 치수·카테고리 색, 확률 차트 렌더링이
-여기 있다.
+`js/layout.js`, `js/scene.js`, `js/grid.js`, `js/gatemenu.js`, `js/popover.js`,
+`js/playback.js`, `js/probview.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
+색 토큰 규격, 패널 구조, 게이트 카테고리 색, 인터랙티브 상태, 회로 격자 좌표 규칙,
+확률 차트 렌더링이 여기 있다.
 
 **`docs/quantum-spec.md`** — `js/quantum.js`, `js/circuit.js`, `js/trajectory.js`,
-`js/classical.js`, `js/qasm.js`, `js/export.js`, `js/presets.js`, `js/density.js` 를
-건드릴 때. 회로 데이터 모델, 게이트 배치와 컨트롤 부착, 측정·궤적, QASM/Qiskit 변환,
+`js/classical.js`, `js/qasm.js`, `js/export.js`, `js/presets.js`, `js/density.js`, `js/probmodel.js` 를 건드릴 때. 회로 데이터 모델, 게이트 배치와 컨트롤 부착, 측정·궤적, QASM/Qiskit 변환,
 직렬화·프리셋이 여기 있다.
 
 **`js/main.js` 는 양쪽에 걸친다.** DOM 배선·렌더링을 고치면 design-spec, 회로 상태
