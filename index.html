@@ -159,9 +159,14 @@
       </section>
 
       <section class="panel panel-density">
+        <!-- 큐비트 선택은 버튼이 아니라 드롭다운이다 — 큐비트가 몇 개든 폭이 변하지 않아야
+             이 좁은 칸에서 머리글 줄이 흔들리지 않는다. 선택 자체는 Bloch 구와 공유하는
+             전역 상태(circuit.selectQubit)라 여기서 바꾸면 구도 같이 바뀐다. -->
+        <div class="dm-header">
+          <h2 class="panel-title">Reduced ρ</h2>
+          <select class="dm-qubit-select" id="dm-qubit-select" aria-label="Qubit shown in the reduced density matrix"></select>
+        </div>
         <div class="dm-view">
-          <div class="dm-header">Reduced density matrix</div>
-          <div class="dm-qubit-tabs" id="dm-qubit-tabs"></div>
           <div class="dm-matrix" id="dm-matrix"></div>
           <div class="dm-metrics" id="dm-metrics"></div>
         </div>

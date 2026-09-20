@@ -212,7 +212,9 @@
 /* [2] 등폭(mono)을 쓰는 곳 — **숫자 열이 세로로 정렬되어야 하는 모든 영역**.
    비례폰트로 두면 행렬 성분과 진폭이 자리마다 폭이 달라 삐뚤어져 읽힌다.
    한곳에 모아 두어야 "여기도 mono여야 하나?"를 매번 뒤지지 않는다. */
-.dm-cell, .dm-rowlabel, .dm-collabel, .dm-corner, .dm-metrics,  /* 축소 밀도행렬 */
+/* .dm-metrics 전체가 아니라 .dm-stat 만이다 — 캡션(.dm-caption)은 숫자가 아니라 산문이라
+   등폭이면 같은 글자 수에서 ~15% 넓어져 270px 칸에서 두 줄로 접혔다. */
+.dm-cell, .dm-rowlabel, .dm-collabel, .dm-corner, .dm-stat,     /* 축소 밀도행렬 */
 .mx-cell, .mx-rowlabel, .mx-collabel, .mx-corner,               /* 게이트 정보 유니터리 행렬 */
 .state-formula,                                                 /* 상태벡터 진폭 */
 .endian-label,                                                  /* |q3 q2 q1 q0⟩ */
@@ -880,8 +882,11 @@ html, body {
   overflow: auto;
 }
 
-/* [3] 게이트 정보 — Operations 패널에서 팔레트를 대신해 표시된다("Show info"로만 열림) */
-.palette-header {
+/* [7] 패널 머리글 줄 = 제목 + 오른쪽 컨트롤 하나. 두 패널이 같은 규칙을 쓴다 —
+   제목이 "값까지 동일"해야 하므로 정의처를 둘로 두지 않는다.
+   ([3] 게이트 정보는 Operations 패널에서 팔레트를 대신해 표시된다 — "Show info"로만 열림) */
+.palette-header,
+.dm-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -890,10 +895,8 @@ html, body {
   margin-bottom: var(--space-3);
 }
 
-.palette-header .panel-title {
-  margin: 0;
-}
-.palette-header .panel-title { flex: 1; min-width: 0; }
+.palette-header .panel-title,
+.dm-header .panel-title { margin: 0; flex: 1; min-width: 0; }
 .palette-header .hidden { display: none; }
 
 .gate-info {
@@ -1786,17 +1789,20 @@ html, body {
   gap: var(--space-2);
   overflow-y: auto;
 }
-.dm-header {
+/* 큐비트 선택 드롭다운. **폭을 고정한다**([8]) — 내용에 맡기면 q[9] → q[10] 에서 넓어져
+   머리글 줄이 밀린다. 값 입력 컨트롤의 고정 폭은 .shots-input 이 이미 쓰는 방식이다. */
+.dm-qubit-select {
+  flex: none;
+  width: 64px;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-2);
+  background: var(--bg);
+  color: var(--text-body);
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.dm-qubit-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease);
 }
 /* 2×2 행렬: ρ 코너 + 열/행 기저 라벨 + 4개 값 셀 */
 .dm-grid {
@@ -1874,9 +1880,6 @@ html, body {
   background: var(--primary);
   border-radius: var(--radius-1);
   transition: width 0.25s ease;
-}
-.dm-bloch {
-  flex-wrap: wrap;
 }
 .dm-caption {
   font-size: var(--text-sm);
@@ -2412,6 +2415,9 @@ html, body {
 }
 .gate-chip:hover { background-color: var(--chip-hover); }
 .gate-chip:active { transform: scale(0.98); }
+/* 네이티브 select 는 눌림 상태를 브라우저가 그리므로 hover 만 맞춘다(scale 을 주면
+   열린 드롭다운 목록이 따라 움직여 어긋나 보인다). */
+.dm-qubit-select:hover { background-color: var(--gray-4); }
 .placed-gate:active, .ctrl-dot:active { transform: scale(0.98); }
 .qubit-tab.active:hover, .segmented-btn.active:hover,
 .inspect-toggle.is-on:hover { background-color: var(--accent-10); }
@@ -2431,7 +2437,8 @@ html, body {
 .code-tab:focus-visible,
 .menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
-.shots-input:focus-visible, .prob-hide-toggle:focus-within {
+.shots-input:focus-visible, .prob-hide-toggle:focus-within,
+.dm-qubit-select:focus-visible {
   outline: 2px solid var(--accent-9);
   outline-offset: 2px;
 }

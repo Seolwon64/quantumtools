@@ -137,7 +137,7 @@ const blochMixedPct = document.getElementById("bloch-mixed-pct");
 const sphereCaption = document.getElementById("sphere-caption");
 const menuBtn = document.getElementById("menu-btn");
 const probEndian = document.getElementById("prob-endian");
-const dmQubitTabs = document.getElementById("dm-qubit-tabs");
+const dmQubitSelect = document.getElementById("dm-qubit-select");
 const dmMatrix = document.getElementById("dm-matrix");
 const dmMetrics = document.getElementById("dm-metrics");
 
@@ -370,27 +370,39 @@ function buildQubitTabs(snapshot) {
   }
 }
 
-// ---------- 축소 밀도행렬 뷰 (확률 패널 오른쪽) ----------
-const fmt3 = (v) => (Math.abs(v) < 5e-4 ? 0 : v).toFixed(3);
-const fmtComplexCell = (z) => `${fmt3(z.re)} ${z.im >= 0 ? "+" : "−"} ${fmt3(Math.abs(z.im))}i`;
+// ---------- 축소 밀도행렬 뷰 (1열 하단) ----------
+// 2자리로 쓰는 이유: 이 칸은 폭이 270px 뿐이라 "0.000 + 0.500i"(14자)가 들어가지 않는다.
+// 임계값 5e-4 는 **수치 오차 뭉개기**다(gatematrix.js 의 EPS 와 같은 값·같은 뜻) —
+// 자릿수에 맞춰 키우지 않는다. 키우면 0.003 같은 실제 값이 0 으로 바뀌어 사라진다.
+// −0.00 은 임계값이 아니라 **반올림 뒤** -0 정규화로 막는다: 3자리에서는 5e-4 가 곧 반올림
+// 경계라 앞에서 걸러졌지만, 2자리에서는 경계(5e-3)가 임계값보다 커서 -0.002 가 필터를
+// 통과한 뒤 "-0.00" 이 된다.
+const fmt2 = (v) => {
+  const squashed = Math.abs(v) < 5e-4 ? 0 : v;
+  const rounded = Number(squashed.toFixed(2));
+  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
+};
+const fmtComplexCell = (z) => `${fmt2(z.re)}${z.im >= 0 ? "+" : "−"}${fmt2(Math.abs(z.im))}i`;
 
-function buildDmQubitTabs(snapshot) {
-  dmQubitTabs.innerHTML = "";
-  for (let q = 0; q < snapshot.qubitCount; q++) {
-    const tab = document.createElement("button");
-    tab.className = "qubit-tab" + (q === snapshot.selectedQubit ? " active" : "");
-    tab.textContent = `q[${q}]`;
-    tab.addEventListener("click", () => {
-      scene.clearTrail();
-      circuit.selectQubit(q); // 선택은 전역(Bloch sphere와 공유)
-    });
-    dmQubitTabs.appendChild(tab);
+/** 큐비트 드롭다운을 스냅샷에 맞춘다. 선택은 전역(Bloch sphere와 공유). */
+function syncDmQubitSelect(snapshot) {
+  // 개수가 같으면 다시 만들지 않는다 — render 마다 option 을 새로 그리면 사용자가 열어 둔
+  // 드롭다운이 닫히고 포커스가 날아간다(재생 중에는 render 가 스텝마다 돈다).
+  if (dmQubitSelect.options.length !== snapshot.qubitCount) {
+    dmQubitSelect.innerHTML = "";
+    for (let q = 0; q < snapshot.qubitCount; q++) {
+      const opt = document.createElement("option");
+      opt.value = String(q);
+      opt.textContent = `q[${q}]`;
+      dmQubitSelect.appendChild(opt);
+    }
   }
+  dmQubitSelect.value = String(snapshot.selectedQubit);
 }
 
 // 선택 큐비트의 2×2 축소 밀도행렬 + Purity/Mixedness/Bloch. density.js를 재사용(전체 행렬 안 만듦).
 function renderDensityMatrix(snapshot) {
-  buildDmQubitTabs(snapshot);
+  syncDmQubitSelect(snapshot);
   const info = reducedDensityInfo(snapshot.state, snapshot.selectedQubit);
   const rho = info.rho;
   const mag = (z) => Math.hypot(z.re, z.im);
@@ -413,29 +425,33 @@ function renderDensityMatrix(snapshot) {
       const cell = document.createElement("div");
       cell.className = "dm-cell" + (a === b ? " dm-diag" : "");
       cell.style.background = accentAlpha((mag(z) / maxMag) * 0.5);
-      cell.textContent = a === b ? fmt3(z.re) : fmtComplexCell(z); // 대각=실수, 비대각=복소수
+      // 대각=실수, 비대각=복소수. 자릿수는 둘 다 2자리여야 같은 열에서 소수점이 맞는다.
+      cell.textContent = a === b ? fmt2(z.re) : fmtComplexCell(z);
       grid.appendChild(cell);
     }
   }
   dmMatrix.appendChild(grid);
 
   // 지표 (부동소수점 오차로 순도가 살짝 1을 넘거나 mixedness가 음수가 될 수 있어 클램프)
-  const b = info.bloch;
   const mixed = Math.max(0, Math.min(1, info.mixedness));
-  const caption = info.purity >= 0.999 ? "Pure — not entangled with other qubits"
-    : info.purity <= 0.501 ? "Maximally mixed — maximally entangled"
-    : "Partially mixed — partially entangled";
+  // 문구는 한 줄에 들어가야 한다 — 270px 칸에서 두 줄이 되면 패널이 넘친다.
+  // 혼합의 **정도**는 바로 위 Mixedness 막대가 이미 보여주므로 여기서 되풀이하지 않는다.
+  const caption = info.purity >= 0.999 ? "Pure — not entangled"
+    : info.purity <= 0.501 ? "Maximally mixed — entangled"
+    : "Partially mixed — entangled";
+  // r 의 성분(x, y, z)은 Bloch 구가 화살표로 보여주므로 여기서는 길이만 남긴다 —
+  // 숫자 셋을 나열하면 이 폭에서 반드시 두 줄이 된다.
   dmMetrics.innerHTML =
     `<div class="dm-stat">Purity <b>${info.purity.toFixed(3)}</b></div>` +
     `<div class="dm-stat dm-mixed"><span class="dm-mixed-label">Mixedness</span>` +
       `<span class="dm-mixed-bar"><span class="dm-mixed-fill" style="width:${mixed * 100}%"></span></span>` +
       `<b>${Math.round(mixed * 100)}%</b></div>` +
-    `<div class="dm-stat dm-bloch">r = (<b>${b.x.toFixed(2)}</b>, <b>${b.y.toFixed(2)}</b>, <b>${b.z.toFixed(2)}</b>) &middot; |r| = <b>${info.r.toFixed(3)}</b></div>` +
+    `<div class="dm-stat">|r| <b>${info.r.toFixed(3)}</b></div>` +
     `<div class="dm-caption">${caption}</div>` +
     // 궤적 하나는 **순수 상태**라 Purity 가 늘 1.000 으로 나온다. 실제 앙상블은 혼합
     // 상태인데도 그렇다 — 라벨이 없으면 "측정했는데 순수하다"는 잘못된 결론으로 이어진다.
     (snapshot.usesTrajectory
-      ? `<div class="dm-caption dm-traj-note">One trajectory — the ensemble is mixed</div>`
+      ? `<div class="dm-caption dm-traj-note">One trajectory — ensemble is mixed</div>`
       : "");
 }
 
@@ -636,7 +652,17 @@ function render(snapshot) {
   // 크롬 높이는 style.css 의 --circuit-chrome 에서 읽는다. 모듈 로드 시점에 캐시하지
   // 않는다 — 스타일시트가 아직 적용되기 전일 수 있고, 재작성으로 값이 바뀔 수도 있다.
   const needed = circuitGrid.scrollHeight + tokenPx("--circuit-chrome");
-  const cap = Math.round((workspace.clientHeight || 0) * 0.72); // 워크스페이스의 72%를 상한
+  // 이 상한이 막는 것은 높이가 아니라 **되먹임 자체**다. minHeight 는 내용이 정해 상단
+  // 행을 밀어 올리는데, 그 바닥이 행 스플리터가 올릴 수 있는 최대(--row-max 75fr)에
+  // 가까워지면 사용자가 핸들을 아래로 끌어도 되먹임이 그대로 되밀어 **스플리터가 죽는다.**
+  // 그래서 값은 "회로가 다 보이는 높이"가 아니라 "스플리터가 살아 있는 높이"로 정한다.
+  //
+  // 0.58 은 1574×844 실측에서 고른 값이다(그리드 가용 744px, workspace.clientHeight 784):
+  //   · 하한 0.549 — 4큐비트 회로가 요구하는 430px. 이보다 낮으면 가장 흔한 경우가 잘린다
+  //   · 상한 0.618 — 6큐비트(MAX_QUBITS)에서 하단 행에 밀도행렬이 필요로 하는 259px 를 남기는 값
+  //   · 0.58(455px)은 그 구간 가운데라 양쪽에 여유(회로 25px · 밀도행렬 30px)가 남고,
+  //     6큐비트에서 스플리터 이동 폭이 1.6%p(사실상 죽음) → 13.8%p 로 넓어진다
+  const cap = Math.round((workspace.clientHeight || 0) * 0.58);
   circuitPanel.style.minHeight = `${cap > 0 ? Math.min(needed, cap) : needed}px`;
 }
 
@@ -754,6 +780,13 @@ setSphereMode(circuit.getSnapshot().qubitCount === 1 ? "bloch" : "qsphere");
 new ResizeObserver(() => {
   renderProbabilities(circuit.getSnapshot());
 }).observe(probList);
+
+// 밀도행렬 큐비트 드롭다운. 리스너는 render 안이 아니라 여기서 **한 번만** 건다 —
+// syncDmQubitSelect 는 option 을 다시 만들 뿐이라 리스너를 매번 붙이면 중복으로 쌓인다.
+dmQubitSelect.addEventListener("change", () => {
+  scene.clearTrail();
+  circuit.selectQubit(Number(dmQubitSelect.value));
+});
 
 qubitMinusBtn.addEventListener("click", () => {
   scene.clearTrail();
