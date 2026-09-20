@@ -895,13 +895,12 @@ probViewToggle.addEventListener("click", (e) => {
 // 없앴다 — 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
 codePanel = initCodePanel({
   circuit,
-  scene,
   showToast,
   onOpen: () => menu.close({ restoreFocus: false }),
   els: {
     panel: document.getElementById("code-panel"),
     resizer: document.getElementById("code-resizer"),
-    wsLeft: document.getElementById("ws-left"),
+    wsGrid: document.getElementById("ws-grid"),
     workspace: document.getElementById("workspace"),
     tabQasm: document.getElementById("tab-qasm"),
     tabQiskit: document.getElementById("tab-qiskit"),

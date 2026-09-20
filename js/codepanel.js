@@ -4,9 +4,10 @@
 // 코드→회로는 Apply(또는 Ctrl/Cmd+Enter)로만 간다. 타이핑 중에는 코드가 거의 항상
 // 문법 오류 상태라 자동 반영하면 회로가 깨지고 Undo 스택도 타이핑 단위로 오염된다.
 //
-// 패널은 오버레이가 아니라 **레이아웃에 참여**한다 — 왼쪽 열 자리를 차지하고, 넓히면
-// 오른쪽 열이 좁아질 뿐 Circuit·Probabilities 는 가려지지 않는다. 코드를 고치면서
-// 회로·상태벡터·확률을 동시에 보는 게 이 기능의 목적이기 때문이다.
+// 패널은 오버레이가 아니라 **레이아웃에 참여**한다 — 1열(Operations·Reduced density
+// matrix) 자리를 차지하고, 넓히면 나머지 열이 좁아질 뿐 Circuit·Probabilities·Q-sphere·
+// State vector 는 가려지지 않는다. 코드를 고치면서 회로·상태벡터·확률을 동시에 보는 게
+// 이 기능의 목적이기 때문이다.
 
 import { toQASM, toQiskit } from "./export.js";
 import { parseQASM, normalizeCircuit } from "./qasm.js";
@@ -27,9 +28,9 @@ function saveWidth(pct) {
   try { localStorage.setItem(STORAGE_KEY, String(pct)); } catch { /* 무시 */ }
 }
 
-export function initCodePanel({ circuit, scene, els, onOpen, showToast }) {
+export function initCodePanel({ circuit, els, onOpen, showToast }) {
   const {
-    panel, resizer, wsLeft, workspace,
+    panel, resizer, wsGrid, workspace,
     tabQasm, tabQiskit, apply, copy, close,
     text, gutter, errorLine, pre, readonlyBox, editor,
     banner, conflict, reload, keep, badge, status,
@@ -204,8 +205,9 @@ export function initCodePanel({ circuit, scene, els, onOpen, showToast }) {
     panel.hidden = false;
     resizer.hidden = false;
     applyWidth();
-    wsLeft.classList.add("is-hidden-by-code");
-    scene.setPaused(true); // 숨어 있는 동안 GPU를 놀린다(캔버스는 DOM에 그대로 있다)
+    // 1열만 비킨다. 구는 3열에 있어 계속 보이므로 렌더를 멈추지 않는다 —
+    // 멈추면 보이는 캔버스에 낡은 프레임이 그대로 굳는다.
+    wsGrid.classList.add("is-code-open");
     setModified(false);
     conflicted = false;
     conflict.classList.add("hidden");
@@ -223,8 +225,7 @@ export function initCodePanel({ circuit, scene, els, onOpen, showToast }) {
     open = false;
     panel.hidden = true;
     resizer.hidden = true;
-    wsLeft.classList.remove("is-hidden-by-code");
-    scene.setPaused(false); // resize() 를 먼저 부른 뒤 루프를 재개한다(scene.js)
+    wsGrid.classList.remove("is-code-open");
     setModified(false);
   }
 

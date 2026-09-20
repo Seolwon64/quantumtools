@@ -30,10 +30,10 @@
     </header>
 
     <div class="workspace" id="workspace">
-      <!-- 코드 패널: 왼쪽 열 자리를 차지한다(오버레이가 아니다). 넓히면 오른쪽 열이
-           좁아질 뿐 Circuit·Probabilities 는 1px도 가려지지 않는다.
-           .ws-left 는 DOM 에 남기고 display:none 으로만 숨긴다 — Three.js 캔버스가
-           DOM 에서 빠지면 WebGL 컨텍스트가 손실된다. -->
+      <!-- 코드 패널: 1열 자리를 차지한다(오버레이가 아니다). 열려 있는 동안 비키는 것은
+           1열(Operations·Reduced density matrix)뿐이고, Circuit·Probabilities·Q-sphere·
+           State vector 는 1px도 가려지지 않는다 — 코드를 고치면서 그것들을 동시에 보는
+           게 이 기능의 목적이다. -->
       <section class="code-panel" id="code-panel" aria-label="Code editor" hidden>
         <div class="code-tabs" role="tablist" aria-label="Code language">
           <button class="code-tab is-active" id="tab-qasm" role="tab" aria-selected="true">QASM</button>
@@ -73,7 +73,11 @@
       </section>
       <div class="code-resizer" id="code-resizer" hidden role="separator" aria-orientation="vertical" aria-label="Resize code panel"></div>
 
-      <div class="ws-col ws-left" id="ws-left">
+      <!-- 3열 2행 타일링. 여섯 패널과 스플리터 셋이 **모두 이 그리드의 직계 자식**이다 —
+           칼럼 래퍼를 두면 열마다 행 높이가 다시 갈라져 행 경계가 어긋난다.
+           배치는 style.css 의 grid-area 가 정하므로, 여기 DOM 순서는 화면 읽기 순서
+           (왼→오, 위→아래)이자 곧 탭 순서다. 스플리터는 포커스 대상이 아니라 맨 뒤에 모은다. -->
+      <div class="ws-grid" id="ws-grid">
       <section class="panel panel-palette">
         <div class="palette-header">
           <h2 class="panel-title" id="palette-title">Operations</h2>
@@ -83,7 +87,41 @@
         <div class="gate-info hidden" id="gate-info"></div>
       </section>
 
-      <div class="row-splitter" id="row-splitter-left"></div>
+      <section class="panel panel-circuit">
+        <div class="circuit-toolbar">
+          <h2 class="panel-title">Circuit</h2>
+          <div class="qubit-stepper" title="Qubits">
+            <button class="stepper-btn" id="qubit-minus" title="Remove qubit">−</button>
+            <span class="qubit-count" id="qubit-count">4</span>
+            <button class="stepper-btn" id="qubit-plus" title="Add qubit">+</button>
+          </div>
+          <div class="qubit-stepper clbit-stepper" title="Classical bits">
+            <button class="stepper-btn" id="clbit-minus" title="Remove classical bit">−</button>
+            <span class="qubit-count" id="clbit-count">4</span>
+            <button class="stepper-btn" id="clbit-plus" title="Add classical bit">+</button>
+          </div>
+          <button class="icon-btn tool-icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><span data-icon="undo-2"></span></button>
+          <button class="icon-btn tool-icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><span data-icon="redo-2"></span></button>
+          <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
+          <button class="icon-btn" id="presets-btn" title="Load an example circuit" aria-label="Examples — load an example circuit" aria-haspopup="true" aria-expanded="false">Examples<span data-icon="chevron-down"></span></button>
+          <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
+          <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정). -->
+          <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
+          <span class="traj-badge hidden" id="traj-badge">One trajectory<button class="icon-btn tool-icon-btn" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button></span>
+        </div>
+        <div class="circuit-body">
+          <div class="circuit-scroll">
+            <div class="circuit-grid" id="circuit-grid"></div>
+          </div>
+        </div>
+        <div class="playback-controls">
+          <button class="round-btn" id="reset-btn" title="To start" aria-label="Go to start"><span data-icon="skip-back"></span></button>
+          <button class="round-btn" id="step-back-btn" title="Step back" aria-label="Step back"><span data-icon="step-back"></span></button>
+          <button class="round-btn round-btn-primary" id="play-btn" title="Play" aria-label="Play"><span data-icon="play"></span></button>
+          <button class="round-btn" id="step-fwd-btn" title="Step forward" aria-label="Step forward"><span data-icon="step-forward"></span></button>
+          <span class="playback-status" id="playback-status">0 / 0 steps</span>
+        </div>
+      </section>
 
       <section class="panel panel-sphere">
         <div class="sphere-toolbar">
@@ -119,49 +157,15 @@
           </div>
         </div>
       </section>
-      </div>
 
-      <div class="col-splitter" id="col-splitter"></div>
-
-      <div class="ws-col ws-right" id="ws-right">
-      <section class="panel panel-circuit">
-        <div class="circuit-toolbar">
-          <h2 class="panel-title">Circuit</h2>
-          <div class="qubit-stepper" title="Qubits">
-            <button class="stepper-btn" id="qubit-minus" title="Remove qubit">−</button>
-            <span class="qubit-count" id="qubit-count">4</span>
-            <button class="stepper-btn" id="qubit-plus" title="Add qubit">+</button>
-          </div>
-          <div class="qubit-stepper clbit-stepper" title="Classical bits">
-            <button class="stepper-btn" id="clbit-minus" title="Remove classical bit">−</button>
-            <span class="qubit-count" id="clbit-count">4</span>
-            <button class="stepper-btn" id="clbit-plus" title="Add classical bit">+</button>
-          </div>
-          <button class="icon-btn tool-icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><span data-icon="undo-2"></span></button>
-          <button class="icon-btn tool-icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><span data-icon="redo-2"></span></button>
-          <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
-          <button class="icon-btn" id="presets-btn" title="Load an example circuit" aria-label="Examples — load an example circuit" aria-haspopup="true" aria-expanded="false">Examples<span data-icon="chevron-down"></span></button>
-          <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
-          <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정). -->
-          <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
-          <span class="traj-badge hidden" id="traj-badge">One trajectory<button class="icon-btn tool-icon-btn" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button></span>
-        </div>
-        <div class="circuit-body">
-          <div class="circuit-scroll">
-            <div class="circuit-grid" id="circuit-grid"></div>
-          </div>
-          <div class="circuit-formula" id="state-formula"></div>
-        </div>
-        <div class="playback-controls">
-          <button class="round-btn" id="reset-btn" title="To start" aria-label="Go to start"><span data-icon="skip-back"></span></button>
-          <button class="round-btn" id="step-back-btn" title="Step back" aria-label="Step back"><span data-icon="step-back"></span></button>
-          <button class="round-btn round-btn-primary" id="play-btn" title="Play" aria-label="Play"><span data-icon="play"></span></button>
-          <button class="round-btn" id="step-fwd-btn" title="Step forward" aria-label="Step forward"><span data-icon="step-forward"></span></button>
-          <span class="playback-status" id="playback-status">0 / 0 steps</span>
+      <section class="panel panel-density">
+        <div class="dm-view">
+          <div class="dm-header">Reduced density matrix</div>
+          <div class="dm-qubit-tabs" id="dm-qubit-tabs"></div>
+          <div class="dm-matrix" id="dm-matrix"></div>
+          <div class="dm-metrics" id="dm-metrics"></div>
         </div>
       </section>
-
-      <div class="row-splitter" id="row-splitter-right"></div>
 
       <section class="panel panel-probability">
         <div class="prob-toolbar">
@@ -187,19 +191,18 @@
             </label>
           </div>
         </div>
-        <div class="prob-split">
-          <div class="prob-left">
-            <div class="prob-chart" id="prob-list"></div>
-            <div class="prob-footer" id="prob-footer"></div>
-          </div>
-          <div class="prob-right" id="dm-view">
-            <div class="dm-header">Reduced density matrix</div>
-            <div class="dm-qubit-tabs" id="dm-qubit-tabs"></div>
-            <div class="dm-matrix" id="dm-matrix"></div>
-            <div class="dm-metrics" id="dm-metrics"></div>
-          </div>
-        </div>
+        <div class="prob-chart" id="prob-list"></div>
+        <div class="prob-footer" id="prob-footer"></div>
       </section>
+
+      <section class="panel panel-state">
+        <h2 class="panel-title">State vector</h2>
+        <div class="state-formula" id="state-formula"></div>
+      </section>
+
+      <div class="col-splitter" id="col-splitter-1"></div>
+      <div class="col-splitter" id="col-splitter-2"></div>
+      <div class="row-splitter" id="row-splitter"></div>
       </div>
     </div>
   </div>

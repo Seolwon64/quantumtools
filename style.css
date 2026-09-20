@@ -55,7 +55,23 @@
   /* 회로 그리드 밖 패널 크롬(헤더·패딩·푸터)의 총 높이.
      main.js 의 패널 최소 높이 계산이 이 값을 읽는다 — 패널 구조를 바꾸면 여기도 고친다. */
   --circuit-chrome: 132px;
-  
+
+  /* 워크스페이스 3열 2행 타일링의 비율과 드래그 한계.
+     --circuit-chrome 과 같은 종류의 토큰이다: CSS 트랙이 쓰는 비율 다섯 개 말고
+     한계 세 개는 **CSS 에서 아무도 안 쓰고 layout.js 만 tokenPx() 로 읽는다.**
+     그래도 정의는 여기 한 곳이다 — JS 상수로 두면 정의처가 둘이 되어 조용히 어긋난다. */
+  --col-1: 18fr;
+  --col-2: 50fr;
+  --col-3: 32fr;
+  --row-top: 58fr;
+  --row-bottom: 42fr;
+  /* 1열↔2열 간격만 변수다. 코드 패널이 열리면 1열과 **그 오른쪽 간격까지** 접혀야 하는데,
+     2열↔3열 간격은 어떤 상태에서도 접히지 않아 var(--space-3) 리터럴로 둔다. */
+  --gutter-1: var(--space-3);
+  --col-min: 14fr;   /* 어느 열도 이보다 좁아지지 않는다 */
+  --row-min: 25fr;
+  --row-max: 75fr;
+
   /* 타입 스케일 — 이 값들만 쓴다(새 크기를 만들지 않는다) */
   --text-xs: 10px;   /* 카테고리 라벨 (대문자, 500) */
   --text-sm: 11px;   /* 패널 제목 (대문자, 600, letter-spacing .06em) */
@@ -198,7 +214,7 @@
    한곳에 모아 두어야 "여기도 mono여야 하나?"를 매번 뒤지지 않는다. */
 .dm-cell, .dm-rowlabel, .dm-collabel, .dm-corner, .dm-metrics,  /* 축소 밀도행렬 */
 .mx-cell, .mx-rowlabel, .mx-collabel, .mx-corner,               /* 게이트 정보 유니터리 행렬 */
-.circuit-formula,                                               /* 상태벡터 진폭 */
+.state-formula,                                                 /* 상태벡터 진폭 */
 .endian-label,                                                  /* |q3 q2 q1 q0⟩ */
 .prob-xtick, .prob-axis-num, .prob-xlabel, .prob-hidden-note,   /* 확률 축·기저 라벨 */
 .prob-legend, .shots-input,                                     /* 샘플링 카운트(500/1024) */
@@ -397,6 +413,9 @@ html, body {
 
 
 
+/* 워크스페이스는 [코드 패널][리사이저][3열 2행 그리드] 의 flex 행이다.
+   그리드를 .workspace 에 직접 얹지 않는 이유: 코드 패널은 폭을 %로 직접 잡는 드로어라
+   트랙에 들어가면 폭 조절 방식을 통째로 바꿔야 한다. 한 겹 감싸서 그대로 둔다. */
 .workspace {
   flex: 1;
   min-height: 0;
@@ -405,55 +424,47 @@ html, body {
   padding: var(--space-1) var(--space-5) var(--space-5);
 }
 
-/* 칼럼-메이저 구조: 세로 스플리터 1개(전체 높이) + 칼럼별 가로 스플리터 2개.
-   왼쪽 칼럼(팔레트/구)은 좁게, 오른쪽 칼럼(회로/확률)은 넓게가 기본값. */
-.ws-col {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+/* 3열 2행 직사각 타일링. 열 폭은 열마다 독립이고 **행 비율은 세 열이 공유한다** —
+   직사각 타일링에서 둘 다 독립일 수는 없고, 이 앱은 행 경계가 한 줄로 맞는 쪽을 택했다.
+   트랙은 5열 × 3행이다: 가운데 낀 트랙이 곧 스플리터 자리이자 패널 사이 간격([3] --space-3)
+   이라 gap 을 쓰지 않는다 — 간격을 두 곳에서 만들면 스플리터가 간격 위에 뜬다. */
+.ws-grid {
+  flex: 1;
   min-width: 0;
-}
-
-.ws-left {
-  flex: none;
-  width: var(--col1, 27%);
-}
-
-.ws-right {
-  flex: 1;
-}
-
-.ws-left .panel-palette {
-  flex: none;
-  height: var(--row-left, 50%);
-}
-
-.ws-left .panel-sphere {
-  flex: 1;
   min-height: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--col-1)) var(--gutter-1)
+    minmax(0, var(--col-2)) var(--space-3)
+    minmax(0, var(--col-3));
+  /* 상단 행만 minmax(0, ...) 이 아니다. main.js 가 회로 내용 높이를 panel-circuit 의
+     인라인 min-height 로 되먹이는데(→ --circuit-chrome), 그 값이 행을 밀어 올리려면
+     상단 행의 **최소 크기가 auto** 여야 한다. 나머지 패널은 .panel { min-height: 0 } 이라
+     내용이 제멋대로 행을 늘리지 못한다. */
+  grid-template-rows: var(--row-top) var(--space-3) minmax(0, var(--row-bottom));
 }
 
-.ws-right .panel-circuit {
-  flex: none;
-  height: var(--row-right, 50%);
-}
+/* 배치는 여기서만 정한다 — DOM 순서는 읽기 순서(=탭 순서)로 두고 건드리지 않는다. */
+.panel-palette     { grid-area: 1 / 1; }
+.panel-circuit     { grid-area: 1 / 3; }
+.panel-sphere      { grid-area: 1 / 5; }
+.panel-density     { grid-area: 3 / 1; }
+.panel-probability { grid-area: 3 / 3; }
+.panel-state       { grid-area: 3 / 5; }
 
-.ws-right .panel-probability {
-  flex: 1;
-  min-height: 0;
-}
+/* 세로 스플리터는 두 행을 가로지르고, 가로 스플리터는 세 열을 가로지른다.
+   교차점 두 곳에서는 DOM 뒤쪽인 가로 스플리터가 위에 온다(12×12px). */
+#col-splitter-1 { grid-area: 1 / 2 / 4 / 3; }
+#col-splitter-2 { grid-area: 1 / 4 / 4 / 5; }
+#row-splitter   { grid-area: 2 / 1 / 3 / 6; }
 
-/* 스플리터의 두께가 곧 패널 사이 간격이다([3] --space-3) */
+/* 두께는 트랙이 정한다 — 여기에 width/height 를 다시 적으면 정의처가 둘이 된다. */
 .col-splitter {
-  flex: none;
-  width: var(--space-3);
   cursor: col-resize;
   position: relative;
 }
 
 .row-splitter {
-  flex: none;
-  height: var(--space-3);
   cursor: row-resize;
   position: relative;
 }
@@ -860,7 +871,6 @@ html, body {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: var(--space-4);
 }
 
 .circuit-scroll {
@@ -964,9 +974,11 @@ html, body {
 }
 .mx-cell.mx-zero { color: var(--text-faint); }
 
-.circuit-formula {
-  flex: none;
-  max-width: 38%;
+/* 상태벡터 수식. 예전에는 회로 패널 본문 안에서 max-width:38% 로 자리를 빌려 썼다 —
+   이제 자기 패널(3열 2행)을 가지므로 폭 제한 없이 칸을 채운다. */
+.state-formula {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   display: flex;
   align-items: center;
@@ -1764,22 +1776,11 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 확률 패널 좌우 분할: 왼쪽 차트 / 오른쪽 축소 밀도행렬 뷰 */
-.prob-split {
+/* 축소 밀도행렬 뷰. 예전에는 확률 패널 오른쪽에 flex: 0 0 224px 로 붙어 있었다 —
+   이제 자기 패널(1열 2행)이라 폭은 열 비율이 정하고 고정 px 가 필요 없다. */
+.dm-view {
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: var(--space-3);
-}
-.prob-left {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.prob-right {
-  flex: 0 0 224px;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -2528,8 +2529,19 @@ html, body {
 
 .code-panel[hidden] { display: none; }
 
-/* .ws-left 는 DOM 에 남긴다 — Three.js 캔버스가 DOM 에서 빠지면 WebGL 컨텍스트가 손실된다. */
-.ws-col.is-hidden-by-code { display: none; }
+/* 코드 패널이 열리면 1열(Operations·Reduced density matrix)만 비킨다.
+   **트랙을 접는 것과 패널을 숨기는 것 둘 다 필요하다**: fr 트랙은 내용이 없어도 제 몫을
+   가져가고, 0 폭이 된 패널은 1px 테두리 두 줄로 남는다.
+   --col-1 은 layout.js 가 #workspace 에 인라인으로 쓰지만, 여기 선언은 .ws-grid 자신의
+   것이라 부모에게서 물려받은 인라인 값을 이긴다. */
+.ws-grid.is-code-open {
+  --col-1: 0;
+  --gutter-1: 0;
+}
+
+.ws-grid.is-code-open > .panel-palette,
+.ws-grid.is-code-open > .panel-density,
+.ws-grid.is-code-open > #col-splitter-1 { display: none; }
 
 /* 폭 조절 핸들. 굵기와 커서는 기존 .col-splitter 규약을 그대로 따른다. */
 .code-resizer {

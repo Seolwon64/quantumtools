@@ -10,7 +10,10 @@ export function token(name) {
 }
 
 /**
- * CSS 변수 값을 px 숫자로 (예: tokenPx("--circuit-chrome") → 132).
+ * CSS 변수 값을 숫자로 (예: tokenPx("--circuit-chrome") → 132).
+ * 이름은 px 지만 parseFloat 라 **단위를 보지 않고 숫자 부분만** 읽는다 —
+ * "18fr" → 18 처럼 레이아웃 비율 토큰도 이 함수로 읽는다. 단위가 섞이지 않게
+ * 쓰는 쪽에서 무엇을 읽는지 알고 부른다.
  * 변수가 없으면 getPropertyValue 가 빈 문자열을 주고 parseFloat 가 NaN 이 된다.
  * 그 NaN 이 style 에 들어가면 브라우저가 무효 값으로 조용히 무시해 원인을 찾기 어렵다 —
  * 그래서 경고를 남기고 0 을 돌려준다. 0 이면 계산 결과가 눈에 띄게 작아져 증상이 보인다.

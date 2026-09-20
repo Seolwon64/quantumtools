@@ -48,7 +48,7 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 onStepPause, initial })` 가 회로 상태를 소유하고 콜백으로 알린다. `main.js` 가 그
 콜백에서 DOM 을 갱신한다.
 
-지속성은 `localStorage` 네 키 — `bloch-composer-v1`(회로), `bloch-layout-v3`(패널 크기),
+지속성은 `localStorage` 네 키 — `bloch-composer-v1`(회로), `bloch-layout-v4`(패널 크기),
 `bloch-code-panel-v1`, `bloch-prob-view-v1`. 전부 `try/catch` 로 감싸 저장 불가 환경에서도
 동작한다. 공유 URL 해시가 있으면 저장값보다 우선한다. 구버전 저장값은 `migrateCell` 로
 canonical 형태로 변환해 기존 링크를 깨뜨리지 않는다.
