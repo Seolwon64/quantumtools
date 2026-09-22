@@ -7,7 +7,7 @@ import { createCircuitController } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
 import { probDisplay, endianLabelText, fmt2, amplitudeParts, amplitudeShowsAsZero } from "./probmodel.js";
 import { reducedDensityInfo } from "./density.js";
-import { initResizableLayout } from "./layout.js";
+import { initResizableLayout, rowGeometry } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
 import { accentAlpha, tokenPx } from "./tokens.js";
@@ -111,6 +111,7 @@ const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
 const workspace = document.getElementById("workspace");
 const circuitPanel = document.querySelector(".panel-circuit");
+const circuitScroll = document.querySelector(".circuit-scroll");
 const clbitCountLabel = document.getElementById("clbit-count");
 const clbitMinusBtn = document.getElementById("clbit-minus");
 const clbitPlusBtn = document.getElementById("clbit-plus");
@@ -644,25 +645,36 @@ function render(snapshot) {
 
   playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} steps`;
 
-  // [4] 고전 와이어까지 들어가도록 회로 패널 최소 높이를 내용에 맞춘다.
-  // (패널 높이가 워크스페이스 비율 고정이라 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
-  // buildCircuitGrid가 위에서 이미 돌았으므로 그리드의 실제 높이를 그대로 쓴다
-  // (행 높이·gap을 JS에서 다시 계산하지 않는다 — 그게 어긋남의 원인이었다).
-  // 크롬 높이는 style.css 의 --circuit-chrome 에서 읽는다. 모듈 로드 시점에 캐시하지
-  // 않는다 — 스타일시트가 아직 적용되기 전일 수 있고, 재작성으로 값이 바뀔 수도 있다.
-  const needed = circuitGrid.scrollHeight + tokenPx("--circuit-chrome");
-  // 이 상한이 막는 것은 높이가 아니라 **되먹임 자체**다. minHeight 는 내용이 정해 상단
-  // 행을 밀어 올리는데, 그 바닥이 행 스플리터가 올릴 수 있는 최대(--row-max 75fr)에
-  // 가까워지면 사용자가 핸들을 아래로 끌어도 되먹임이 그대로 되밀어 **스플리터가 죽는다.**
-  // 그래서 값은 "회로가 다 보이는 높이"가 아니라 "스플리터가 살아 있는 높이"로 정한다.
-  //
-  // 0.58 은 1574×844 실측에서 고른 값이다(그리드 가용 744px, workspace.clientHeight 784):
-  //   · 하한 0.549 — 4큐비트 회로가 요구하는 430px. 이보다 낮으면 가장 흔한 경우가 잘린다
-  //   · 상한 0.618 — 6큐비트(MAX_QUBITS)에서 하단 행에 밀도행렬이 필요로 하는 259px 를 남기는 값
-  //   · 0.58(455px)은 그 구간 가운데라 양쪽에 여유(회로 25px · 밀도행렬 30px)가 남고,
-  //     6큐비트에서 스플리터 이동 폭이 1.6%p(사실상 죽음) → 13.8%p 로 넓어진다
-  const cap = Math.round((workspace.clientHeight || 0) * 0.58);
-  circuitPanel.style.minHeight = `${cap > 0 ? Math.min(needed, cap) : needed}px`;
+  applyCircuitMinHeight();
+}
+
+// [4] 고전 와이어까지 들어가도록 회로 패널 최소 높이를 내용에 맞춘다.
+// (패널 높이가 행 비율로만 정해지던 시절에는 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
+// buildCircuitGrid 가 이미 돌았으므로 그리드의 실제 높이를 그대로 쓴다 — 행 높이·gap 을
+// JS 에서 다시 계산하지 않는다(그게 어긋남의 원인이었다).
+//
+// **크롬도 실측한다.** 예전에는 --circuit-chrome(132px) 토큰이었는데, 그 값은 가로
+// 스크롤바가 없던 화면에서 잰 것이라 스크롤바가 생기는 좁은 화면에서 12px 를
+// 과소평가했다(1366×768 에서 세로 스크롤 31px 중 12px 이 이것이었다).
+// 패널 높이 − .circuit-scroll.clientHeight 로 재면 clientHeight 가 가로 스크롤바를
+// 제외하므로 스크롤바가 자동으로 크롬에 들어간다. .circuit-scroll 이 flex:1 이라
+// 패널이 커지면 스크롤 영역만 커진다 → 차분이 일정해 되먹임이 없다.
+// 측정은 minHeight 를 **쓰기 전에** 한다: scrollHeight 를 읽는 김에 같이 읽으면 레이아웃
+// 강제가 한 번으로 끝나고, 쓰기 뒤로 옮기면 두 번 돈다.
+function applyCircuitMinHeight({ retry = true } = {}) {
+  const gridHeight = circuitGrid.scrollHeight;
+  const chrome = circuitPanel.getBoundingClientRect().height - circuitScroll.clientHeight;
+  // 상한은 layout.js 가 재는 "확률이 읽히는 바닥을 떼고 남는 전부"다. 회로의 자동
+  // 되밀기와 사용자의 스플리터 드래그가 **같은 값**을 읽어야 한 쪽으로 뚫리지 않는다.
+  const geo = rowGeometry();
+  if (chrome <= 0 || !geo || geo.maxTopPx <= 0) {
+    // 첫 render 는 컨트롤러 생성 도중(레이아웃 전)에 불린다. render 는 회로가 바뀔 때만
+    // 도므로 여기서 포기하면 첫 편집 전까지 minHeight 가 아예 안 걸린다 → 다음 프레임에
+    // 딱 한 번 다시 잰다(재시도가 또 재시도를 예약하지 않게 retry:false 로).
+    if (retry) requestAnimationFrame(() => applyCircuitMinHeight({ retry: false }));
+    return;
+  }
+  circuitPanel.style.minHeight = `${Math.min(gridHeight + chrome, geo.maxTopPx)}px`;
 }
 
 // 재생 버튼 비활성 처리. 사유가 있을 때는 `disabled` 대신 aria-disabled를 쓴다 —

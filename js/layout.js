@@ -14,6 +14,28 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * 두 행의 기하를 px 로 잰다. { availablePx, maxTopPx } 또는 측정 불가면 null.
+ *
+ * **상단 행의 최대는 두 경로에서 지켜져야 한다** — 회로 내용이 자동으로 밀어 올리는 쪽
+ * (main.js 의 minHeight 상한)과 사용자가 스플리터를 끄는 쪽. 하나만 막으면 나머지로 뚫려
+ * 확률 차트가 부서진다. 그래서 공식을 여기 한 번만 쓰고 둘이 같이 읽는다.
+ *
+ * 확률 크롬(툴바·푸터·패딩)은 **측정한다.** 고정값으로 두면 좁은 화면에서 툴바가
+ * 줄바꿈할 때 어긋난다. .prob-chart 가 flex:1 이라 패널이 커지면 차트만 커지므로
+ * 차분이 일정하고 되먹임이 없다(.circuit-scroll 과 같은 구조).
+ */
+export function rowGeometry() {
+  const grid = document.getElementById("ws-grid");
+  const probPanel = document.querySelector(".panel-probability");
+  const probChart = document.querySelector(".prob-chart");
+  if (!grid || !probPanel || !probChart) return null;
+  const availablePx = grid.clientHeight - tokenPx("--space-3"); // 행 간격 트랙을 뺀 나머지
+  const probChrome = probPanel.getBoundingClientRect().height - probChart.clientHeight;
+  if (availablePx <= 0 || probChrome <= 0) return null; // 레이아웃 전 — 부르는 쪽이 재시도한다
+  return { availablePx, maxTopPx: availablePx - (probChrome + tokenPx("--prob-chart-min")) };
+}
+
 function loadStored() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -39,11 +61,20 @@ export function initResizableLayout() {
   const sphere = document.querySelector(".panel-sphere");
   const probability = document.querySelector(".panel-probability");
 
-  // 기본값도 한계도 style.css 가 정한다(§9 의 --circuit-chrome 과 같은 이유 — 정의처는 한 곳).
+  // 비율 기본값과 폭 한계는 style.css 가 정한다 — 정의처는 한 곳.
+  // (행의 **최대**만은 토큰이 아니라 아래 maxRowFr() 이 잰다. 아래 주석 참고.)
   // tokenPx 는 "18fr" 에서 숫자 18 만 읽는다.
   const colMin = tokenPx("--col-min");
   const rowMin = tokenPx("--row-min");
-  const rowMax = tokenPx("--row-max");
+
+  // 상단 행의 최대는 토큰이 아니라 **그때그때 잰다** — 창 크기가 바뀌면 값이 바뀌고,
+  // 비율(옛 --row-max: 75fr)로는 낮은 화면에서 하단이 확률 최소 아래로 내려갔다.
+  // 측정 불가면 제한 없음(100)으로 두어 드래그가 멈추지는 않게 한다.
+  function maxRowFr() {
+    const geo = rowGeometry();
+    if (!geo) return 100;
+    return Math.max(0, (geo.maxTopPx / geo.availablePx) * 100);
+  }
 
   const sizes = {
     edge1: tokenPx("--col-1"),
@@ -54,7 +85,9 @@ export function initResizableLayout() {
   if (stored) {
     sizes.edge1 = clamp(stored.edge1, colMin, 100 - 2 * colMin);
     sizes.edge2 = clamp(stored.edge2, sizes.edge1 + colMin, 100 - colMin);
-    sizes.row = clamp(stored.row, rowMin, rowMax);
+    // 저장값도 같은 클램프를 탄다 — 큰 화면에서 저장한 비율을 작은 화면에서 열면
+    // 확률이 최소 아래로 눌린 채 복원된다.
+    sizes.row = clamp(stored.row, rowMin, maxRowFr());
   }
 
   function apply() {
@@ -132,7 +165,10 @@ export function initResizableLayout() {
   });
 
   // 행 경계는 전 열 공용이다. 기준은 2열 — 1열은 코드 패널이 열리면 숨겨져 실측값이 0 이 된다.
+  // 최대는 드래그 시점에 다시 잰다(창 크기가 바뀌었을 수 있다). 화면이 아주 낮아 최대가
+  // 최소보다 작아지면 clamp 가 최대를 돌려주는데, 그게 맞다 — 확률이 읽히는 바닥이
+  // 상단 행의 최소보다 우선한다.
   bindSplitter("row-splitter", "row", (ev) => {
-    sizes.row = clamp(ratioY(ev, circuit, probability) * 100, rowMin, rowMax);
+    sizes.row = clamp(ratioY(ev, circuit, probability) * 100, rowMin, maxRowFr());
   });
 }

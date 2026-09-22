@@ -9,7 +9,7 @@ import {
   aggregateTrajectories,
 } from "./trajectory.js";
 import { computeVisibleProbabilities, sampleCounts } from "./quantum.js";
-import { pickLabelMode, niceTickStep } from "./chart.js";
+import { pickLabelMode, niceTickStep, LABEL_BOTTOM } from "./chart.js";
 import { probDisplay, barTooltipHTML } from "./probmodel.js";
 import { token } from "./tokens.js";
 
@@ -294,8 +294,10 @@ function buildProbChart(visible, view, sampled, W, H) {
   const plotW = W - M.left - M.right;
   const bandW = plotW / n;
   const labelChars = view.bits + 2; // "|" + bits + "⟩"
-  const mode = pickLabelMode(n, bandW, labelChars * 6.2);
-  const bottom = mode === "rot45" ? 46 : 24;
+  // 높이도 넘긴다 — 45° 라벨은 하단 46px 를 요구하는데, 낮은 화면에서 그걸 주면 플롯이
+  // 읽히지 않는다. chart.js 의 사다리가 그때 sparse 로 내려 라벨이 잘리지 않게 한다.
+  const mode = pickLabelMode(n, bandW, labelChars * 6.2, { chartHeight: H, topPx: M.top });
+  const bottom = LABEL_BOTTOM[mode];
   const plotH = H - M.top - bottom;
   const px0 = M.left;
   const px1 = W - M.right;
@@ -413,8 +415,8 @@ function buildProbTween(fromProbs, toProbs, qubitCount, W, H) {
   const bandW = plotW / n;
   const labelChars = qubitCount + 2;
   const labelPx = labelChars * 6.2;
-  const mode = pickLabelMode(n, bandW, labelPx);
-  const bottom = mode === "rot45" ? 46 : 24;
+  const mode = pickLabelMode(n, bandW, labelPx, { chartHeight: H, topPx: M.top });
+  const bottom = LABEL_BOTTOM[mode];
   const plotH = H - M.top - bottom;
   const px0 = M.left, px1 = W - M.right, py0 = M.top, py1 = M.top + plotH;
   const barW = Math.min(bandW - 2, 46);

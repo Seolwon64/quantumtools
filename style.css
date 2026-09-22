@@ -52,13 +52,20 @@
   --space-6: 32px;  /* 큰 분리 */
   --space-8: 48px;
   
-  /* 회로 그리드 밖 패널 크롬(헤더·패딩·푸터)의 총 높이.
-     main.js 의 패널 최소 높이 계산이 이 값을 읽는다 — 패널 구조를 바꾸면 여기도 고친다. */
-  --circuit-chrome: 132px;
+  /* 확률 **차트**가 읽히는 최소 높이. 패널이 아니라 차트(.prob-chart)의 높이다 —
+     툴바·푸터·패딩(크롬)은 좁은 화면에서 줄바꿈으로 달라지므로 layout.js 가 실측한다.
+       12(플롯 위 여백) + 60(플롯) + 24(X 라벨 하단, sparse 기준) = 96px
+     플롯 60px 은 Y 눈금 여섯(0/20/…/100)이 --text-xs 에서 겹치지 않는 하한이다.
+     45° 라벨은 하단 46px 를 요구하는데, 그 높이가 안 되면 chart.js 의 사다리가
+     sparse 로 내려 라벨을 자르지 않는다 — 그래서 이 값을 sparse 기준으로 잡을 수 있다.
+     **이 최소가 지키는 것은 축·눈금·라벨·푸터가 보이고 분포의 모양이 읽히는 것까지다.**
+     플롯 60px 에서 1%는 0.6px 라 1%대 차이는 눈으로 갈리지 않는다 — 정확한 값은
+     막대 툴팁(이론·관측·진폭·위상)이 맡는다. */
+  --prob-chart-min: 96px;
 
   /* 워크스페이스 3열 2행 타일링의 비율과 드래그 한계.
-     --circuit-chrome 과 같은 종류의 토큰이다: CSS 트랙이 쓰는 비율 다섯 개 말고
-     한계 세 개는 **CSS 에서 아무도 안 쓰고 layout.js 만 tokenPx() 로 읽는다.**
+     --prob-chart-min 과 같은 종류다: 비율 다섯 개는 CSS 트랙이 쓰지만 한계 둘은
+     **CSS 에서 아무도 안 쓰고 layout.js 만 tokenPx() 로 읽는다.**
      그래도 정의는 여기 한 곳이다 — JS 상수로 두면 정의처가 둘이 되어 조용히 어긋난다. */
   --col-1: 18fr;
   --col-2: 50fr;
@@ -79,7 +86,9 @@
      해결은 열마다 콘텐츠 기반 최소 폭을 두고 클램프가 그걸 읽는 것이다(미구현). */
   --col-min: 18fr;
   --row-min: 25fr;
-  --row-max: 75fr;
+  /* 상단 행의 **최대**는 토큰이 아니다. 비율(옛 --row-max: 75fr)로 두면 낮은 화면에서
+     하단 행이 확률 최소 아래로 내려간다 — layout.js 의 rowGeometry() 가
+     "두 행 높이 − (확률 크롬 실측 + --prob-chart-min)" 으로 그때그때 잰다. */
 
   /* 타입 스케일 — 이 값들만 쓴다(새 크기를 만들지 않는다) */
   --text-xs: 10px;   /* 카테고리 라벨 (대문자, 500) */
@@ -451,8 +460,8 @@ html, body {
     minmax(0, var(--col-1)) var(--gutter-1)
     minmax(0, var(--col-2)) var(--space-3)
     minmax(0, var(--col-3));
-  /* 상단 행만 minmax(0, ...) 이 아니다. main.js 가 회로 내용 높이를 panel-circuit 의
-     인라인 min-height 로 되먹이는데(→ --circuit-chrome), 그 값이 행을 밀어 올리려면
+  /* 상단 행만 minmax(0, ...) 이 아니다. main.js 가 회로 내용 높이(그리드 + 실측한 크롬)를
+     panel-circuit 의 인라인 min-height 로 되먹이는데, 그 값이 행을 밀어 올리려면
      상단 행의 **최소 크기가 auto** 여야 한다. 나머지 패널은 .panel { min-height: 0 } 이라
      내용이 제멋대로 행을 늘리지 못한다. */
   grid-template-rows: var(--row-top) var(--space-3) minmax(0, var(--row-bottom));
@@ -892,6 +901,12 @@ html, body {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  /* 세로 스크롤바 자리를 **항상** 비워 둔다. 양축이 auto 라, 비워 두지 않으면
+     세로 스크롤바 유무 → clientWidth → 가로 스크롤바 유무 → clientHeight 로 고리가 돌아
+     main.js 가 재는 패널 크롬이 129↔144 로 진동한다. 회로 폭은 스텝을 더할 때마다 늘어나
+     모든 사용자가 그 ±15px 구간을 지나간다. 대가(항상 비는 자리)보다 이득이 크다.
+     Windows 한정 문제다 — macOS 오버레이 스크롤바는 공간을 차지하지 않아 고리가 없다. */
+  scrollbar-gutter: stable;
 }
 
 /* [7] 패널 머리글 줄 = 제목 + 오른쪽 컨트롤 하나. 두 패널이 같은 규칙을 쓴다 —

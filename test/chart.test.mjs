@@ -1,7 +1,7 @@
 // 확률 차트 축/라벨 순수 로직 테스트. 실행: node --test test/*.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pickLabelMode, niceTickStep, phaseInfo } from "../js/chart.js";
+import { pickLabelMode, niceTickStep, phaseInfo, LABEL_BOTTOM } from "../js/chart.js";
 
 test("pickLabelMode: 상태 8개 이하 + 라벨 들어가면 가로", () => {
   assert.equal(pickLabelMode(4, 60, 24), "horizontal");
@@ -24,6 +24,44 @@ test("pickLabelMode: 17개 이상은 sparse", () => {
 
 test("pickLabelMode: 45도인데 밴드가 너무 좁으면(<11px) sparse로 강등", () => {
   assert.equal(pickLabelMode(12, 8, 24), "sparse");
+});
+
+test("pickLabelMode: 높이를 주지 않으면 판단이 달라지지 않는다 (기존 호출 하위 호환)", () => {
+  // 세 번째 인자까지만 넘기던 호출이 전부 살아 있어야 한다 — 높이 제약이 없는 것으로 본다.
+  assert.equal(pickLabelMode(12, 20, 24), "rot45");
+  assert.equal(pickLabelMode(12, 20, 24, {}), "rot45");
+});
+
+test("pickLabelMode: 높이가 넉넉하면 45도를 유지한다", () => {
+  // 하단 46 + 위 12 를 떼고도 플롯이 60px 이상 남는다.
+  assert.equal(pickLabelMode(12, 20, 24, { chartHeight: 200 }), "rot45");
+  assert.equal(pickLabelMode(12, 20, 24, { chartHeight: 118 }), "rot45");
+});
+
+test("pickLabelMode: 높이가 모자라면 45도 대신 sparse 로 내려가 라벨이 잘리지 않는다", () => {
+  // 96px 은 확률 패널 최소 높이의 근거값(=sparse 기준). 여기서 45도를 쓰면 플롯이 38px 만
+  // 남아 Y 눈금이 뭉개지고 45도 라벨이 잘린다.
+  assert.equal(pickLabelMode(12, 20, 24, { chartHeight: 96 }), "sparse");
+  assert.equal(pickLabelMode(16, 18, 24, { chartHeight: 80 }), "sparse");
+});
+
+test("pickLabelMode: 높이 강등 임계는 플롯 60px 미만일 때다 (117/118 에서 갈린다)", () => {
+  // chartHeight − top(12) − rot45 하단(46) < 60 이면 강등. 118 → 60 이라 유지, 117 → 59 라 강등.
+  assert.equal(pickLabelMode(12, 20, 24, { chartHeight: 118 }), "rot45");
+  assert.equal(pickLabelMode(12, 20, 24, { chartHeight: 117 }), "sparse");
+});
+
+test("pickLabelMode: 높이가 모자라도 가로(≤8개)는 강등하지 않는다", () => {
+  // 가로 라벨의 하단 요구는 24px 뿐이라 45도와 같은 문제가 없다.
+  assert.equal(pickLabelMode(4, 60, 24, { chartHeight: 96 }), "horizontal");
+});
+
+test("LABEL_BOTTOM: 45도만 하단을 더 쓰고 나머지는 같다", () => {
+  // probview 가 이 표를 읽는다 — 모드를 고른 곳과 대가를 치르는 곳이 어긋나면
+  // 라벨이 잘리거나 플롯이 공중에 뜬다.
+  assert.equal(LABEL_BOTTOM.rot45, 46);
+  assert.equal(LABEL_BOTTOM.horizontal, 24);
+  assert.equal(LABEL_BOTTOM.sparse, 24);
 });
 
 test("niceTickStep: 밴드폭에서 최소간격 확보하는 2의 거듭제곱 스텝", () => {
