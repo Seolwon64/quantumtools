@@ -68,7 +68,16 @@
   /* 1열↔2열 간격만 변수다. 코드 패널이 열리면 1열과 **그 오른쪽 간격까지** 접혀야 하는데,
      2열↔3열 간격은 어떤 상태에서도 접히지 않아 var(--space-3) 리터럴로 둔다. */
   --gutter-1: var(--space-3);
-  --col-min: 14fr;   /* 어느 열도 이보다 좁아지지 않는다 */
+  /* 어느 열도 이보다 좁아지지 않는다. 클램프는 곧 **지원 범위의 선언**이므로 이 값이
+     허용하는 모든 폭에서 내용이 잘려선 안 된다. 최악은 상태벡터의 기저 라벨이다 —
+     계수 칸들이 max-content 를 지키는 동안 기저 열만 0 까지 양보하기 때문이다.
+     1574px 뷰포트 실측(6큐비트·복소 계수 64항, |000000⟩ 기준):
+       14fr = 210px → 26px 잘림 / 16fr = 240px → 21.5px 잘림 / 18fr = 270px → 7.2px 여유
+     그래서 18fr 이다. 1fr 을 더 낮추면(17fr ≈ 255px) 다시 8px 모자란다.
+     **주의: 비율이라 뷰포트에 비례한다.** 콘텐츠 최소 폭은 글자 길이라 고정값인데 이 값은
+     아니어서, 좁은 화면에서는 같은 18fr 이 더 작은 px 이 되어 잘림이 돌아온다. 근본
+     해결은 열마다 콘텐츠 기반 최소 폭을 두고 클램프가 그걸 읽는 것이다(미구현). */
+  --col-min: 18fr;
   --row-min: 25fr;
   --row-max: 75fr;
 
@@ -216,7 +225,10 @@
    등폭이면 같은 글자 수에서 ~15% 넓어져 270px 칸에서 두 줄로 접혔다. */
 .dm-cell, .dm-rowlabel, .dm-collabel, .dm-corner, .dm-stat,     /* 축소 밀도행렬 */
 .mx-cell, .mx-rowlabel, .mx-collabel, .mx-corner,               /* 게이트 정보 유니터리 행렬 */
-.state-formula,                                                 /* 상태벡터 진폭 */
+/* .state-formula 전체가 아니라 셀만이다 — 그 안의 deferred-note·state-error 는 산문이라
+   등폭이면 넓어지고 읽기도 나쁘다(.dm-metrics 에서 같은 실수를 했다). */
+.formula-sign, .formula-re, .formula-imsign,                    /* 상태벡터 진폭 */
+.formula-im, .formula-i, .formula-ket,
 .endian-label,                                                  /* |q3 q2 q1 q0⟩ */
 .prob-xtick, .prob-axis-num, .prob-xlabel, .prob-hidden-note,   /* 확률 축·기저 라벨 */
 .prob-legend, .shots-input,                                     /* 샘플링 카운트(500/1024) */
@@ -886,7 +898,8 @@ html, body {
    제목이 "값까지 동일"해야 하므로 정의처를 둘로 두지 않는다.
    ([3] 게이트 정보는 Operations 패널에서 팔레트를 대신해 표시된다 — "Show info"로만 열림) */
 .palette-header,
-.dm-header {
+.dm-header,
+.state-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -896,7 +909,8 @@ html, body {
 }
 
 .palette-header .panel-title,
-.dm-header .panel-title { margin: 0; flex: 1; min-width: 0; }
+.dm-header .panel-title,
+.state-header .panel-title { margin: 0; flex: 1; min-width: 0; }
 .palette-header .hidden { display: none; }
 
 .gate-info {
@@ -977,22 +991,82 @@ html, body {
 }
 .mx-cell.mx-zero { color: var(--text-faint); }
 
-/* 상태벡터 수식. 예전에는 회로 패널 본문 안에서 max-width:38% 로 자리를 빌려 썼다 —
-   이제 자기 패널(3열 2행)을 가지므로 폭 제한 없이 칸을 채운다. */
+/* 상태벡터 수식 — 항을 세로로 쌓는 6열 그리드.
+   한 줄 수식(flex-wrap)이었을 때는 폭에 맞춰 아무 데서나 접혀 계수가 세로로 맞지 않았다.
+   계수를 **의미 단위로 쪼개 각자의 열**에 넣는 이유: 문자열 하나를 오른쪽 정렬하면
+   오른쪽 끝만 맞고 소수점은 어긋난다(i 접미사·부호·자릿수 때문). 열 안에서 자릿수가
+   고정(probmodel.js 의 fmt2)이라야 소수점이 맞는다.
+   빈 열은 트랙 폭이 0 이라 실수뿐인 회로는 사실상 3열로 보인다. */
 .state-formula {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  display: flex;
-  align-items: center;
-  align-content: center;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  /* 세로로만 스크롤한다. 가로 스크롤은 만들지 않는다 — 항이 한 줄에 다 들어가야 읽힌다. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  grid-template-columns: auto auto auto auto auto minmax(0, 1fr);
+  align-content: start; /* 위에서부터 쌓는다 (예전 center 는 회로 패널 안에 있던 시절의 잔재) */
+  align-items: baseline;
+  row-gap: var(--space-1);
+  column-gap: 0; /* 칸 사이 여백은 셀 패딩이 만든다 — i 를 앞 숫자에 붙이기 위해서다 */
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-md);
   font-weight: 600;
   color: var(--text-title);
   font-variant-numeric: tabular-nums;
+}
+
+/* 수식 한 줄을 통째로 차지하는 것들 */
+.formula-psi,
+.formula-endian,
+.formula-hidden-note,
+.formula-zero,
+.deferred-note,
+.deferred-note-text,
+.state-error {
+  grid-column: 1 / -1;
+}
+
+.formula-sign {
+  min-width: 1em;
+  padding-right: var(--space-1);
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* 소수점 정렬의 핵심 — 자릿수 고정(fmt2) + 오른쪽 정렬 + 등폭, 셋이 다 있어야 맞는다 */
+.formula-re,
+.formula-im {
+  text-align: right;
+  color: var(--primary);
+}
+
+.formula-imsign {
+  padding: 0 var(--space-1);
+  color: var(--text-faint);
+}
+
+/* 실수뿐인 회로에서는 허수 칸이 전부 비는데, 빈 셀이라도 패딩은 트랙 폭을 만든다 —
+   그만큼 기저 라벨 열이 좁아지므로 비었으면 패딩도 없앤다. */
+.formula-imsign:empty {
+  padding: 0;
+}
+
+/* i 는 앞 숫자에 붙인다 — 0.71 i 가 아니라 0.71i 로 읽혀야 한다 */
+.formula-i {
+  color: var(--primary);
+}
+
+.formula-ket {
+  padding-left: var(--space-2);
+}
+
+/* 숨긴 항 개수. 데이터가 아니라 메타 정보라 한 단계 뒤로 물린다. */
+.formula-hidden-note {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-faint);
 }
 
 .formula-psi {
@@ -1001,7 +1075,6 @@ html, body {
 
 /* [5] 지연 측정 안내 — 측정이 있는 회로에서는 반드시 보인다 */
 .deferred-note {
-  flex-basis: 100%;
   margin-top: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 700;
@@ -1012,7 +1085,6 @@ html, body {
   color: var(--primary);
 }
 .deferred-note-text {
-  flex-basis: 100%;
   font-size: var(--text-xs);
   font-weight: 500;
   line-height: 1.5;
@@ -1021,7 +1093,6 @@ html, body {
 
 /* 지연 측정으로 표현할 수 없는 회로 — 숫자 대신 이유를 크게 보여준다 */
 .state-error {
-  flex-basis: 100%;
   padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-3);
   background: var(--danger-bg);
@@ -1031,13 +1102,6 @@ html, body {
   line-height: 1.55;
 }
 
-.formula-coef {
-  color: var(--primary);
-}
-
-.formula-sep {
-  color: var(--text-faint);
-}
 
 /* 재생 컨트롤을 사유와 함께 막아둔 상태(aria-disabled). disabled 속성을 쓰면 사유 툴팁이 안 뜬다.
    흐림·커서는 아래 공통 disabled 규격이 담당하고, 여기서는 포인터 수신만 보장한다. */
@@ -1528,8 +1592,10 @@ html, body {
   color: var(--gray-1);
 }
 
-/* "Hide 0%" 토글 — 툴바의 작은 체크박스 라벨 */
-.prob-hide-toggle {
+/* "Hide 0%"(확률) · "Hide 0.00"(상태벡터) 토글 — 툴바·머리글의 작은 체크박스 라벨.
+   기준은 서로 다르지만 생김새는 같은 컨트롤이라 규칙을 복제하지 않는다. */
+.prob-hide-toggle,
+.state-hide-toggle {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -1543,7 +1609,8 @@ html, body {
 .prob-hide-toggle.hidden {
   display: none;
 }
-.prob-hide-toggle input {
+.prob-hide-toggle input,
+.state-hide-toggle input {
   margin: 0;
   cursor: pointer;
   accent-color: var(--primary);
@@ -2354,7 +2421,8 @@ html, body {
 .menu-btn, .github-link, .icon-btn, .tool-icon-btn, .stepper-btn,
 .round-btn, .pill-btn-primary, .segmented-btn, .prob-run-btn, .prob-reset-btn,
 .prob-showall-btn, .qubit-tab, .export-menu-item, .preset-item, .gate-menu-item,
-.qpick-btn, .view-reset-btn, .gate-chip, .placed-gate, .ctrl-dot, .prob-hide-toggle {
+.qpick-btn, .view-reset-btn, .gate-chip, .placed-gate, .ctrl-dot, .prob-hide-toggle,
+.state-hide-toggle {
   cursor: pointer;
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
@@ -2437,7 +2505,7 @@ html, body {
 .code-tab:focus-visible,
 .menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
-.shots-input:focus-visible, .prob-hide-toggle:focus-within,
+.shots-input:focus-visible, .prob-hide-toggle:focus-within, .state-hide-toggle:focus-within,
 .dm-qubit-select:focus-visible {
   outline: 2px solid var(--accent-9);
   outline-offset: 2px;

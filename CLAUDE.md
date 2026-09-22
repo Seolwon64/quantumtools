@@ -24,7 +24,7 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 | `popover.js` | 배치·제어·조건·측정비트·파라미터 팝오버 |
 | `playback.js` | 스텝 전환 애니메이션과 재생 타이밍 |
 | `probview.js` | 확률 패널 렌더링과 샘플링 집계 |
-| `probmodel.js` | 확률 표시 모델 — 무엇의 분포를 보여줄지 결정. DOM 무관 |
+| `probmodel.js` | 확률 표시 모델 — 무엇의 분포를 보여줄지 결정. 진폭·계수 표시 형식(자릿수·부호·조각 분해)도 여기. DOM 무관 |
 | `circuit.js` | 그리드 회로 컨트롤러 — 상태 계산, 스텝 재생, localStorage 지속성 |
 | `quantum.js` | n큐비트 상태벡터 엔진. 게이트 적용, Bloch 벡터, `GATE_INFO` |
 | `gatematrix.js` | 배치된 셀 하나의 유니터리 행렬 (읽기 전용, 시뮬레이션 경로와 분리) |

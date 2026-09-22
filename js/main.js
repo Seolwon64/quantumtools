@@ -5,7 +5,7 @@ import { initMenu } from "./menu.js";
 import { initCodePanel } from "./codepanel.js";
 import { createCircuitController } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
-import { probDisplay, endianLabelText } from "./probmodel.js";
+import { probDisplay, endianLabelText, fmt2, amplitudeParts, amplitudeShowsAsZero } from "./probmodel.js";
 import { reducedDensityInfo } from "./density.js";
 import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
@@ -105,6 +105,7 @@ const circuitGrid = document.getElementById("circuit-grid");
 const qubitTabs = document.getElementById("qubit-tabs");
 const probList = document.getElementById("prob-list");
 const stateFormula = document.getElementById("state-formula");
+const stateHideZeros = document.getElementById("state-hide-zeros");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
@@ -245,6 +246,16 @@ probHideZeros.addEventListener("change", () => {
   renderProbabilities(circuit.getSnapshot());
 });
 
+// 상태벡터의 "Hide 0.00" 은 확률 패널 토글과 **묶지 않는다.** 확률 패널은 모드에 따라
+// 고전 레지스터나 1024회 평균을 거르는데 상태벡터는 큐비트 기저의 계수를 거른다 —
+// 같은 체크박스가 모드마다 다른 것을 숨기게 된다. 기준도 다르다(계수 표시 정밀도 vs 확률).
+// render 가 컨트롤러 생성 도중에 이미 돌므로 이 값은 그 전에 초기화돼 있어야 한다.
+let hideZeroAmp = true;
+stateHideZeros.addEventListener("change", () => {
+  hideZeroAmp = stateHideZeros.checked;
+  renderStateFormula(circuit.getSnapshot());
+});
+
 
 // ---------- 팔레트 ----------
 
@@ -372,16 +383,8 @@ function buildQubitTabs(snapshot) {
 
 // ---------- 축소 밀도행렬 뷰 (1열 하단) ----------
 // 2자리로 쓰는 이유: 이 칸은 폭이 270px 뿐이라 "0.000 + 0.500i"(14자)가 들어가지 않는다.
-// 임계값 5e-4 는 **수치 오차 뭉개기**다(gatematrix.js 의 EPS 와 같은 값·같은 뜻) —
-// 자릿수에 맞춰 키우지 않는다. 키우면 0.003 같은 실제 값이 0 으로 바뀌어 사라진다.
-// −0.00 은 임계값이 아니라 **반올림 뒤** -0 정규화로 막는다: 3자리에서는 5e-4 가 곧 반올림
-// 경계라 앞에서 걸러졌지만, 2자리에서는 경계(5e-3)가 임계값보다 커서 -0.002 가 필터를
-// 통과한 뒤 "-0.00" 이 된다.
-const fmt2 = (v) => {
-  const squashed = Math.abs(v) < 5e-4 ? 0 : v;
-  const rounded = Number(squashed.toFixed(2));
-  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(2);
-};
+// 포매터(fmt2)는 probmodel.js 에 있고 상태벡터와 공유한다 — 두 패널의 숫자 모양이
+// 갈라지지 않게 정의처를 하나로 둔다.
 const fmtComplexCell = (z) => `${fmt2(z.re)}${z.im >= 0 ? "+" : "−"}${fmt2(Math.abs(z.im))}i`;
 
 /** 큐비트 드롭다운을 스냅샷에 맞춘다. 선택은 전역(Bloch sphere와 공유). */
@@ -455,23 +458,6 @@ function renderDensityMatrix(snapshot) {
       : "");
 }
 
-// 진폭 계수를 표시 문자열로 변환. 음수 실계수의 부호는 항 연결부호로 흡수.
-function formatAmplitude(re, im) {
-  const EPS = 0.005;
-  const fmt = (v) => {
-    const rounded = Math.abs(v).toFixed(2).replace(/\.?0+$/, "") || "0";
-    return rounded === "1" ? "" : rounded;
-  };
-  if (Math.abs(im) < EPS) {
-    return { text: fmt(re), negative: re < 0 };
-  }
-  if (Math.abs(re) < EPS) {
-    return { text: `${fmt(im)}i`, negative: im < 0 };
-  }
-  const sign = im < 0 ? "−" : "+";
-  return { text: `(${re.toFixed(2)}${sign}${Math.abs(im).toFixed(2)}i)`, negative: false };
-}
-
 function renderStateFormula(snapshot) {
   stateFormula.innerHTML = "";
   // 지연 측정으로 표현할 수 없는 회로: 숫자 대신 이유만 보여준다(조용히 틀린 결과 금지).
@@ -493,30 +479,34 @@ function renderStateFormula(snapshot) {
   prefix.textContent = "|ψ⟩ =";
   stateFormula.appendChild(prefix);
 
-  const terms = snapshot.probabilities.filter((e) => e.probability > 0.5);
-  terms.forEach((entry, i) => {
-    const { text, negative } = formatAmplitude(entry.re, entry.im);
-    const sep = document.createElement("span");
-    sep.className = "formula-sep";
-    sep.textContent = i === 0 ? (negative ? "−" : "") : negative ? "−" : "+";
-    if (sep.textContent) stateFormula.appendChild(sep);
+  // 숨김 기준은 확률이 아니라 **계수**다. 예전엔 probability > 0.5(%) 로 걸렀는데,
+  // 진폭 0.06 은 확률 0.36% 라 사라지면서도 계수로는 명백히 0 이 아니었다.
+  // 한 줄 수식을 짧게 두려고 둔 값이었고, 세로 스택 + 스크롤이 되면서 그 이유가 없어졌다.
+  const all = snapshot.probabilities;
+  const terms = hideZeroAmp ? all.filter((e) => !amplitudeShowsAsZero(e.re, e.im)) : all;
 
-    const term = document.createElement("span");
-    term.className = "formula-term";
-    if (text) {
-      const coef = document.createElement("span");
-      coef.className = "formula-coef";
-      coef.textContent = text;
-      term.appendChild(coef);
-    }
-    const ket = document.createElement("span");
-    ket.textContent = `|${entry.label}⟩`;
-    term.appendChild(ket);
-    stateFormula.appendChild(term);
+  // 한 항이 여섯 칸(부호·실수부·허수부호·허수부·i·기저)을 차지한다. 빈 조각도 **빈 칸을
+  // 반드시 넣는다** — 행마다 셀 수가 달라지면 그리드 열이 밀려 소수점 정렬이 무너진다.
+  const cell = (cls, text) => {
+    const el = document.createElement("span");
+    el.className = cls;
+    el.textContent = text;
+    stateFormula.appendChild(el);
+  };
+  terms.forEach((entry, i) => {
+    const p = amplitudeParts(entry.re, entry.im);
+    // 첫 항은 양수면 부호를 비운다(수학 관례). 둘째부터는 항 연결부호로 +를 쓴다.
+    cell("formula-sign", i === 0 ? p.sign : p.sign || "+");
+    cell("formula-re", p.re);
+    cell("formula-imsign", p.imSign);
+    cell("formula-im", p.im);
+    cell("formula-i", p.hasI ? "i" : "");
+    cell("formula-ket", `|${entry.label}⟩`);
   });
 
   if (terms.length === 0) {
-    const zero = document.createElement("span");
+    const zero = document.createElement("div");
+    zero.className = "formula-zero";
     zero.textContent = "0";
     stateFormula.appendChild(zero);
   }
@@ -528,6 +518,15 @@ function renderStateFormula(snapshot) {
   endian.addEventListener("mouseenter", () => showTooltip(endian, ENDIAN_TOOLTIP));
   endian.addEventListener("mouseleave", hideTooltip);
   stateFormula.appendChild(endian);
+
+  // 몇 개를 감췄는지 밝힌다 — 숨긴 사실을 말하지 않으면 "항이 왜 안 보이지"에서 멈춘다.
+  const hiddenCount = all.length - terms.length;
+  if (hiddenCount > 0) {
+    const note = document.createElement("div");
+    note.className = "formula-hidden-note";
+    note.textContent = `${hiddenCount} terms hidden (0.00)`;
+    stateFormula.appendChild(note);
+  }
 
   // 궤적으로 계산 중이면 화면의 상태는 **여러 결과 중 하나**다. 실행마다 달라진다는 걸
   // 밝혀야 사용자가 "왜 아까와 다르지?"에서 멈추지 않는다. 옛 `Deferred measurement`

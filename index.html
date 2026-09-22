@@ -201,7 +201,15 @@
       </section>
 
       <section class="panel panel-state">
-        <h2 class="panel-title">State vector</h2>
+        <!-- 확률 패널의 "Hide 0%" 와 기준이 다르다 — 여기는 확률이 아니라 **계수**가
+             0.00 으로 찍히는 항만 숨긴다. 라벨이 그 기준을 그대로 말한다. -->
+        <div class="state-header">
+          <h2 class="panel-title">State vector</h2>
+          <label class="state-hide-toggle" id="state-hide-toggle" title="Hide terms whose coefficient rounds to 0.00">
+            <input type="checkbox" id="state-hide-zeros" checked>
+            <span>Hide 0.00</span>
+          </label>
+        </div>
         <div class="state-formula" id="state-formula"></div>
       </section>
 
