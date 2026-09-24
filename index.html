@@ -125,7 +125,10 @@
 
       <section class="panel panel-sphere">
         <div class="sphere-toolbar">
-          <div class="qubit-tabs" id="qubit-tabs"></div>
+          <!-- 큐비트 선택은 밀도행렬과 **같은 규격의 드롭다운**이다. 탭(q[0]…q[5])은 6개면 폭이
+               약 350px 라 3열 최소를 올렸다. 두 드롭다운은 같은 전역 선택값에 묶여 있어 한쪽을
+               바꾸면 다른 쪽도 따라간다 — aria-label 만 어느 패널의 선택인지 다르게 말한다. -->
+          <select class="qubit-select" id="sphere-qubit-select" aria-label="Qubit shown on the Bloch sphere"></select>
           <span class="sphere-mode-title hidden" id="sphere-mode-title">Q-sphere</span>
           <button class="view-reset-btn" id="reset-view-btn" title="Reset view" aria-label="Reset 3D view"><span data-icon="rotate-ccw"></span></button>
         </div>
@@ -164,7 +167,7 @@
              전역 상태(circuit.selectQubit)라 여기서 바꾸면 구도 같이 바뀐다. -->
         <div class="dm-header">
           <h2 class="panel-title">Reduced ρ</h2>
-          <select class="dm-qubit-select" id="dm-qubit-select" aria-label="Qubit shown in the reduced density matrix"></select>
+          <select class="qubit-select" id="dm-qubit-select" aria-label="Qubit shown in the reduced density matrix"></select>
         </div>
         <div class="dm-view">
           <div class="dm-matrix" id="dm-matrix"></div>

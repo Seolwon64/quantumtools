@@ -149,7 +149,9 @@ function makeWideLabelSprite(text, worldWidth = 0.6) {
 
 export function createBlochScene(container) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+  // 가로형 캔버스의 세로 시야각. 세로형이면 resize() 가 이 값을 기준으로 넓힌다.
+  const BASE_FOV = 42;
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
@@ -359,6 +361,12 @@ export function createBlochScene(container) {
     const height = container.clientHeight;
     if (width === 0 || height === 0) return;
     camera.aspect = width / height;
+    // 세로형(가로 < 세로)이면 **세로 시야각을 넓혀 가로 시야를 고정**한다. PerspectiveCamera 의
+    // fov 는 세로 기준이라, 그대로 두면 구가 높이에 맞춰 커지고 좁은 캔버스에서 좌우가 잘렸다
+    // (3열 264px 에서 실제로 잘림). 보정하면 구가 min(폭, 높이) 에 맞는다 — 가로형은 그대로.
+    camera.fov = camera.aspect >= 1
+      ? BASE_FOV
+      : (2 * Math.atan(Math.tan((BASE_FOV * Math.PI) / 360) / camera.aspect) * 180) / Math.PI;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
   }

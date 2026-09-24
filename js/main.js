@@ -102,7 +102,7 @@ const scene = createBlochScene(sphereContainer);
 
 const gatePalette = document.getElementById("gate-palette");
 const circuitGrid = document.getElementById("circuit-grid");
-const qubitTabs = document.getElementById("qubit-tabs");
+const sphereQubitSelect = document.getElementById("sphere-qubit-select");
 const probList = document.getElementById("prob-list");
 const stateFormula = document.getElementById("state-formula");
 const stateHideZeros = document.getElementById("state-hide-zeros");
@@ -218,12 +218,30 @@ function applySphereModeUI(snapshot) {
   for (const b of viewToggle.querySelectorAll(".segmented-btn")) {
     b.classList.toggle("active", b.dataset.view === sphereMode);
   }
-  qubitTabs.classList.toggle("hidden", isQSphere);
+  sphereQubitSelect.classList.toggle("hidden", isQSphere);
   sphereModeTitle.classList.toggle("hidden", !isQSphere);
   qsphereLegend.classList.toggle("hidden", !isQSphere);
   blochInfo.classList.toggle("hidden", isQSphere);
   updateBlochInfo(snapshot);
 }
+
+// 구 패널 하단 줄(토글 + 정보)은 캔버스 위에 **겹쳐** 떠 있다. 한 줄일 때는 가운데가 비어 있어
+// 남극 |1⟩ 라벨이 토글과 정보 블록 사이로 보인다. 그런데 3열이 좁아 하단 줄이 두 줄로 접히면
+// 위로 올라간 정보 블록이 가운데까지 차지해 **남극 라벨과 상태 벡터 끝을 덮었다**(3열 264px 실측).
+// 그래서 접혔을 때만 하단 줄 높이만큼 캔버스를 줄여 겹침을 없앤다 — 구는 가려지는 대신 작아진다.
+// 한 줄일 때는 0 이라 기본 폭의 모습은 그대로다. 하단 줄은 absolute 라 캔버스 높이가 하단 줄에
+// 영향을 주지 않아 고리가 없다. 쓰기는 한 프레임 미룬다 — 같은 프레임에 형제(캔버스 컨테이너)
+// 크기를 바꾸면 ResizeObserver loop 경고가 난다.
+const sphereFooter = document.querySelector(".sphere-footer");
+const sphereFooterRight = document.querySelector(".sphere-footer-right");
+new ResizeObserver(() => {
+  requestAnimationFrame(() => {
+    const wrapped = Math.abs(viewToggle.getBoundingClientRect().top - sphereFooterRight.getBoundingClientRect().top) > 4;
+    const panelBottom = sphereContainer.parentElement.getBoundingClientRect().bottom;
+    const reserve = wrapped ? panelBottom - sphereFooter.getBoundingClientRect().top : 0;
+    sphereContainer.style.marginBottom = `${Math.max(0, reserve)}px`;
+  });
+}).observe(sphereFooter);
 
 // Purity = (1+|r|²)/2, Local mixedness = 1−|r|. |r|≈0이면 완전혼합 캡션.
 // "얽힘"이 아니라 "mixedness"로 표기 — 다체계에서 |r|<1의 원인이 얽힘만은 아니다.
@@ -366,20 +384,25 @@ function updatePaletteAvailability(qubitCount) {
   }
 }
 
-// ---------- 큐비트 탭 / 확률 / 수식 ----------
+// ---------- 큐비트 선택 / 확률 / 수식 ----------
 
-function buildQubitTabs(snapshot) {
-  qubitTabs.innerHTML = "";
-  for (let q = 0; q < snapshot.qubitCount; q++) {
-    const tab = document.createElement("button");
-    tab.className = "qubit-tab" + (q === snapshot.selectedQubit ? " active" : "");
-    tab.textContent = `q[${q}]`;
-    tab.addEventListener("click", () => {
-      scene.clearTrail();
-      circuit.selectQubit(q);
-    });
-    qubitTabs.appendChild(tab);
+/**
+ * 큐비트 드롭다운 하나를 스냅샷에 맞춘다. 구 패널과 밀도행렬이 **같은 함수**를 쓴다 —
+ * 선택값은 전역(circuit.selectQubit) 하나라, 한쪽에서 바꾸면 render 가 돌며 둘 다 따라간다.
+ */
+function syncQubitSelect(select, snapshot) {
+  // 개수가 같으면 다시 만들지 않는다 — render 마다 option 을 새로 그리면 사용자가 열어 둔
+  // 드롭다운이 닫히고 포커스가 날아간다(재생 중에는 render 가 스텝마다 돈다).
+  if (select.options.length !== snapshot.qubitCount) {
+    select.innerHTML = "";
+    for (let q = 0; q < snapshot.qubitCount; q++) {
+      const opt = document.createElement("option");
+      opt.value = String(q);
+      opt.textContent = `q[${q}]`;
+      select.appendChild(opt);
+    }
   }
+  select.value = String(snapshot.selectedQubit);
 }
 
 // ---------- 축소 밀도행렬 뷰 (1열 하단) ----------
@@ -388,25 +411,9 @@ function buildQubitTabs(snapshot) {
 // 갈라지지 않게 정의처를 하나로 둔다.
 const fmtComplexCell = (z) => `${fmt2(z.re)}${z.im >= 0 ? "+" : "−"}${fmt2(Math.abs(z.im))}i`;
 
-/** 큐비트 드롭다운을 스냅샷에 맞춘다. 선택은 전역(Bloch sphere와 공유). */
-function syncDmQubitSelect(snapshot) {
-  // 개수가 같으면 다시 만들지 않는다 — render 마다 option 을 새로 그리면 사용자가 열어 둔
-  // 드롭다운이 닫히고 포커스가 날아간다(재생 중에는 render 가 스텝마다 돈다).
-  if (dmQubitSelect.options.length !== snapshot.qubitCount) {
-    dmQubitSelect.innerHTML = "";
-    for (let q = 0; q < snapshot.qubitCount; q++) {
-      const opt = document.createElement("option");
-      opt.value = String(q);
-      opt.textContent = `q[${q}]`;
-      dmQubitSelect.appendChild(opt);
-    }
-  }
-  dmQubitSelect.value = String(snapshot.selectedQubit);
-}
-
 // 선택 큐비트의 2×2 축소 밀도행렬 + Purity/Mixedness/Bloch. density.js를 재사용(전체 행렬 안 만듦).
 function renderDensityMatrix(snapshot) {
-  syncDmQubitSelect(snapshot);
+  syncQubitSelect(dmQubitSelect, snapshot);
   const info = reducedDensityInfo(snapshot.state, snapshot.selectedQubit);
   const rho = info.rho;
   const mag = (z) => Math.hypot(z.re, z.im);
@@ -589,7 +596,7 @@ function render(snapshot) {
   updatePaletteAvailability(snapshot.qubitCount);
 
   buildCircuitGrid(snapshot);
-  buildQubitTabs(snapshot);
+  syncQubitSelect(sphereQubitSelect, snapshot);
   renderProbabilities(snapshot);
   renderDensityMatrix(snapshot);
   renderStateFormula(snapshot);
@@ -792,12 +799,15 @@ new ResizeObserver(() => {
   renderProbabilities(circuit.getSnapshot());
 }).observe(probList);
 
-// 밀도행렬 큐비트 드롭다운. 리스너는 render 안이 아니라 여기서 **한 번만** 건다 —
-// syncDmQubitSelect 는 option 을 다시 만들 뿐이라 리스너를 매번 붙이면 중복으로 쌓인다.
-dmQubitSelect.addEventListener("change", () => {
-  scene.clearTrail();
-  circuit.selectQubit(Number(dmQubitSelect.value));
-});
+// 큐비트 드롭다운 둘(구 패널·밀도행렬). 리스너는 render 안이 아니라 여기서 **한 번만** 건다 —
+// syncQubitSelect 는 option 을 다시 만들 뿐이라 리스너를 매번 붙이면 중복으로 쌓인다.
+// 둘 다 같은 전역 값을 바꾸고, 그 결과 render 가 두 드롭다운을 함께 맞춘다.
+for (const select of [sphereQubitSelect, dmQubitSelect]) {
+  select.addEventListener("change", () => {
+    scene.clearTrail();
+    circuit.selectQubit(Number(select.value));
+  });
+}
 
 qubitMinusBtn.addEventListener("click", () => {
   scene.clearTrail();
