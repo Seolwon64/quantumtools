@@ -100,14 +100,21 @@
             <span class="qubit-count" id="clbit-count">4</span>
             <button class="stepper-btn" id="clbit-plus" title="Add classical bit">+</button>
           </div>
-          <button class="icon-btn tool-icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><span data-icon="undo-2"></span></button>
-          <button class="icon-btn tool-icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><span data-icon="redo-2"></span></button>
-          <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
+          <!-- 툴바가 줄바꿈할 때 **한 덩어리로 넘어가야 하는** 묶음. 감싸지 않으면 아이콘 셋이
+               줄 끝과 다음 줄 첫머리로 갈라졌다(2열 약 360·240px 에서 실측). -->
+          <div class="toolbar-group">
+            <button class="icon-btn tool-icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo"><span data-icon="undo-2"></span></button>
+            <button class="icon-btn tool-icon-btn" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><span data-icon="redo-2"></span></button>
+            <button class="icon-btn tool-icon-btn" id="share-btn" title="Copy share link" aria-label="Copy share link"><span data-icon="link"></span></button>
+          </div>
           <button class="icon-btn" id="presets-btn" title="Load an example circuit" aria-label="Examples — load an example circuit" aria-haspopup="true" aria-expanded="false">Examples<span data-icon="chevron-down"></span></button>
           <button class="icon-btn" id="clear-btn" title="Clear all">Clear all</button>
-          <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정). -->
-          <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
-          <span class="traj-badge hidden" id="traj-badge">One trajectory<button class="icon-btn tool-icon-btn" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button></span>
+          <!-- Inspect: 측정을 실제로 수행해 상태를 붕괴시키는 궤적 실행. 기본은 꺼짐(지연 측정).
+               궤적 배지와 한 묶음이다 — 배지가 혼자 다음 줄로 가면 무엇에 대한 표시인지 끊긴다. -->
+          <div class="toolbar-group">
+            <button class="icon-btn inspect-toggle" id="inspect-btn" aria-pressed="false" title="Simulate one random trajectory with real measurement collapse">Inspect</button>
+            <span class="traj-badge hidden" id="traj-badge">One trajectory<button class="icon-btn tool-icon-btn" id="resample-btn" title="Resample — draw a different trajectory" aria-label="Resample trajectory"><span data-icon="dice"></span></button></span>
+          </div>
         </div>
         <div class="circuit-body">
           <div class="circuit-scroll">
@@ -218,7 +225,7 @@
 
       <div class="col-splitter" id="col-splitter-1"></div>
       <div class="col-splitter" id="col-splitter-2"></div>
-      <div class="row-splitter" id="row-splitter"></div>
+      <div class="row-splitter" id="row-splitter" title="Drag to resize · double-click to reset"></div>
       </div>
     </div>
   </div>

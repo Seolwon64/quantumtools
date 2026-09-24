@@ -62,33 +62,66 @@
      플롯 60px 에서 1%는 0.6px 라 1%대 차이는 눈으로 갈리지 않는다 — 정확한 값은
      막대 툴팁(이론·관측·진폭·위상)이 맡는다. */
   --prob-chart-min: 96px;
+  /* 확률 차트가 **더 커져도 판독이 나아지지 않는** 높이. 공간이 남을 때 확률은 여기까지만
+     받고, 나머지는 다음 순위(Q-sphere)로 넘어간다. 차트 높이별 실측(4큐비트 16상태 / 6큐비트):
+       96 → 1%당 0.60px · 150 → 0.92/1.14 · 200 → 1.42/1.64 · 260 → 2.02/2.24 · 340 → 2.82/3.04
+     260 에서 처음으로 **막대 1% 차이가 2px 이상**이 되어 눈으로 갈리고, Y 눈금 간격도
+     40~45px 로 눈금 사이를 읽기 충분하다. 340 은 같은 판독에 80px 을 더 쓸 뿐이다. */
+  --prob-chart-max: 260px;
+  /* 회로 패널의 **최소 쓸모** — 큐비트 한 줄이 보이는 높이의 콘텐츠 몫이다.
+       그리드 위아래 여백 4 + 12 + 큐비트 한 줄 50 = 66px
+     툴바·재생 컨트롤(크롬)은 줄바꿈으로 높이가 변해 layout.js 가 실측하고 이 값을 더한다 —
+     --prob-chart-min 과 같은 구조다. 크롬까지 상수로 박으면(옛 132px) 좁은 화면에서 어긋난다.
+     사용자가 행 스플리터로 상단을 줄일 수 있는 하한이다. */
+  --circuit-min-content: 66px;
 
-  /* 워크스페이스 3열 2행 타일링의 비율과 드래그 한계.
-     --prob-chart-min 과 같은 종류다: 비율 다섯 개는 CSS 트랙이 쓰지만 한계 둘은
-     **CSS 에서 아무도 안 쓰고 layout.js 만 tokenPx() 로 읽는다.**
-     그래도 정의는 여기 한 곳이다 — JS 상수로 두면 정의처가 둘이 되어 조용히 어긋난다. */
-  --col-1: 18fr;
-  --col-2: 50fr;
-  --col-3: 32fr;
-  --row-top: 58fr;
-  --row-bottom: 42fr;
+  /* 워크스페이스 3열 2행 타일링의 열 폭.
+     **1·3열은 콘텐츠 기준 [최소, 최대] 안에서 비율을 따르고, 2열(회로·확률 — 1·2순위)은
+     나머지를 전부 받는다.** 비율만으로 나누면 큰 화면에서 1·3열이 콘텐츠와 무관하게
+     넓어지고(3840 에서 3열 약 1200px), 좁은 화면에서는 비율 최소(옛 --col-min: 18fr)가
+     px 로 줄어 1280 에서 217px 까지 떨어져 상태벡터가 잘렸다.
+     최소·최대는 CSS 트랙과 layout.js 의 드래그 클램프가 **같이** 읽는다 — 드래그 쪽만
+     비율로 자르면 CSS 가 멈춘 너머에 핸들이 안 움직이는 죽은 구간이 생긴다.
+     폭은 텍스트 Range 기준 실측(rect 소수)이다.
+
+     1열 최소 192 — 밀도행렬 칸 `0.35−0.35i` 가 잘리지 않는 폭. 팔레트 칩은 줄바꿈한다.
+     1열 최대 537 — 두 후보 중 큰 쪽: 팔레트 "Pauli & Clifford" 9개가 한 줄 458 /
+       게이트 정보 8×8 행렬(CCX·CSWAP, 자연 폭 480 + 크롬 42) 537. 행렬이 가로 스크롤 없이
+       다 보이는 선이 더 넓은 쪽이라 그걸 잡는다.
+     2열 최소 257 — 두 툴바가 항목 단위로 줄바꿈한 뒤 **가장 넓은 한 묶음** + 패널 여백·테두리 34.
+       그 묶음은 궤적 회로의 샘플링 줄(샷 입력 + "Resample statistics") 222.5 다. 일반 회로의
+       샷·Run·Reset 은 190, 재생 줄은 상태 글자("12 / 12 steps")가 접히며 238 까지 버틴다.
+       222.5 + 34 = 256.5 → 257. 늘어난 툴바 높이는 layout.js 가 크롬으로 잰다.
+     3열 최소 264 — 상태벡터 6큐비트 복소 최장 항 |000000⟩ (두 구 모드 공통 — 구 패널은
+       드롭다운과 접히는 하단 줄로 이 아래까지 줄어든다).
+     3열 최대 448 — 설명 문단 한 줄 **영문 80자**(평균 글자 폭 4.68px + 크롬 73).
+       Q-sphere 는 최대 결정에서 뺀다: 라벨이 월드 크기 스프라이트(sizeAttenuation 기본 true)라
+       지름을 키우면 라벨도 같은 비율로 커져 **겹침 비율이 지름과 무관하다.** 6큐비트 64라벨을
+       장면 카메라로 투영해 잰 값: 정사각 414px 과 1000px 모두 49개가 겹쳐 안 겹침 23.4%
+       (기준 90%)로 같고, 글자 높이만 10.4 → 25.2px 로 지름에 비례해 커졌다.
+       지름은 판독(글자 px)만 바꾸고 겹침을 풀지 못하므로 "쓸모 있는 최대"를 정하지 못한다.
+
+     합 검산: 192 + 257 + 264 = 713 ≤ 1366 뷰포트의 트랙 몫 1294 — 가장 좁은 검증 화면에서도
+     세 최소가 함께 들어가 페이지가 가로로 넘치지 않는다. */
+  --col-1-min: 192px;
+  --col-1-max: 537px;
+  --col-2-min: 257px;
+  --col-3-min: 264px;
+  --col-3-max: 448px;
+  /* 1·3열의 기본 비율 — 세 열 트랙 몫(그리드 폭 − 간격 둘)의 백분율. 2열은 나머지라 비율이 없다.
+     **단위 없는 수여야 한다.** 트랙 식이 calc() 안에서 길이에 곱하므로, "18fr" 처럼 단위를
+     붙이면 calc 가 무효가 되고 grid-template-columns 선언 **전체가** 버려져 패널 여섯이 한
+     줄로 쌓인다(3단계에서 minmax(0, 18) 로 겪은 것과 같은 부류 — 콘솔에 아무것도 안 뜬다).
+     layout.js 가 드래그 결과를 #workspace 에 같은 이름으로 쓴다. */
+  --c1: 18;
+  --c3: 32;
+  /* 상단 행 높이. layout.js 가 우선순위 체인으로 계산해 **px 로** 덮는다. 여기 값은 그 전
+     (첫 측정 전 · 측정 불가) 자리값이다 — 두 행이 반씩 나눈다. 트랙이 minmax(0, ·) 로 감싸므로
+     fr 이든 px 든 유효하지만 **단위 없는 수는 안 된다**(위 --c1 과 반대 방향의 함정). */
+  --row-top: 1fr;
   /* 1열↔2열 간격만 변수다. 코드 패널이 열리면 1열과 **그 오른쪽 간격까지** 접혀야 하는데,
      2열↔3열 간격은 어떤 상태에서도 접히지 않아 var(--space-3) 리터럴로 둔다. */
   --gutter-1: var(--space-3);
-  /* 어느 열도 이보다 좁아지지 않는다. 클램프는 곧 **지원 범위의 선언**이므로 이 값이
-     허용하는 모든 폭에서 내용이 잘려선 안 된다. 최악은 상태벡터의 기저 라벨이다 —
-     계수 칸들이 max-content 를 지키는 동안 기저 열만 0 까지 양보하기 때문이다.
-     1574px 뷰포트 실측(6큐비트·복소 계수 64항, |000000⟩ 기준):
-       14fr = 210px → 26px 잘림 / 16fr = 240px → 21.5px 잘림 / 18fr = 270px → 7.2px 여유
-     그래서 18fr 이다. 1fr 을 더 낮추면(17fr ≈ 255px) 다시 8px 모자란다.
-     **주의: 비율이라 뷰포트에 비례한다.** 콘텐츠 최소 폭은 글자 길이라 고정값인데 이 값은
-     아니어서, 좁은 화면에서는 같은 18fr 이 더 작은 px 이 되어 잘림이 돌아온다. 근본
-     해결은 열마다 콘텐츠 기반 최소 폭을 두고 클램프가 그걸 읽는 것이다(미구현). */
-  --col-min: 18fr;
-  --row-min: 25fr;
-  /* 상단 행의 **최대**는 토큰이 아니다. 비율(옛 --row-max: 75fr)로 두면 낮은 화면에서
-     하단 행이 확률 최소 아래로 내려간다 — layout.js 의 rowGeometry() 가
-     "두 행 높이 − (확률 크롬 실측 + --prob-chart-min)" 으로 그때그때 잰다. */
 
   /* 타입 스케일 — 이 값들만 쓴다(새 크기를 만들지 않는다) */
   --text-xs: 10px;   /* 카테고리 라벨 (대문자, 500) */
@@ -456,15 +489,30 @@ html, body {
   min-width: 0;
   min-height: 0;
   display: grid;
+  /* 1·3열 트랙 식은 여기 **한 번만** 적는다 — 코드 패널이 열리면 --col-1-track 만 덮는다.
+     최소를 minmax 의 **바닥에도** 둔다. minmax(0, clamp(...)) 이면 최소가 성장 상한 쪽에만
+     있어 공간이 모자랄 때 CSS 가 바닥을 지켜 주지 않는다.
+     100% 는 그리드 폭이고, 간격 둘을 빼야 --c1·--c3 가 가리키는 "세 열 몫"이 된다. */
+  --col-1-track: minmax(var(--col-1-min),
+    clamp(var(--col-1-min), calc(var(--c1) * (100% - var(--gutter-1) - var(--space-3)) / 100), var(--col-1-max)));
+  --col-3-track: minmax(var(--col-3-min),
+    clamp(var(--col-3-min), calc(var(--c3) * (100% - var(--gutter-1) - var(--space-3)) / 100), var(--col-3-max)));
+  /* 2열은 1fr — 1·3열이 비율(과 상한)만큼 가져간 **나머지 전부**를 받는다. 그리드 트랙
+     크기 계산은 고정 상한 트랙을 먼저 키우고 fr 트랙에 남은 걸 주므로, 이 순서가 곧
+     "남는 폭은 1·2순위(회로·확률)에게"다. 모자라면 2열은 --col-2-min 에서 멈추고
+     1·3열이 비율 대신 각자의 최소 쪽으로 물러난다. */
   grid-template-columns:
-    minmax(0, var(--col-1)) var(--gutter-1)
-    minmax(0, var(--col-2)) var(--space-3)
-    minmax(0, var(--col-3));
-  /* 상단 행만 minmax(0, ...) 이 아니다. main.js 가 회로 내용 높이(그리드 + 실측한 크롬)를
-     panel-circuit 의 인라인 min-height 로 되먹이는데, 그 값이 행을 밀어 올리려면
-     상단 행의 **최소 크기가 auto** 여야 한다. 나머지 패널은 .panel { min-height: 0 } 이라
-     내용이 제멋대로 행을 늘리지 못한다. */
-  grid-template-rows: var(--row-top) var(--space-3) minmax(0, var(--row-bottom));
+    var(--col-1-track) var(--gutter-1)
+    minmax(var(--col-2-min), 1fr) var(--space-3)
+    var(--col-3-track);
+  /* 상단 행 높이는 layout.js 가 우선순위 체인으로 계산해 --row-top 에 **px 로** 쓴다(하단은
+     나머지). 예전(1부)에는 회로 패널의 인라인 min-height 가 auto 최소인 상단 행을 밀어
+     올렸는데, 그러면 사용자가 스플리터로 상단을 회로 필요량 아래로 줄여도 **되밀려 돌아와**
+     스플리터가 죽은 컨트롤이 됐다. 지금은 행 높이를 한 곳(layout.js)에서만 정한다.
+     상단도 minmax(0, ·) 이다: layout.js 는 ResizeObserver 뒤 한 프레임 미뤄 다시 쓰므로
+     창 높이가 줄어드는 그 프레임에는 옛 px 이 남아 있다. 바닥이 0 이면 그때도 가용 높이에서
+     멈추고, px 그대로면 그 한 프레임 동안 그리드를 넘쳐 페이지 스크롤바가 번쩍인다. */
+  grid-template-rows: minmax(0, var(--row-top)) var(--space-3) minmax(0, 1fr);
 }
 
 /* 배치는 여기서만 정한다 — DOM 순서는 읽기 순서(=탭 순서)로 두고 건드리지 않는다. */
@@ -811,10 +859,13 @@ html, body {
 .cat-advanced { background: var(--cat-advanced); color: var(--gray-12); --chip-border: var(--cat-advanced-border); --chip-hover: var(--cat-advanced-hover); border-style: dashed; }
 
 /* Circuit */
+/* 2열이 좁으면 **항목 단위로** 다음 줄로 넘긴다. 줄바꿈이 없으면 줄어든 항목 안의 글자가
+   접히거나 잘리고, 2열 최소가 툴바 전체 폭이 된다. 늘어난 높이는 layout.js 가 크롬으로 잰다. */
 .circuit-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -822,11 +873,30 @@ html, body {
   margin: 0;
 }
 
+/* 툴바가 줄바꿈할 때 한 덩어리로 넘어가야 하는 묶음(index.html 주석 참고). 간격은 툴바와
+   같아 넓은 화면의 모습은 감싸기 전과 같다. */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* 안의 것이 전부 숨으면 묶음도 뺀다. 빈 묶음도 flex 항목이라 gap 한 칸(12px)을 차지해, 측정이
+   없는 회로에서 오른쪽 정렬된 툴바 전체가 그만큼 왼쪽으로 밀린다. */
+.toolbar-group:not(:has(> :not(.hidden))) {
+  display: none;
+}
+
 .qubit-stepper {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin-left: auto;
+}
+/* 클래식 비트 스테퍼는 같은 클래스를 쓰지만 오른쪽으로 미는 auto 여백은 큐비트 스테퍼 하나만
+   가진다. 둘 다 가지면 남는 폭이 두 여백으로 반씩 갈려, 같은 종류의 컨트롤(레지스터 크기)
+   둘 사이가 화면 폭에 비례해 벌어졌다(1536 에서 88px, 3840 에서 1103px 실측). */
+.qubit-stepper.clbit-stepper {
+  margin-left: 0;
 }
 
 .stepper-btn {
@@ -1505,10 +1575,14 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* 회로 툴바와 같은 이유로 접는다. 좌우 묶음도 안에서 접혀야 "가장 넓은 한 묶음"이 2열
+   최소가 된다 — 안 접히면 왼쪽 묶음(제목·Classical/Qubits·엔디언 라벨)이 통째로 약 430px 다. */
 .prob-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -1533,6 +1607,7 @@ html, body {
 }
 .prob-toolbar-left {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
@@ -1540,8 +1615,9 @@ html, body {
 
 .prob-toolbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
 }
 
 /* 비트 순서(엔디언) 라벨 — 본문보다 작고 회색으로 시선을 뺏지 않게 */
@@ -1696,6 +1772,10 @@ html, body {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
   cursor: pointer;
+  /* 궤적 회로에서는 라벨이 "Resample statistics" 로 길어진다. 접히게 두면 좁은 2열에서
+     버튼이 두 줄 높이가 됐다 — 접는 것은 버튼 안 글자가 아니라 툴바의 항목 단위여야 한다.
+     샷 입력과 이 라벨이 한 줄인 폭(222.5)이 2열 최소를 정한다(--col-2-min). */
+  white-space: nowrap;
   transition: opacity var(--dur) var(--ease);
 }
 .prob-run-btn:disabled {
@@ -2617,13 +2697,15 @@ html, body {
 .code-panel[hidden] { display: none; }
 
 /* 코드 패널이 열리면 1열(Operations·Reduced density matrix)만 비킨다.
-   **트랙을 접는 것과 패널을 숨기는 것 둘 다 필요하다**: fr 트랙은 내용이 없어도 제 몫을
-   가져가고, 0 폭이 된 패널은 1px 테두리 두 줄로 남는다.
-   --col-1 은 layout.js 가 #workspace 에 인라인으로 쓰지만, 여기 선언은 .ws-grid 자신의
-   것이라 부모에게서 물려받은 인라인 값을 이긴다. */
+   **트랙을 접는 것과 패널을 숨기는 것 둘 다 필요하다**: 트랙은 최소 폭(--col-1-min)을
+   바닥으로 가져서 내용이 없어도 제 몫을 가져가고, 0 폭이 된 패널은 1px 테두리 두 줄로 남는다.
+   트랙 식째로 덮으므로 layout.js 가 #workspace 에 쓰는 --c1 과 무관하게 접힌다.
+   **0 에 단위를 붙인다.** --gutter-1 은 3열 트랙 식의 calc(100% − 간격) 안에 들어가는데,
+   calc 안의 단위 없는 0 은 길이가 아니라 수라 식이 무효가 되고 grid-template-columns 가
+   통째로 버려진다(트랙에 직접 쓰일 때는 0 이 허용돼 예전엔 드러나지 않았다). */
 .ws-grid.is-code-open {
-  --col-1: 0;
-  --gutter-1: 0;
+  --col-1-track: 0px;
+  --gutter-1: 0px;
 }
 
 .ws-grid.is-code-open > .panel-palette,

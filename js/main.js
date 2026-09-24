@@ -7,10 +7,10 @@ import { createCircuitController } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
 import { probDisplay, endianLabelText, fmt2, amplitudeParts, amplitudeShowsAsZero } from "./probmodel.js";
 import { reducedDensityInfo } from "./density.js";
-import { initResizableLayout, rowGeometry } from "./layout.js";
+import { initResizableLayout } from "./layout.js";
 import { parseShareHash, buildShareUrl, toQASM, toQiskit, decodeCircuit } from "./export.js";
 import { PRESETS, PRESET_CATEGORIES } from "./presets.js";
-import { accentAlpha, tokenPx } from "./tokens.js";
+import { accentAlpha } from "./tokens.js";
 import { hasMeasurement, measurementColumns, DEFERRED_NOTE } from "./classical.js";
 import { initPopover } from "./popover.js";
 import { initPlayback } from "./playback.js";
@@ -18,7 +18,9 @@ import { initProbView } from "./probview.js";
 import { initGateMenu } from "./gatemenu.js";
 import { initGrid } from "./grid.js";
 
-initResizableLayout();
+// 행 높이 배분(측정·우선순위 체인·관찰)은 전부 layout.js 가 한다. 여기서는 회로가 바뀔 때
+// render 끝에서 relayout 을 부르기만 한다 — 회로 필요 높이는 render 를 거쳐서만 바뀐다.
+const { relayout } = initResizableLayout();
 
 // 팔레트 표시 계층 전용 카테고리 정의 (시뮬레이션/게이트 로직과 무관).
 // 색상은 style.css의 --cat-* 변수 한 곳에서 정의하고, 여기서는 카테고리 id만 참조한다.
@@ -95,8 +97,6 @@ const PALETTE_GLYPHS = {
   MEASURE: MEASURE_SVG,
 };
 
-// 회로 패널에서 캔버스 말고 나머지가 쓰는 세로 공간(툴바 + 재생 컨트롤 + 패딩)
-
 const sphereContainer = document.getElementById("sphere-container");
 const scene = createBlochScene(sphereContainer);
 
@@ -109,9 +109,6 @@ const stateHideZeros = document.getElementById("state-hide-zeros");
 const qubitCountLabel = document.getElementById("qubit-count");
 const qubitMinusBtn = document.getElementById("qubit-minus");
 const qubitPlusBtn = document.getElementById("qubit-plus");
-const workspace = document.getElementById("workspace");
-const circuitPanel = document.querySelector(".panel-circuit");
-const circuitScroll = document.querySelector(".circuit-scroll");
 const clbitCountLabel = document.getElementById("clbit-count");
 const clbitMinusBtn = document.getElementById("clbit-minus");
 const clbitPlusBtn = document.getElementById("clbit-plus");
@@ -232,6 +229,9 @@ function applySphereModeUI(snapshot) {
 // 한 줄일 때는 0 이라 기본 폭의 모습은 그대로다. 하단 줄은 absolute 라 캔버스 높이가 하단 줄에
 // 영향을 주지 않아 고리가 없다. 쓰기는 한 프레임 미룬다 — 같은 프레임에 형제(캔버스 컨테이너)
 // 크기를 바꾸면 ResizeObserver loop 경고가 난다.
+// 예약분은 구 패널의 크롬이라 "구가 정사각이 되는 높이"(layout.js 의 체인)를 바꾼다. 3열 폭이
+// 바뀌는 같은 순간에 layout.js 의 관찰도 돌지만 그 재배분이 이 쓰기보다 먼저 올 수 있어,
+// 예약분이 실제로 바뀌었을 때 여기서 한 번 더 재배분한다.
 const sphereFooter = document.querySelector(".sphere-footer");
 const sphereFooterRight = document.querySelector(".sphere-footer-right");
 new ResizeObserver(() => {
@@ -239,7 +239,10 @@ new ResizeObserver(() => {
     const wrapped = Math.abs(viewToggle.getBoundingClientRect().top - sphereFooterRight.getBoundingClientRect().top) > 4;
     const panelBottom = sphereContainer.parentElement.getBoundingClientRect().bottom;
     const reserve = wrapped ? panelBottom - sphereFooter.getBoundingClientRect().top : 0;
-    sphereContainer.style.marginBottom = `${Math.max(0, reserve)}px`;
+    const next = `${Math.max(0, reserve)}px`;
+    if (sphereContainer.style.marginBottom === next) return;
+    sphereContainer.style.marginBottom = next;
+    relayout();
   });
 }).observe(sphereFooter);
 
@@ -652,36 +655,10 @@ function render(snapshot) {
 
   playbackStatus.textContent = `${snapshot.stepIndex} / ${snapshot.totalSteps} steps`;
 
-  applyCircuitMinHeight();
-}
-
-// [4] 고전 와이어까지 들어가도록 회로 패널 최소 높이를 내용에 맞춘다.
-// (패널 높이가 행 비율로만 정해지던 시절에는 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다)
-// buildCircuitGrid 가 이미 돌았으므로 그리드의 실제 높이를 그대로 쓴다 — 행 높이·gap 을
-// JS 에서 다시 계산하지 않는다(그게 어긋남의 원인이었다).
-//
-// **크롬도 실측한다.** 예전에는 --circuit-chrome(132px) 토큰이었는데, 그 값은 가로
-// 스크롤바가 없던 화면에서 잰 것이라 스크롤바가 생기는 좁은 화면에서 12px 를
-// 과소평가했다(1366×768 에서 세로 스크롤 31px 중 12px 이 이것이었다).
-// 패널 높이 − .circuit-scroll.clientHeight 로 재면 clientHeight 가 가로 스크롤바를
-// 제외하므로 스크롤바가 자동으로 크롬에 들어간다. .circuit-scroll 이 flex:1 이라
-// 패널이 커지면 스크롤 영역만 커진다 → 차분이 일정해 되먹임이 없다.
-// 측정은 minHeight 를 **쓰기 전에** 한다: scrollHeight 를 읽는 김에 같이 읽으면 레이아웃
-// 강제가 한 번으로 끝나고, 쓰기 뒤로 옮기면 두 번 돈다.
-function applyCircuitMinHeight({ retry = true } = {}) {
-  const gridHeight = circuitGrid.scrollHeight;
-  const chrome = circuitPanel.getBoundingClientRect().height - circuitScroll.clientHeight;
-  // 상한은 layout.js 가 재는 "확률이 읽히는 바닥을 떼고 남는 전부"다. 회로의 자동
-  // 되밀기와 사용자의 스플리터 드래그가 **같은 값**을 읽어야 한 쪽으로 뚫리지 않는다.
-  const geo = rowGeometry();
-  if (chrome <= 0 || !geo || geo.maxTopPx <= 0) {
-    // 첫 render 는 컨트롤러 생성 도중(레이아웃 전)에 불린다. render 는 회로가 바뀔 때만
-    // 도므로 여기서 포기하면 첫 편집 전까지 minHeight 가 아예 안 걸린다 → 다음 프레임에
-    // 딱 한 번 다시 잰다(재시도가 또 재시도를 예약하지 않게 retry:false 로).
-    if (retry) requestAnimationFrame(() => applyCircuitMinHeight({ retry: false }));
-    return;
-  }
-  circuitPanel.style.minHeight = `${Math.min(gridHeight + chrome, geo.maxTopPx)}px`;
+  // [4] 고전 와이어까지 들어가도록 상단 행을 회로 내용에 맞춘다(패널 높이가 행 비율로만
+  // 정해지던 시절에는 행이 늘면 마지막 와이어가 화면 밖으로 밀렸다). buildCircuitGrid 가 이미
+  // 돌았으므로 layout.js 가 그리드의 실제 높이를 잰다 — 행 높이·gap 을 JS 에서 다시 계산하지 않는다.
+  relayout();
 }
 
 // 재생 버튼 비활성 처리. 사유가 있을 때는 `disabled` 대신 aria-disabled를 쓴다 —
