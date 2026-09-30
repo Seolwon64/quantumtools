@@ -18,9 +18,10 @@ import { initProbView } from "./probview.js";
 import { initGateMenu } from "./gatemenu.js";
 import { initGrid } from "./grid.js";
 
-// 행 높이 배분(측정·우선순위 체인·관찰)은 전부 layout.js 가 한다. 여기서는 회로가 바뀔 때
-// render 끝에서 relayout 을 부르기만 한다 — 회로 필요 높이는 render 를 거쳐서만 바뀐다.
-const { relayout } = initResizableLayout();
+// 행 높이 배분(측정·우선순위 체인·관찰)과 코드 밴드의 높이는 전부 layout.js 가 한다. 여기서는
+// 회로가 바뀔 때 render 끝에서 relayout 을 부르고, 코드 밴드에 layout 을 넘겨 줄 뿐이다.
+const layout = initResizableLayout();
+const { relayout } = layout;
 
 // 팔레트 표시 계층 전용 카테고리 정의 (시뮬레이션/게이트 로직과 무관).
 // 색상은 style.css의 --cat-* 변수 한 곳에서 정의하고, 여기서는 카테고리 id만 참조한다.
@@ -618,7 +619,8 @@ function render(snapshot) {
   // 궤적으로 계산하는 순간 화면의 상태벡터는 여러 결과 중 하나이기 때문이다.
   trajBadge.classList.toggle("hidden", !snapshot.usesTrajectory);
 
-  // 코드 패널이 열려 있으면 코드를 갱신한다(편집 중이면 덮어쓰지 않고 배너를 띄운다).
+  // 코드 밴드에 회로 변경을 알린다 — 펼쳐져 있으면 코드를 갱신하고, 접혀 있으면 펼칠 때
+  // 갱신한다. 편집 중이면 덮어쓰지 않고 충돌 줄을 띄운다(접혀 있어도 보인다).
   codePanel?.onCircuitChanged();
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
@@ -921,25 +923,26 @@ probViewToggle.addEventListener("click", (e) => {
   render(circuit.getSnapshot());
 });
 
-// ---------- 코드 패널 (QASM / Qiskit) ----------
-// QASM 에 닿는 경로는 **메뉴 → Code editor 하나뿐**이다. 예전의 <> 버튼(복사 전용)은
-// 없앴다 — 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
+// ---------- 코드 밴드 (QASM / Qiskit) ----------
+// 그리드 아래 전폭 밴드다. 코드에 닿는 경로는 밴드 머리글과 메뉴 → Code editor(밴드를 펼치고
+// 코드 영역에 포커스) 둘이고, 둘은 **같은 편집기**를 가리킨다. 예전의 <> 버튼(복사 전용)은
+// 없앴다 — 편집 가능 여부가 다른 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
 codePanel = initCodePanel({
   circuit,
+  layout,
   showToast,
   onOpen: () => menu.close({ restoreFocus: false }),
   els: {
     panel: document.getElementById("code-panel"),
-    resizer: document.getElementById("code-resizer"),
-    wsGrid: document.getElementById("ws-grid"),
-    workspace: document.getElementById("workspace"),
+    toggle: document.getElementById("code-toggle"),
+    body: document.getElementById("code-body"),
     tabQasm: document.getElementById("tab-qasm"),
     tabQiskit: document.getElementById("tab-qiskit"),
     apply: document.getElementById("code-apply"),
     copy: document.getElementById("code-copy"),
-    close: document.getElementById("code-close"),
     text: document.getElementById("code-text"),
     gutter: document.getElementById("code-gutter"),
+    mirror: document.getElementById("code-mirror"),
     errorLine: document.getElementById("code-errorline"),
     pre: document.getElementById("code-pre"),
     readonlyBox: document.getElementById("code-readonly"),

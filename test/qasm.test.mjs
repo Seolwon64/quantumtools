@@ -51,6 +51,30 @@ test("모든 프리셋이 왕복해도 같은 회로다", () => {
   }
 });
 
+// 위 테스트는 회로 단위다. 코드 밴드의 Apply 는 **텍스트**를 파싱하고 다시 내보내므로, 사용자가
+// 손대지 않은 코드가 Apply 뒤 한 글자라도 바뀌면 "아무것도 안 했는데 코드가 바뀌었다"가 된다.
+// 표현 불가 게이트는 주석 줄로 나가고 Apply 가 그 주석을 건너뛰어 게이트가 사라지므로 텍스트가
+// 달라지는 게 정상이다 — 그런 프리셋은 기준을 느슨하게 하지 않고 이름과 사유로 **명시적으로**
+// 뺀다. 지금은 없다. 표에 없는 프리셋에 표현 불가 줄이 생겨도, 표에 있는데 그 줄이 사라져도
+// 실패한다(낡은 제외가 남지 않게).
+const TEXT_ROUNDTRIP_EXCLUDED = {};
+
+test("모든 프리셋의 QASM 텍스트가 Apply 왕복 뒤 한 글자도 바뀌지 않는다", () => {
+  for (const preset of PRESETS) {
+    const dec = decodeCircuit(preset.circuit);
+    const { code } = toQASM(dec.qubitCount, dec.grid, dec.clbitCount);
+    const unrepresentable = code.includes("cannot be represented");
+    const excluded = Object.hasOwn(TEXT_ROUNDTRIP_EXCLUDED, preset.name);
+    assert.equal(excluded, unrepresentable,
+      `${preset.name}: 표현 불가 줄이 ${unrepresentable ? "있는데 제외 표에 없다" : "없는데 제외 표에 있다"}`);
+    if (excluded) continue;
+    const parsed = parseQASM(code);
+    assert.ok(parsed.ok, `${preset.name}: 내보낸 QASM 을 다시 읽지 못했다 — ${parsed.message}`);
+    const again = toQASM(parsed.qubitCount, parsed.grid, parsed.clbitCount).code;
+    assert.equal(again, code, `${preset.name}: Apply 왕복 뒤 텍스트가 달라졌다`);
+  }
+});
+
 test("다중 제어 게이트가 왕복한다 (CCX · c3x · c4x)", () => {
   roundTrip("CCX", 3, build(3, [{ col: 0, cell: cell("X", [2], [0, 1]) }]), 0);
   roundTrip("c3x", 4, build(4, [{ col: 0, cell: cell("X", [3], [0, 1, 2]) }]), 0);

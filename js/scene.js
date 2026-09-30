@@ -377,7 +377,8 @@ export function createBlochScene(container) {
 
   // renderLoop 정의만 하고 호출은 Q-sphere 요소(qsphereBgGroup, silhouette) 생성 후에 한다
   // (const TDZ 때문에 먼저 호출하면 "Cannot access before initialization" 발생).
-  // 정지/재개 스위치는 없다 — 이 캔버스는 3열에 있어 코드 패널을 열어도 계속 보인다.
+  // 정지/재개 스위치는 없다 — 코드 밴드는 그리드 아래에 붙어 구를 가리지 않으므로 이 캔버스는
+  // 늘 보인다(밴드를 펼치면 작아질 수는 있어도 사라지지 않는다).
   function renderLoop() {
     controls.update();
     // Q-sphere 외곽 실루엣 링을 항상 카메라를 향하게(billboard) 회전시켜 구 윤곽처럼 보이게 한다.

@@ -30,49 +30,6 @@
     </header>
 
     <div class="workspace" id="workspace">
-      <!-- 코드 패널: 1열 자리를 차지한다(오버레이가 아니다). 열려 있는 동안 비키는 것은
-           1열(Operations·Reduced density matrix)뿐이고, Circuit·Probabilities·Q-sphere·
-           State vector 는 1px도 가려지지 않는다 — 코드를 고치면서 그것들을 동시에 보는
-           게 이 기능의 목적이다. -->
-      <section class="code-panel" id="code-panel" aria-label="Code editor" hidden>
-        <div class="code-tabs" role="tablist" aria-label="Code language">
-          <button class="code-tab is-active" id="tab-qasm" role="tab" aria-selected="true">QASM</button>
-          <button class="code-tab" id="tab-qiskit" role="tab" aria-selected="false">Qiskit</button>
-          <span class="code-badge hidden" id="code-modified">Modified</span>
-          <span class="code-actions">
-            <button class="icon-btn" id="code-apply" title="Apply to circuit (Ctrl+Enter)">Apply</button>
-            <button class="icon-btn" id="code-copy" title="Copy to clipboard">Copy</button>
-            <button class="icon-btn tool-icon-btn" id="code-close" title="Close (Esc)" aria-label="Close code editor"><span data-icon="x"></span></button>
-          </span>
-        </div>
-
-        <div class="code-banner hidden" id="code-banner"></div>
-
-        <div class="code-conflict hidden" id="code-conflict">
-          <span>Circuit changed.</span>
-          <button class="icon-btn" id="code-reload">Reload code</button>
-          <button class="icon-btn" id="code-keep">Keep my edits</button>
-        </div>
-
-        <div class="code-editor" id="code-editor">
-          <div class="code-gutter" id="code-gutter" aria-hidden="true"></div>
-          <div class="code-surface">
-            <div class="code-errorline hidden" id="code-errorline"></div>
-            <textarea class="code-text" id="code-text" spellcheck="false" wrap="off" aria-label="OpenQASM 2.0 source"></textarea>
-          </div>
-        </div>
-
-        <!-- Qiskit 은 Python 이라 브라우저에서 파싱할 수 없다 → 읽기 전용.
-             편집 가능해 보이는 UI(textarea·Apply)를 두지 않는다. -->
-        <div class="code-readonly hidden" id="code-readonly">
-          <p class="code-readonly-note">Read-only — copy to use in Python</p>
-          <pre class="code-pre" id="code-pre"></pre>
-        </div>
-
-        <div class="code-status" id="code-status" role="status"></div>
-      </section>
-      <div class="code-resizer" id="code-resizer" hidden role="separator" aria-orientation="vertical" aria-label="Resize code panel"></div>
-
       <!-- 3열 2행 타일링. 여섯 패널과 스플리터 셋이 **모두 이 그리드의 직계 자식**이다 —
            칼럼 래퍼를 두면 열마다 행 높이가 다시 갈라져 행 경계가 어긋난다.
            배치는 style.css 의 grid-area 가 정하므로, 여기 DOM 순서는 화면 읽기 순서
@@ -227,6 +184,58 @@
       <div class="col-splitter" id="col-splitter-2"></div>
       <div class="row-splitter" id="row-splitter" title="Drag to resize · double-click to reset"></div>
       </div>
+
+      <!-- 코드 밴드: 3×2 그리드 **아래** 전폭. 오버레이가 아니다 — 코드를 고치면서 회로·확률·
+           상태벡터를 동시에 보는 게 목적이라 아무것도 가리지 않는다. 밴드가 가져간 높이만큼 그리드가
+           줄고, 행 배분(layout.js 의 rowPlan)이 줄어든 높이로 다시 나눈다.
+           머리글 줄은 접혀도 늘 보인다 — 코드로 들어가는 입구다. 리사이저가 곧 그리드와의 간격이고
+           행 스플리터처럼 포커스 대상이 아니다. -->
+      <div class="row-splitter code-band-resizer" id="code-band-resizer" role="separator" aria-orientation="horizontal" title="Drag to resize · double-click to reset"></div>
+      <section class="code-panel is-collapsed" id="code-panel" aria-label="Code editor">
+        <div class="code-tabs" role="tablist" aria-label="Code language">
+          <button class="code-tab is-active" id="tab-qasm" role="tab" aria-selected="true" aria-controls="code-body">QASM</button>
+          <button class="code-tab" id="tab-qiskit" role="tab" aria-selected="false" aria-controls="code-body">Qiskit</button>
+          <span class="code-badge hidden" id="code-modified">Modified</span>
+          <span class="code-actions">
+            <button class="icon-btn" id="code-apply" title="Apply to circuit (Ctrl+Enter)">Apply</button>
+            <button class="icon-btn" id="code-copy" title="Copy to clipboard">Copy</button>
+            <button class="icon-btn tool-icon-btn code-toggle" id="code-toggle" aria-expanded="false" aria-controls="code-body" aria-label="Show code" title="Show code"><span data-icon="chevron-up"></span></button>
+          </span>
+        </div>
+
+        <!-- 충돌 줄은 몸통 **밖**이다 — 접혀 있어도 "고친 코드가 남아 있고 회로가 바뀌었다"가
+             보여야 한다. 밴드가 늘 보이면서 편집 도중 게이트를 놓는 흐름이 흔해졌다. -->
+        <div class="code-conflict hidden" id="code-conflict">
+          <span>Circuit changed.</span>
+          <button class="icon-btn" id="code-reload">Reload code</button>
+          <button class="icon-btn" id="code-keep">Keep my edits</button>
+        </div>
+
+        <div class="code-body" id="code-body" hidden>
+          <div class="code-banner hidden" id="code-banner"></div>
+
+          <div class="code-editor" id="code-editor">
+            <div class="code-gutter" id="code-gutter" aria-hidden="true"></div>
+            <div class="code-surface">
+              <div class="code-errorline hidden" id="code-errorline"></div>
+              <!-- 줄바꿈된 줄마다 높이를 재는 숨은 복제본. 거터 번호와 에러 띠가 이 높이를 따른다. -->
+              <div class="code-mirror" id="code-mirror" aria-hidden="true"></div>
+              <!-- wrap 속성을 두지 않는다(기본 soft). 줄바꿈은 화면에서만 일어나고 값에는 개행이
+                   끼지 않는다 — wrap="hard" 였다면 Apply 왕복이 깨진다. -->
+              <textarea class="code-text" id="code-text" spellcheck="false" aria-label="OpenQASM 2.0 source"></textarea>
+            </div>
+          </div>
+
+          <!-- Qiskit 은 Python 이라 브라우저에서 파싱할 수 없다 → 읽기 전용.
+               편집 가능해 보이는 UI(textarea·Apply)를 두지 않는다. tabindex 는 키보드로 스크롤하기 위해서다. -->
+          <div class="code-readonly hidden" id="code-readonly">
+            <p class="code-readonly-note">Read-only — copy to use in Python</p>
+            <pre class="code-pre" id="code-pre" tabindex="0"></pre>
+          </div>
+
+          <div class="code-status" id="code-status" role="status"></div>
+        </div>
+      </section>
     </div>
   </div>
 

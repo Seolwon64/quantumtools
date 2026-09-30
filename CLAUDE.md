@@ -33,13 +33,13 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 | `classical.js` | 지연 측정(deferred measurement) 변환. 순수 함수 |
 | `qasm.js` | OpenQASM 2.0 ↔ canonical 회로. **양방향이 이 파일 하나를 본다** |
 | `export.js` | 공유 URL 해시 인코딩(base64url), QASM / Qiskit 코드 생성 |
-| `codepanel.js` | QASM / Qiskit 코드 패널 |
+| `codepanel.js` | 그리드 아래 QASM / Qiskit 코드 밴드 |
 | `presets.js` | 회로 프리셋 |
 | `scene.js` | Three.js Bloch sphere 렌더링, Slerp 상태 벡터 애니메이션 |
 | `chart.js` | 확률 막대 차트의 축·라벨 배치. DOM 무관한 순수 로직 |
 | `tokens.js` | 디자인 토큰을 JS 에서 읽는 단일 창구 |
 | `icons.js` | 아이콘 세트 (Lucide, ISC) |
-| `layout.js` | 워크스페이스 리사이즈 스플리터 |
+| `layout.js` | 워크스페이스 배치 — 스플리터·행 배분·코드 밴드 높이 |
 | `menu.js` | 햄버거 메뉴 드로어 |
 
 ### 상태와 지속성
@@ -48,8 +48,7 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 onStepPause, initial })` 가 회로 상태를 소유하고 콜백으로 알린다. `main.js` 가 그
 콜백에서 DOM 을 갱신한다.
 
-지속성은 `localStorage` 네 키 — `bloch-composer-v1`(회로), `bloch-layout-v5`(열 비율·행 오프셋)
-`bloch-code-panel-v1`, `bloch-prob-view-v1`. 전부 `try/catch` 로 감싸 저장 불가 환경에서도
+지속성은 `localStorage` 네 키 — `bloch-composer-v1`(회로), `bloch-layout-v5`(열 비율·행 오프셋), `bloch-code-panel-v2`(밴드 펼침·높이·탭), `bloch-prob-view-v1`. 전부 `try/catch` 로 감싸 저장 불가 환경에서도
 동작한다. 공유 URL 해시가 있으면 저장값보다 우선한다. 구버전 저장값은 `migrateCell` 로
 canonical 형태로 변환해 기존 링크를 깨뜨리지 않는다.
 
