@@ -1,18 +1,19 @@
-// QASM / Qiskit 코드 밴드 — 3×2 그리드 아래 전폭. 탭·에디터·Apply 와 펼침 상태·저장을 맡는다.
+// QASM / Qiskit 코드 밴드 — 3×2 그리드 아래 전폭. 헤더 입구·탭·에디터·Apply 와 펼침 상태·저장을 맡는다.
 //
 // 동기화는 **단방향 + 명시적 적용**이다. 회로가 바뀌면 코드는 자동으로 갱신되지만,
 // 코드→회로는 Apply(또는 Ctrl/Cmd+Enter)로만 간다. 타이핑 중에는 코드가 거의 항상
 // 문법 오류 상태라 자동 반영하면 회로가 깨지고 Undo 스택도 타이핑 단위로 오염된다.
 //
 // 밴드는 오버레이가 아니라 **레이아웃에 참여**한다 — 그리드 아래에 붙어, 펼치면 그리드 높이가
-// 줄 뿐 어느 패널도 가려지지 않는다. 코드를 고치면서 회로·상태벡터·확률을 동시에 보는 게 이
-// 기능의 목적이다. 높이·상한·기본 펼침 판정은 layout.js 가 행 배분과 같은 자리에서 한다.
-// 머리글 줄은 접혀도 늘 보인다(코드로 들어가는 입구). 대화상자가 아니므로 포커스 트랩이 없다.
+// 줄 뿐 어느 패널도 가려지지 않는다. 높이·상한·기본 펼침 판정은 layout.js 가 행 배분과 같은
+// 자리에서 한다. 입구는 헤더의 Code 버튼이고, 접히면 밴드와 그 위 간격이 **0px** 이다 — 다섯
+// 패널 모두에 양보하는 최하위가 접힌 채 1순위인 회로를 밀면 안 된다(6단계에서 접힌 머리글
+// 63px 가 1536×740 회로를 49px 스크롤시켰다). 예외는 충돌 줄 하나다. 대화상자가 아니므로
+// 포커스 트랩이 없다.
 
 import { toQASM, toQiskit } from "./export.js";
 import { parseQASM, normalizeCircuit } from "./qasm.js";
 import { bandStartsOpen } from "./layout.js";
-import { icon } from "./icons.js";
 
 // v1 은 드로어 폭(%) 하나였다. 이제 값의 뜻이 밴드 펼침·높이(px)·탭으로 바뀌어 키를 올리고
 // 구버전은 읽지 않는다.
@@ -33,9 +34,9 @@ function loadStored() {
   }
 }
 
-export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
+export function initCodePanel({ circuit, layout, els, showToast }) {
   const {
-    panel, toggle, body,
+    entry, entryDot, resizer, panel, collapseBtn, body,
     tabQasm, tabQiskit, apply, copy,
     text, gutter, mirror, errorLine, pre, readonlyBox, editor,
     banner, conflict, reload, keep, badge, status,
@@ -72,7 +73,7 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
    * 보이지 않을 때는 잴 수 없으므로 건너뛰고, 보일 때(펼침·탭 전환·크기 변화) 다시 부른다.
    */
   function renderGutter() {
-    if (body.hidden || editor.classList.contains("hidden")) return;
+    if (body.hidden || panel.hidden || editor.classList.contains("hidden")) return;
     mirror.style.width = `${text.clientWidth}px`;
     const lines = document.createDocumentFragment();
     for (const line of text.value.split("\n")) {
@@ -103,8 +104,9 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
 
   /**
    * 회로 → 코드. modified 상태에서는 부르지 않는다(사용자 편집을 덮어쓰지 않는다).
-   * **접혀 있어도 부른다.** Copy 는 접힌 머리글에서도 누를 수 있어서, 펼칠 때까지 미뤄 두면
-   * 숨은 textarea 의 낡은 코드가 복사됐다(접힌 채 Reload 뒤 실측). 거터만은 보일 때 잰다.
+   * **접혀 있어도 부른다.** 펼칠 때까지 미뤄 두면 숨은 textarea 에 낡은 코드가 남는데, 6단계에서
+   * 그 낡은 코드가 접힌 머리글의 Copy 로 복사됐다(실측). 갱신을 미루는 분기를 다시 만들지 않는다.
+   * 거터만은 보일 때 잰다.
    */
   function refresh() {
     const { code, warnings } = generate();
@@ -127,6 +129,7 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
     //  refresh 가 건너뛰어지므로 — 조건 경고가 남아 "superdense 인데 if 경고가 뜬다"로 보인다.)
     if (value) setBanner([]);
     updateApplyState();
+    syncBand(); // 입구의 표시 점
   }
 
   /**
@@ -143,51 +146,81 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
       : "Apply to circuit (Ctrl+Enter)";
   }
 
-  // ---------- 펼침 / 접힘 ----------
-  // DOM 만 바꾸는 함수와 사용자 경로를 나눈다. 로드 시 기본 펼침 판정은 밴드를 한 번 펼쳐
-  // 높이를 재는데, 그게 사용자 경로를 타면 저장·포커스가 따라와 판정이 굳는다.
-  function showBody(shown) {
-    expanded = shown;
-    body.hidden = !shown;
-    panel.classList.toggle("is-collapsed", !shown);
-    toggle.setAttribute("aria-expanded", String(shown));
-    const label = shown ? "Hide code" : "Show code";
-    toggle.setAttribute("aria-label", label);
-    toggle.title = label;
-    // 밴드는 화면 아래에 붙어 있다 — 펼침은 위로(chevron-up), 접힘은 아래로(chevron-down).
-    toggle.innerHTML = icon(shown ? "chevron-down" : "chevron-up");
+  // ---------- 보이는 상태 ----------
+  /**
+   * 밴드·간격·머리글·충돌 줄·헤더 입구의 표시를 **펼침 여부와 충돌 줄 표시 여부** 둘로만 정한다.
+   *   펼침        → 밴드·간격·머리글·몸통 보임
+   *   접힘 + 충돌  → 밴드는 충돌 줄만(머리글·몸통 없음), 간격은 남되 조작은 CSS 가 끈다
+   *   접힘        → 밴드·간격 모두 hidden — 0px
+   * DOM 만 바꾼다. 저장·포커스는 부르는 쪽(사용자 경로)이 한다 — 로드 시 측정이 이것만 탄다.
+   */
+  function syncBand() {
+    const conflictShown = !conflict.classList.contains("hidden");
+    const shown = expanded || conflictShown;
+    panel.hidden = !shown;
+    resizer.hidden = !shown;
+    panel.classList.toggle("is-collapsed", !expanded);
+    body.hidden = !expanded;
+    entry.setAttribute("aria-expanded", String(expanded));
+    entry.title = expanded ? "Hide code" : "Show code";
+    // 접힌 채 적용 안 한 편집이나 충돌이 있으면 입구에 점을 단다. 펼쳐 있으면 밴드 안의
+    // Modified 배지와 충돌 줄이 보이므로 끈다. 점이 말하는 것을 이름에도 넣는다 — 점은 보이는
+    // 사람에게만 닿는다. 이름은 보이는 글자 "Code" 로 시작해야 한다(말로 부르는 이름과 같게).
+    const pending = !expanded && (modified || conflictShown);
+    entryDot.hidden = !pending;
+    entry.setAttribute("aria-label",
+      !pending ? "Code"
+        : conflictShown ? "Code, unapplied edits, circuit changed"
+          : "Code, unapplied edits");
   }
 
-  function focusCode() {
-    (tab === "qasm" ? text : pre).focus();
+  function setExpanded(value) {
+    expanded = value;
+    syncBand();
+  }
+
+  function codeArea() {
+    return tab === "qasm" ? text : pre;
+  }
+
+  /**
+   * 바꾸는 동안 밴드 안에 있던 포커스가 숨어 버리면 남는 자리로 옮긴다. 숨은 요소의 포커스는
+   * body 로 떨어져 키보드 사용자가 제자리를 잃는다. 밴드가 펼친 채 남으면 코드 영역(밴드에서 하던
+   * 일을 이어 간다), 밴드가 숨으면 헤더의 입구로 간다.
+   */
+  function keepingFocus(change) {
+    const before = document.activeElement;
+    const inBand = panel.contains(before);
+    change();
+    if (!inBand || before.offsetParent !== null) return;
+    (expanded ? codeArea() : entry).focus();
   }
 
   function expand({ focus = false } = {}) {
     userTouched = true;
     if (!expanded) {
-      showBody(true);
+      setExpanded(true);
       persist({ expanded: true });
       // 밴드 높이가 바뀌었으니 같은 호출 안에서 그리드·행을 다시 맞추고(강제 레이아웃),
       // 그 뒤에야 미러가 실제 폭을 잰다.
       layout.relayout();
       renderGutter();
     }
-    if (focus) focusCode();
+    if (focus) codeArea().focus();
   }
 
   function collapse() {
     userTouched = true;
     if (!expanded) return;
-    // 포커스가 숨길 몸통 안에 있으면 펼침 버튼으로 옮긴다 — 숨은 요소에 포커스가 남으면
-    // 키보드 사용자가 제자리를 잃는다.
-    const hadFocus = body.contains(document.activeElement);
-    showBody(false);
+    keepingFocus(() => setExpanded(false));
     persist({ expanded: false });
     layout.relayout();
-    if (hadFocus) toggle.focus();
   }
 
-  toggle.addEventListener("click", () => (expanded ? collapse() : expand()));
+  // 헤더 입구: 펼치면 코드 영역으로 포커스를 옮긴다 — 밴드가 화면 아래라 그리드 전체를 Tab 으로
+  // 지나가지 않게. 접으면 누른 버튼에 포커스가 그대로 남는다.
+  entry.addEventListener("click", () => (expanded ? collapse() : expand({ focus: true })));
+  collapseBtn.addEventListener("click", () => collapse());
 
   // ---------- 에러 표시 ----------
   function clearError() {
@@ -222,6 +255,7 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
   }
 
   // ---------- Apply ----------
+  // Apply 버튼과 Ctrl+Enter 는 펼친 밴드에만 있다 — 상태 줄이 늘 보이는 자리에서만 적용된다.
   function doApply() {
     if (tab !== "qasm") return;
     if (!modified) return; // 편집이 없으면 회로를 건드리지 않는다(Undo 스택도 그대로)
@@ -229,9 +263,6 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
     const parsed = parseQASM(text.value);
     if (!parsed.ok) {
       // 파싱 실패 시 회로는 **전혀** 바뀌지 않는다 — parseQASM 이 부분 결과를 주지 않는다.
-      // 접힌 머리글에서 Apply 했다면 에러를 보여 줄 상태 줄이 몸통 안에 숨어 있다 — 펼쳐서
-      // 보인다. 사용자가 누른 결과라 "저절로 펼치지 않는다"에 걸리지 않는다.
-      expand();
       showError(parsed.line, parsed.message);
       return;
     }
@@ -241,7 +272,7 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
     const { changed } = normalizeCircuit(parsed.qubitCount, parsed.grid);
     circuit.loadCircuit(parsed.qubitCount, parsed.grid, parsed.clbitCount);
     setModified(false);
-    conflict.classList.add("hidden");
+    showConflict(false);
     refresh();
 
     const notes = [];
@@ -269,14 +300,12 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
     else renderGutter(); // 편집 중인 QASM 으로 돌아왔다 — 감춰져 있던 동안 못 잰 거터를 잰다
   }
 
-  // 접힌 채 탭을 누르면 펼친다. 탭만 바뀌고 아무것도 안 보이면 눌러도 반응이 없는 것처럼 보인다.
+  // 탭은 펼친 밴드의 머리글에만 있다 — 누르면 탭만 바꾼다.
   for (const [btn, name] of [[tabQasm, "qasm"], [tabQiskit, "qiskit"]]) {
     btn.addEventListener("click", () => {
-      if (tab !== name) {
-        setTab(name);
-        persist({ tab: name });
-      }
-      expand();
+      if (tab === name) return;
+      setTab(name);
+      persist({ tab: name });
     });
   }
 
@@ -327,29 +356,39 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
   }).observe(text);
   document.fonts?.ready.then(() => renderGutter());
 
-  // ---------- 회로 변경 알림 ----------
-  // 접혀 있어도 돈다. 편집이 있으면 충돌 줄을 띄운다 — 몸통 밖이라 접힌 상태에서도 보인다.
+  // ---------- 충돌 ----------
+  // 충돌 줄은 접힌 밴드가 0px 이 아닌 유일한 경우다. 나타나고 사라질 때 밴드 높이가 바뀌므로
+  // 같은 호출 안에서 행을 다시 맞춘다. 사라질 때 그 안의 버튼(Reload·Keep)에 포커스가 있었으면
+  // keepingFocus 가 옮긴다 — 접혀 있으면 밴드 전체가 숨는다.
+  function showConflict(shown) {
+    if (conflict.classList.contains("hidden") === !shown) return;
+    keepingFocus(() => {
+      conflict.classList.toggle("hidden", !shown);
+      syncBand();
+    });
+    layout.relayout();
+  }
+
+  // 접혀 있어도 돈다. 편집이 있으면 충돌 줄을 띄운다 — 머리글·몸통 밖이라 접힌 상태에서도 보인다.
   function onCircuitChanged() {
     if (modified) {
       // 사용자의 편집을 덮어쓰지 않는다. 어느 쪽을 살릴지는 사용자가 고른다.
-      conflict.classList.remove("hidden");
+      showConflict(true);
       return;
     }
     refresh();
   }
 
   reload.addEventListener("click", () => {
-    conflict.classList.add("hidden");
     setModified(false);
     refresh();
+    showConflict(false);
   });
-  keep.addEventListener("click", () => {
-    conflict.classList.add("hidden");
-  });
+  keep.addEventListener("click", () => showConflict(false));
 
   // ---------- 복원과 기본 펼침 ----------
   // Apply 의 비활성 표시는 처음부터 맞아야 한다. 드로어 시절에는 열 때마다 setModified·setTab 이
-  // 이걸 불렀는데, 밴드는 늘 보이고 "여는" 순간이 없어 편집 전 Apply 가 눌리는 것처럼 보였다.
+  // 이걸 불렀는데, 밴드에는 "여는" 순간이 따로 없어 편집 전 Apply 가 눌리는 것처럼 보였다.
   updateApplyState();
   if (stored.tab) setTab(stored.tab);
   layout.band.onHeightChange((height) => {
@@ -357,8 +396,8 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
     persist({ height });
   });
   layout.band.setHeight(stored.height);
-  showBody(stored.expanded === true);
-  refresh(); // 접혀 있어도 — Copy 가 처음부터 지금 회로의 코드를 복사해야 한다
+  setExpanded(stored.expanded === true);
+  refresh(); // 접혀 있어도 — 펼치는 순간 지금 회로의 코드가 있어야 한다
   if (expanded) {
     layout.relayout();
     renderGutter();
@@ -367,19 +406,21 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
   /**
    * 저장된 펼침 상태가 없을 때만, 로드 시 **한 번** 정한다. 이후 회로를 편집하는 동안 저절로
    * 접히거나 펼쳐지지 않는다. 판정은 layout.js 의 bandStartsOpen(rowPlan 입력)이 한다.
-   * 밴드를 실제로 펼쳐 높이를 재고, 아니라고 하면 다시 접는다 — 한 태스크 안에서 끝나
+   * Δ 는 "그리드가 잃는 높이"를 그대로 잰다 — 밴드를 실제로 펼친 뒤 두 행 가용 높이의 차이라,
+   * 밴드와 그 위 간격이 함께 들어간다. 아니라고 하면 다시 접는다. 한 태스크 안에서 끝나
    * 페인트·ResizeObserver 는 최종 상태만 본다. 웹폰트 뒤에 재야 크롬 측정이 맞다.
-   * DOM 만 바꾸는 showBody 를 쓴다 — 저장·포커스·배지 갱신이 없다(결정은 저장하지 않는다).
+   * **DOM 만 바꾸는 setExpanded 를 쓴다** — 저장도 포커스 이동도 없다. 사용자 경로(expand)를 타면
+   * 큰 화면에서 로드하는 순간 포커스가 화면 아래 에디터로 가고 브라우저가 스크롤한다.
    */
   function decideDefaultExpansion() {
     if (userTouched || stored.expanded !== undefined) return;
-    const rows = layout.measureRows();
-    if (!rows) return;
-    const collapsedPx = panel.getBoundingClientRect().height;
-    showBody(true);
-    const deltaPx = panel.getBoundingClientRect().height - collapsedPx;
-    if (!bandStartsOpen(rows, deltaPx, layout.rowOffset())) {
-      showBody(false);
+    const before = layout.measureRows();
+    if (!before) return;
+    setExpanded(true);
+    const after = layout.measureRows();
+    const deltaPx = after ? before.available - after.available : Infinity;
+    if (!bandStartsOpen(before, deltaPx, layout.rowOffset())) {
+      setExpanded(false);
       return;
     }
     layout.relayout();
@@ -390,11 +431,6 @@ export function initCodePanel({ circuit, layout, els, onOpen, showToast }) {
   }
 
   return {
-    /** 메뉴의 Code editor: 펼치고 코드 영역에 포커스한다. */
-    open() {
-      onOpen?.(); // 메뉴 드로어가 열려 있으면 닫는다
-      expand({ focus: true });
-    },
     isExpanded: () => expanded,
     onCircuitChanged,
   };

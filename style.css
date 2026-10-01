@@ -234,8 +234,6 @@
   /* 인터랙티브 전환 — background-color와 transform만, easing은 고정.
      `all`을 쓰면 예상치 못한 속성까지 애니메이션된다. */
   --dur: 120ms;
-  /* 드로어는 이동 거리가 길어 120ms 면 튕기듯 보인다. 이징(--ease)은 공유한다. */
-  --dur-drawer: 180ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* 모서리 반경 — 이 네 값만 쓴다. 도구 UI라 과하게 둥글면 정교함이 떨어진다. */
@@ -345,138 +343,54 @@ html, body {
   letter-spacing: -0.02em;
 }
 
-.menu-btn {
-  /* 열린 드로어(z-index 65)가 이 버튼을 덮어 X를 마우스로 누를 수 없었다.
-     열린 상태에서 이 버튼이 곧 닫기(X)이므로 드로어보다 위에 있어야 한다.
-     토스트(70)보다는 아래라 알림을 가리지 않는다. */
-  position: relative;
-  z-index: 66;
-  grid-column: 1;
-  justify-self: start;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: transparent;
-  color: var(--text-title);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  transition: background-color var(--dur) var(--ease);
-}
-
-.menu-btn:hover {
-  background: var(--card-bg);
-}
-
-.github-link {
-  grid-column: 3;
-  justify-self: end;
+/* 헤더 양옆의 액션 — 왼쪽 Code 버튼, 오른쪽 GitHub 링크. 둘 다 아이콘 + 보이는 글자이고
+   모양은 이 규칙 하나다. 위치(그리드 열·정렬)만 각자 둔다. 헤더가 1fr auto 1fr 그리드라
+   양옆 폭이 달라도 제목은 가운데에 있다. */
+.header-action {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  border: none;
+  background: transparent;
   color: var(--text-body);
   text-decoration: none;
   font-size: var(--text-base);
   font-weight: 600;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-2);
-  transition: background-color var(--dur) var(--ease);
 }
 
-.github-link:hover {
-  background: var(--card-bg);
+/* 커서·전환·hover/active 배경·포커스 링·비활성은 아래 "인터랙티브 상태" 블록이 다른 버튼과
+   함께 정한다(.code-entry, .github-link 가 그 목록에 있다) — 여기서는 hover 글자만 진하게. */
+.header-action:hover {
   color: var(--text-title);
 }
 
-/* ==========================================================================
-   드로어 — 메뉴(왼쪽, 오버레이 있음) · 코드(오른쪽, 오버레이 없음)
-
-   **`.hidden`(display:none)을 쓰지 않는다.** display:none 에서는 transition 이
-   실행되지 않아 슬라이드가 통째로 죽는다. 열림은 .is-open, 닫힘은
-   visibility:hidden 이다(탭 순서에서도 빠져 접근성에도 맞다).
-
-   **transform 만 애니메이션한다.** width/left 를 움직이면 매 프레임 레이아웃이
-   다시 계산돼 끊긴다. prefers-reduced-motion 은 파일 상단의 전역 규칙이 이미 덮는다.
-   ========================================================================== */
-.drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 64;
-  /* 새 색을 만들지 않고 램프에서 파생시킨다 */
-  background: color-mix(in srgb, var(--gray-12) 32%, transparent);
-  backdrop-filter: blur(2px);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity var(--dur-drawer) var(--ease), visibility 0s linear var(--dur-drawer);
+/* 코드 밴드로 들어가는 유일한 입구(옛 햄버거 자리). */
+.code-entry {
+  grid-column: 1;
+  justify-self: start;
+  position: relative;
 }
 
-.drawer-overlay.is-open {
-  opacity: 1;
-  visibility: visible;
-  transition: opacity var(--dur-drawer) var(--ease), visibility 0s;
+.github-link {
+  grid-column: 3;
+  justify-self: end;
 }
 
-.menu-drawer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 65;
-  display: flex;
-  flex-direction: column;
-  background: var(--gray-2);
-  box-shadow: var(--shadow-3);
-  visibility: hidden;
-  transition: transform var(--dur-drawer) var(--ease), visibility 0s linear var(--dur-drawer);
-  /* 왼쪽에서. min() 이라 360px 화면에서도 드로어가 화면을 벗어나지 않는다. */
-  left: 0;
-  width: min(260px, 86vw);
-  /* 위쪽은 헤더 높이만큼 비운다 — 그 자리에 떠 있는 햄버거(=X)가 첫 항목을 덮지 않게.
-     햄버거의 아래끝이 52px 이므로 48+12=60px 이 최소치다. 스케일 조합으로 만든다. */
-  padding: calc(var(--space-8) + var(--space-3)) var(--space-3) var(--space-3);
-  transform: translateX(-100%);
+/* 표시 점 — 밴드가 접힌 채 적용 안 한 편집이나 충돌이 있다. 밴드 안 Modified 배지와 같은
+   사실이라 같은 색이다. 오른쪽 위 패딩 안에 띄워 버튼 폭을 바꾸지 않는다(점이 켜질 때 헤더가
+   흔들리지 않게). aria-label 에도 같은 내용이 들어간다(codepanel.js). */
+.code-entry-dot {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--danger-fg);
 }
-
-.menu-drawer.is-open {
-  transform: none;
-  visibility: visible;
-  transition: transform var(--dur-drawer) var(--ease), visibility 0s;
-}
-
-
-.menu-drawer-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-/* 그룹 사이 구분선. 여백으로 갈라지는 곳에는 넣지 않는다(패널 위계의 [4] 규칙). */
-.menu-drawer-sep {
-  height: 1px;
-  margin: var(--space-2) 0;
-  background: var(--gray-6);
-}
-
-.menu-drawer-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--text-title);
-  font-size: var(--text-base);
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
-}
-
-
-
+.code-entry-dot[hidden] { display: none; }
 
 /* 워크스페이스는 [3열 2행 그리드][밴드 리사이저][코드 밴드] 의 flex **열**이다.
    밴드를 그리드의 네 번째 행으로 넣지 않는 이유: 그러면 3×2 행 배분(layout.js 의 rowPlan)이
@@ -2523,7 +2437,7 @@ html, body {
 
 /* 클릭 가능한 모든 요소의 공통 베이스.
    전환은 background-color와 transform만 — `all`을 쓰면 예상 못 한 속성까지 애니메이션된다. */
-.menu-btn, .github-link, .icon-btn, .tool-icon-btn, .stepper-btn,
+.code-entry, .github-link, .icon-btn, .tool-icon-btn, .stepper-btn,
 .round-btn, .pill-btn-primary, .segmented-btn, .prob-run-btn, .prob-reset-btn,
 .prob-showall-btn, .export-menu-item, .preset-item, .gate-menu-item,
 .qpick-btn, .view-reset-btn, .gate-chip, .placed-gate, .ctrl-dot, .prob-hide-toggle,
@@ -2537,7 +2451,7 @@ html, body {
    아래의 .segmented-btn.active:hover(0,3,0)를 이겨버린다. 그러면 활성 탭이
    hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라진다(대비 1.03).
    같은 이유로 .is-danger(Delete)도 뺀다 — 파괴적 동작의 빨강 신호가 회색으로 덮인다. */
-.menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.code-entry:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
@@ -2550,7 +2464,6 @@ html, body {
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .gate-menu-item:not(.is-danger):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
@@ -2558,7 +2471,7 @@ html, body {
 }
 
 /* --- active: 한 단계 더 + 눌리는 촉감(scale) --- */
-.menu-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.code-entry:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
@@ -2571,7 +2484,6 @@ html, body {
 .preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.menu-drawer-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
@@ -2599,14 +2511,13 @@ html, body {
 }
 
 /* --- focus: :focus가 아니라 :focus-visible — 마우스 클릭엔 링이 뜨지 않고 키보드 탐색에만 뜬다 --- */
-.menu-btn:focus-visible, .github-link:focus-visible, .icon-btn:focus-visible,
+.code-entry:focus-visible, .github-link:focus-visible, .icon-btn:focus-visible,
 .tool-icon-btn:focus-visible, .stepper-btn:focus-visible, .round-btn:focus-visible,
 .pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
 .prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible,
 .export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
 .inspect-toggle:focus-visible,
 .code-tab:focus-visible,
-.menu-drawer-item:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
 .shots-input:focus-visible, .prob-hide-toggle:focus-within, .state-hide-toggle:focus-within,
 .qubit-select:focus-visible,
@@ -2616,7 +2527,7 @@ html, body {
 }
 
 /* --- disabled: 흐리게 + not-allowed. **pointer-events는 유지**한다(사유 툴팁을 보여줘야 한다) --- */
-.menu-btn:disabled, .icon-btn:disabled, .tool-icon-btn:disabled, .stepper-btn:disabled,
+.code-entry:disabled, .icon-btn:disabled, .tool-icon-btn:disabled, .stepper-btn:disabled,
 .round-btn:disabled, .pill-btn-primary:disabled, .segmented-btn:disabled,
 .prob-run-btn:disabled, .prob-reset-btn:disabled, .prob-showall-btn:disabled,
 .qpick-btn:disabled, .view-reset-btn:disabled,
@@ -2692,6 +2603,10 @@ html, body {
    **오버레이가 아니다.** 그리드의 형제로 워크스페이스 아래를 차지하는 레이아웃 참여자라,
    펼치면 그리드 높이가 줄 뿐 어느 패널도 가려지지 않는다. 코드를 고치면서 회로·상태벡터·
    확률을 동시에 보는 게 이 기능의 목적이다. 줄어든 그리드는 layout.js 가 다시 배분한다.
+
+   입구는 헤더의 Code 버튼이고, **접히면 밴드와 간격이 모두 0px** 이다(hidden). 6단계에서는
+   접힌 머리글이 63px 를 가져가 1536×740 · 4큐비트 회로가 49px 스크롤됐다 — 다섯 패널 모두에
+   양보하는 최하위가 접힌 채로 1순위를 밀면 안 된다. 예외는 충돌 줄 하나다(아래).
    ========================================================================== */
 
 /* 그리드와의 간격이 곧 리사이저다(행 스플리터와 같은 규약 — 모양·커서·hover 는 .row-splitter
@@ -2701,7 +2616,12 @@ html, body {
   height: var(--space-3);
   touch-action: none;
 }
-/* 접혀 있으면 간격만 남긴다. 끌어서 늘릴 몸통이 없는데 커서가 바뀌면 되는 척하는 UI 가 된다. */
+/* 밴드·리사이저는 display 를 직접 정하므로(flex·row-splitter) hidden 속성이 이기도록 적는다.
+   접힘을 즉시 바꾸는 이유는 아래 .code-body 주석에 있다. */
+.code-band-resizer[hidden],
+.code-panel[hidden] { display: none; }
+/* 접힌 채 충돌 줄만 떠 있을 때는 간격만 남긴다. 끌어서 늘릴 몸통이 없는데 커서가 바뀌면 되는
+   척하는 UI 가 된다. */
 .code-band-resizer:has(+ .code-panel.is-collapsed) {
   cursor: auto;
   pointer-events: none;
@@ -2722,12 +2642,15 @@ html, body {
   background: var(--gray-2);
   border: 1px solid var(--gray-6);
   border-radius: var(--radius-3);
-  /* 세로 패딩을 한 단계 줄인다 — 접힌 머리글이 가장 빠듯한 화면(1366×640)에서 그리드 높이를
-     가져가는 비용이라서다. */
+  /* 세로 패딩을 한 단계 줄인다 — 펼친 밴드와 접힌 충돌 줄이 그리드 높이를 가져가는 만큼을
+     줄이려는 것이다. */
   padding: var(--space-2) var(--space-4);
   overflow: hidden;
 }
+/* 접혔는데 보인다면 충돌 줄 때문이다 — 높이는 그 줄만큼이고 머리글(탭·Apply·Copy·접기)은 없다.
+   머리글은 펼쳤을 때만 있다: 펼치기는 헤더의 Code 버튼이 하고, 이 머리글은 펼친 밴드를 다룬다. */
 .code-panel.is-collapsed { height: auto; }
+.code-panel.is-collapsed > .code-tabs { display: none; }
 
 /* 접힘·펼침은 **즉시** 바꾼다. 높이를 애니메이션하면 밴드 → 그리드 → 행 배분·차트·구가 매
    프레임 다시 계산돼, §8 이 width/left 애니메이션을 금지한 것과 같은 이유로 끊긴다.

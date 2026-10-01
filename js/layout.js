@@ -78,9 +78,10 @@ const EPS_PX = 0.5;
  * 펼치거나 끌면 이 안에서 사용자가 이긴다: 회로는 스크롤로 물러나고 확률 바닥은 지킨다
  * (행 스플리터의 rowTopPx 와 같은 규칙).
  *
- * 바닥은 머리글 높이가 아니라 **접힌 밴드의 실측 높이**다. 충돌 줄이 떠 있으면 접힌 밴드는
- * 머리글 + 충돌 줄인데, 바닥이 머리글만이면 가장 빠듯한 화면에서 max-height 가 반드시
- * 보여야 할 충돌 줄을 자른다. 접힌 밴드는 코드로 들어가는 유일한 입구라 확률 바닥보다 앞선다.
+ * 바닥은 **접힌 밴드의 실측 높이**다 — 평소엔 0(접힌 밴드는 간격까지 0px), 충돌 줄이 떠 있으면
+ * 그 줄의 높이다. 충돌 줄은 적용 안 한 편집이 회로와 어긋났다는 신호이고 Reload / Keep 이 거기
+ * 있어, 가장 빠듯한 화면에서도 max-height 가 그 줄을 자르면 안 된다 — 그래서 확률 바닥보다 앞선다.
+ * (6단계에는 접힌 머리글이 늘 보여 바닥이 51px 이었다. 입구가 헤더로 옮겨 가며 0 이 됐다.)
  *
  * @param {object} p 모두 px. workspaceInner = 워크스페이스 안쪽 높이(그리드 + 간격 + 밴드),
  *   gapsPx = 그리드↔밴드 간격 + 행 간격, circuitMin·probMin = rowPlan 입력과 같은 값
@@ -148,15 +149,26 @@ function measureRows(els) {
 
 /**
  * 코드 밴드 상한(bandMaxPx)의 입력을 잰다.
- * 접힌 높이는 펼친 상태에서도 잰다 — 밴드에서 몸통과 그 앞 간격(flex row-gap)을 빼면 머리글 +
- * (떠 있으면) 충돌 줄 + 패딩·테두리가 남는다. 상수로 두면 충돌 줄이 뜰 때 어긋난다.
- * 그리드↔밴드 간격은 리사이저의 실측 두께다(리사이저가 곧 간격이다).
+ * "접힌 높이"는 지금 상태에서 접으면 밴드가 차지할 높이다. 접힌 밴드는 충돌 줄이 있을 때만 그
+ * 줄로 보이고 아니면 숨는다(codepanel.js 의 syncBand). 그래서
+ *   밴드가 숨어 있다        → 0
+ *   접힌 채 충돌 줄만 보인다 → 밴드 높이 그대로
+ *   펼쳐 있다              → 충돌 줄이 떠 있으면 그 줄 + 밴드 세로 패딩·테두리, 아니면 0
+ * 상수로 두지 않는다 — 충돌 줄 높이는 글꼴·폭(버튼 줄바꿈)에 따라 달라진다.
+ * 그리드↔밴드 간격은 리사이저의 실측 두께다(리사이저가 곧 간격이다 — 숨으면 0).
  */
 function measureBand(els) {
-  const bandHeight = els.band.getBoundingClientRect().height;
-  const collapsedPx = els.bandBody.hidden
-    ? bandHeight
-    : bandHeight - els.bandBody.getBoundingClientRect().height - parseFloat(getComputedStyle(els.band).rowGap);
+  let collapsedPx = 0;
+  if (!els.band.hidden) {
+    if (els.bandBody.hidden) {
+      collapsedPx = els.band.getBoundingClientRect().height;
+    } else if (!els.bandConflict.classList.contains("hidden")) {
+      const cs = getComputedStyle(els.band);
+      collapsedPx = els.bandConflict.getBoundingClientRect().height
+        + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+        + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    }
+  }
   const ws = getComputedStyle(els.workspace);
   return {
     collapsedPx,
@@ -193,6 +205,7 @@ export function initResizableLayout() {
     workspace,
     band: document.getElementById("code-panel"),
     bandBody: document.getElementById("code-body"),
+    bandConflict: document.getElementById("code-conflict"),
     bandText: document.getElementById("code-text"),
     bandPre: document.getElementById("code-pre"),
     bandResizer: document.getElementById("code-band-resizer"),

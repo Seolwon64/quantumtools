@@ -40,7 +40,6 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 | `tokens.js` | 디자인 토큰을 JS 에서 읽는 단일 창구 |
 | `icons.js` | 아이콘 세트 (Lucide, ISC) |
 | `layout.js` | 워크스페이스 배치 — 스플리터·행 배분·코드 밴드 높이 |
-| `menu.js` | 햄버거 메뉴 드로어 |
 
 ### 상태와 지속성
 
@@ -80,7 +79,8 @@ Biome / tsconfig 설정 파일도 없다. **빌드·린트·포맷 명령은 존
   따른다. 일부 파일이 명명 임포트를 쓰는데 둘 다 동작하므로 고치러 다니지 않는다.
 - 소스는 `import { x } from "../js/파일.js"` 로 가져온다.
 - **통과 개수를 미리 가정하지 않는다.** 작업 전에 `node --test` 를 한 번 돌려 기준선을
-  재고, 작업 후 통과 수가 기준선 이상이고 실패가 0인지 확인한다.
+  재고, 작업 후 실패가 0인지 확인한다. 통과 수가 기준선보다 줄었다면 지운 테스트와
+  그 이유, 다른 곳으로 옮긴 불변식을 보고한다. 개수를 맞추려고 테스트를 만들지 않는다.
 - 통과시키려고 단언을 약화시키지 않는다. **테스트를 통과시키려고 소스를 고치지
   않는다** — 소스가 틀린 것 같으면 보고한다. 근본 원인이 소스에 있다고 판단해
   고치는 것은 `debugger` 의 일이며 이 금지에 해당하지 않는다.
@@ -140,7 +140,7 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
 
 명세는 둘로 나뉜다. 필요한 것만 읽는다.
 
-**`docs/design-spec.md`** — `style.css`, `index.html`, `js/icons.js`, `js/menu.js`,
+**`docs/design-spec.md`** — `style.css`, `index.html`, `js/icons.js`, `js/codepanel.js`,
 `js/layout.js`, `js/scene.js`, `js/grid.js`, `js/gatemenu.js`, `js/popover.js`,
 `js/playback.js`, `js/probview.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
 색 토큰 규격, 패널 구조, 게이트 카테고리 색, 인터랙티브 상태, 회로 격자 좌표 규칙,

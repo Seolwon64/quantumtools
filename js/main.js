@@ -1,7 +1,6 @@
 // 앱 진입점. DOM 배선과 이벤트 핸들러 — 컨트롤러 콜백을 받아 화면 전체를 갱신한다.
 import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
-import { initMenu } from "./menu.js";
 import { initCodePanel } from "./codepanel.js";
 import { createCircuitController } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
@@ -135,7 +134,6 @@ const blochPurity = document.getElementById("bloch-purity");
 const blochMixedFill = document.getElementById("bloch-mixed-fill");
 const blochMixedPct = document.getElementById("bloch-mixed-pct");
 const sphereCaption = document.getElementById("sphere-caption");
-const menuBtn = document.getElementById("menu-btn");
 const probEndian = document.getElementById("prob-endian");
 const dmQubitSelect = document.getElementById("dm-qubit-select");
 const dmMatrix = document.getElementById("dm-matrix");
@@ -181,15 +179,6 @@ let probView = (() => {
 // 코드 패널은 아래쪽에서 초기화된다. 그런데 render() 는 컨트롤러가 만들어질 때
 // 곧바로 한 번 불리므로, const 로 두면 그 시점에 TDZ 에러가 난다(?. 로도 못 막는다).
 let codePanel = null;
-
-// ---------- 햄버거 메뉴 드로어 ----------
-// 열기/닫기·포커스 트랩·방향키는 js/menu.js 가 전부 갖고 있다.
-const menu = initMenu({
-  menuBtn,
-  overlay: document.getElementById("menu-overlay"),
-  drawer: document.getElementById("menu-drawer"),
-  body: document.getElementById("menu-drawer-body"),
-});
 
 // ---------- Bloch / Q-sphere 뷰 ----------
 // Bloch 뷰는 선택한 큐비트의 축약 밀도행렬(부분대각합)로 블로흐 벡터를 그린다. 다체계에서
@@ -924,17 +913,19 @@ probViewToggle.addEventListener("click", (e) => {
 });
 
 // ---------- 코드 밴드 (QASM / Qiskit) ----------
-// 그리드 아래 전폭 밴드다. 코드에 닿는 경로는 밴드 머리글과 메뉴 → Code editor(밴드를 펼치고
-// 코드 영역에 포커스) 둘이고, 둘은 **같은 편집기**를 가리킨다. 예전의 <> 버튼(복사 전용)은
-// 없앴다 — 편집 가능 여부가 다른 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
+// 그리드 아래 전폭 밴드다. 코드에 닿는 입구는 **헤더의 Code 버튼 하나**다(옛 햄버거 메뉴 자리 —
+// 메뉴에는 Code editor 말고 항목이 없어 메뉴째 없앴다). 예전의 <> 버튼(복사 전용)도 없앴다 —
+// 편집 가능 여부가 다른 경로가 둘이면 어느 쪽이 편집 가능한지 알 수 없다.
 codePanel = initCodePanel({
   circuit,
   layout,
   showToast,
-  onOpen: () => menu.close({ restoreFocus: false }),
   els: {
+    entry: document.getElementById("code-entry"),
+    entryDot: document.getElementById("code-entry-dot"),
+    resizer: document.getElementById("code-band-resizer"),
     panel: document.getElementById("code-panel"),
-    toggle: document.getElementById("code-toggle"),
+    collapseBtn: document.getElementById("code-collapse"),
     body: document.getElementById("code-body"),
     tabQasm: document.getElementById("tab-qasm"),
     tabQiskit: document.getElementById("tab-qiskit"),
@@ -955,7 +946,6 @@ codePanel = initCodePanel({
     status: document.getElementById("code-status"),
   },
 });
-menu.setAction("code", () => codePanel.open());
 
 // ---------- 회로 프리셋 드롭다운 ----------
 const presetsBtn = document.getElementById("presets-btn");

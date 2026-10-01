@@ -109,7 +109,7 @@ test("상단 높이는 음수가 되지 않는다 — 음수 px 는 grid-templat
 
 test("밴드 상한은 그리드에 회로 최소와 확률 최소를 남긴다 — 끝까지 펼쳐도 행 배분이 성립한다", () => {
   const circuitMin = 195, probMin = 199;
-  const max = bandMaxPx({ workspaceInner: 700, gapsPx: 24, circuitMin, probMin, collapsedPx: 51 });
+  const max = bandMaxPx({ workspaceInner: 700, gapsPx: 24, circuitMin, probMin, collapsedPx: 0 });
   assert.equal(max, 700 - 24 - circuitMin - probMin);
   // 그 높이의 밴드 아래에서 두 행 가용 높이가 정확히 회로 최소 + 확률 최소다.
   const available = 700 - 24 - max;
@@ -118,32 +118,42 @@ test("밴드 상한은 그리드에 회로 최소와 확률 최소를 남긴다 
   assert.equal(available - rowTopPx(plan, 0), probMin, "확률은 바닥을 지킨다");
 });
 
-test("아주 낮은 화면에서도 접힌 밴드는 잘리지 않는다 — 코드로 들어가는 유일한 입구다", () => {
-  const max = bandMaxPx({ workspaceInner: 420, gapsPx: 24, circuitMin: 195, probMin: 199, collapsedPx: 51 });
-  assert.equal(max, 51);
+test("충돌 줄이 떠 있는 접힌 밴드는 아주 낮은 화면에서도 잘리지 않는다 — Reload / Keep 이 거기 있다", () => {
+  // 충돌 줄(패딩·테두리 포함) 57px. 회로 최소 + 확률 최소를 남기면 밴드 몫은 2px 뿐인 화면.
+  const max = bandMaxPx({ workspaceInner: 420, gapsPx: 24, circuitMin: 195, probMin: 199, collapsedPx: 57 });
+  assert.equal(max, 57);
 });
 
-test("충돌 줄이 떠 있으면 상한의 바닥도 그만큼 올라간다 — 접힌 밴드의 충돌 줄이 잘리지 않는다", () => {
+test("충돌 줄이 뜰 때만 상한의 바닥이 0 에서 그 줄 높이로 올라간다", () => {
   const base = { workspaceInner: 420, gapsPx: 24, circuitMin: 195, probMin: 199 };
-  assert.equal(bandMaxPx({ ...base, collapsedPx: 51 + 40 }), 91);
+  assert.equal(bandMaxPx({ ...base, collapsedPx: 0 }), 2, "충돌이 없으면 바닥이 행 배분을 밀지 않는다");
+  assert.equal(bandMaxPx({ ...base, collapsedPx: 57 }), 57);
 });
 
+test("접힌 밴드가 0px 이면 상한의 바닥도 0 이고 음수 높이를 쓰지 않는다", () => {
+  // 회로 최소 + 확률 최소만으로 워크스페이스가 모자란 화면 — 그래도 max-height 에 음수가 가면 안 된다.
+  const max = bandMaxPx({ workspaceInner: 380, gapsPx: 24, circuitMin: 195, probMin: 199, collapsedPx: 0 });
+  assert.equal(max, 0);
+});
+
+// Δ 는 "그리드가 잃는 높이" = 펼친 밴드(에디터 16줄 기준 약 391px) + 그 위 간격 12px ≈ 403px.
+// 접힌 밴드는 0px 이라 접힌 상태의 두 행 가용 높이는 밴드가 없을 때(2부)와 같다.
 test("여유가 크면 밴드를 펼친 채 시작한다 — 하단의 흡수처 몫만 가져간다 (3840×2000급)", () => {
-  assert.equal(bandStartsOpen(rows({ available: 1837, circuitNeeded: 427 }), 340), true);
-  assert.equal(bandStartsOpen(rows({ available: 1837, circuitNeeded: 543 }), 340), true);
+  assert.equal(bandStartsOpen(rows({ available: 1900, circuitNeeded: 427 }), 403), true);
+  assert.equal(bandStartsOpen(rows({ available: 1900, circuitNeeded: 543 }), 403), true);
 });
 
 test("펼치면 확률이 쓸모 있는 최대 아래로 내려가는 화면에서는 접힌 채 시작한다 (2560×1300 6큐비트급)", () => {
-  // 상단 543(회로), 펼치면 하단 = 1137 − 340 − 543 = 254 < 확률 최대 363
-  assert.equal(bandStartsOpen(rows({ available: 1137, circuitNeeded: 543 }), 340), false);
+  // 상단 543(회로), 펼치면 하단 = 1200 − 403 − 543 = 254 < 확률 최대 363
+  assert.equal(bandStartsOpen(rows({ available: 1200, circuitNeeded: 543 }), 403), false);
 });
 
 test("펼치면 Q-sphere 가 줄어드는 화면에서는 접힌 채 시작한다 — 밴드 크기가 판정을 가른다", () => {
-  const m = rows({ available: 1137, circuitNeeded: 427 });
-  // 16줄(Δ 340): 구 항이 min(448, 797 − 363) = 434 로 줄어든다
-  assert.equal(bandStartsOpen(m, 340), false);
-  // 13줄 정도(Δ 287)면 구가 448 을 지킨다 — 고정 임계가 아니라 그때의 배분으로 정한다
-  assert.equal(bandStartsOpen(m, 287), true);
+  const m = rows({ available: 1200, circuitNeeded: 427 });
+  // 16줄(Δ 403): 구 항이 min(448, 797 − 363) = 434 로 줄어든다
+  assert.equal(bandStartsOpen(m, 403), false);
+  // 13줄 정도(Δ 350)면 구가 448 을 지킨다 — 고정 임계가 아니라 그때의 배분으로 정한다
+  assert.equal(bandStartsOpen(m, 350), true);
 });
 
 test("밴드가 없어도 회로가 이미 스크롤되는 화면에서는 접힌 채 시작한다 (1366×640급)", () => {

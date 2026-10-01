@@ -52,7 +52,7 @@ test("교체 대상 아이콘이 전부 정의돼 있다", () => {
     // 재생 컨트롤
     "skip-back", "step-back", "play", "pause", "step-forward",
     // 상단 툴바
-    "undo-2", "redo-2", "link", "code", "menu",
+    "undo-2", "redo-2", "link", "code",
     // 3D 뷰 리셋 · GitHub · 기타
     "rotate-ccw", "github", "chevron-down", "x", "triangle-alert",
   ];
