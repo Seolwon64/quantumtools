@@ -172,6 +172,16 @@ function cellAt(col, row, qubitCount) {
 // ---------- 회로 그리드 ----------
 
 function buildCircuitGrid(snapshot) {
+  // 렌더마다 그리드를 통째로 다시 그린다(innerHTML). 포커스가 그 안의 게이트에 있었다면 요소가
+  // 사라지며 body 로 떨어진다 — 게이트 정보를 닫아 포커스를 게이트로 돌려보낸 뒤 재생 스텝 하나에
+  // 위치를 잃었다. 그래서 다시 그리기 전에 (열, 큐비트)를 기억했다가 새 요소로 다시 맞춘다.
+  // (한계: 매번 새 요소에 포커스 이벤트가 나서 스크린리더가 같은 게이트를 다시 읽을 수 있다 —
+  // 근본 해결은 통째로 다시 그리지 않는 것이고, 회로 키보드 탐색 단계의 일이다.)
+  const focused = document.activeElement;
+  const focusedCell = focused && focused !== circuitGrid && circuitGrid.contains(focused)
+    ? focused.closest(".grid-cell") : null;
+  const refocus = focusedCell ? { col: focusedCell.dataset.col, qubit: focusedCell.dataset.qubit }
+    : focused === circuitGrid ? {} : null;
   circuitGrid.innerHTML = "";
 
   // 칼럼별 역할 맵: qubit -> { type: "target"|"control", cell, primary }
@@ -223,11 +233,15 @@ function buildCircuitGrid(snapshot) {
         if (role.type === "control" || (role.type === "target" && controlledZ)) {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
+          // tabindex -1: Tab 순서에는 넣지 않고(회로 키보드 탐색은 아직 없다) 코드로만 포커스를
+          // 줄 수 있게 한다 — 게이트 정보를 닫을 때 포커스를 돌려보낼 자리다.
+          dot.tabIndex = -1;
           attachGateHover(dot, role.cell);
           cell.appendChild(dot);
         } else {
           const chip = document.createElement("div");
           chip.className = `placed-gate cat-${GATE_CATEGORY[role.cell.gate] ?? "structural"}`;
+          chip.tabIndex = -1; // 위 제어점과 같은 이유 — 포커스를 돌려보낼 자리
           if (info?.kind === "decomposed") chip.classList.add("placed-advanced"); // RCCX/RC3X 시각 구분
           if (role.cell.gate === "MEASURE") {
             chip.innerHTML = MEASURE_SVG;
@@ -359,4 +373,22 @@ function buildCircuitGrid(snapshot) {
   ind.classList.toggle("hidden", snapshot.totalSteps === 0);
   circuitGrid.appendChild(ind);
   attachIndicator(ind);
+
+  // 다시 그리기 전에 포커스가 그리드 안에 있었다면 같은 자리의 새 게이트로, 그 자리가 비었으면
+  // 그리드 자체로 되돌린다(맨 위 주석). 스크롤은 움직이지 않는다 — 재생 중에 화면이 튀지 않게.
+  if (refocus) {
+    const target = refocus.col === undefined ? null : focusableGateAt(circuitGrid, refocus.col, refocus.qubit);
+    (target ?? circuitGrid).focus({ preventScroll: true });
+  }
+}
+
+/**
+ * (열, 큐비트) 칸에 놓인 게이트 칩 또는 제어점 — 포커스를 받을 수 있는 게이트 요소. 없으면 null.
+ * 게이트 정보(gatemenu.js)가 포커스를 돌려보낼 때도 쓴다 — "어느 요소가 게이트인가"를 한 곳에 둔다.
+ * 그리드 요소를 인자로 받는다: 이 모듈의 다른 함수와 달리 주입된 상태를 읽지 않아 initGrid 전에
+ * 불려도 안전하다(이 모듈이 export 를 아끼는 이유가 그 순서 문제다).
+ */
+export function focusableGateAt(gridEl, column, qubit) {
+  const cell = `.grid-cell[data-col="${column}"][data-qubit="${qubit}"]`;
+  return gridEl.querySelector(`${cell} > .placed-gate, ${cell} > .ctrl-dot`);
 }

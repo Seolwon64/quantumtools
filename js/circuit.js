@@ -66,6 +66,22 @@ export function cellAtHome(snapshot, sel) {
   return snapshot.grid[sel.column]?.[sel.home] ?? null;
 }
 
+// 두 셀이 **같은 게이트**인가 — 종류·대상·제어가 같으면 같다. 파라미터(각도·조건 비트·측정 비트)는
+// 보지 않는다: 같은 게이트의 값을 고친 것이지 다른 게이트가 아니다.
+// 게이트 정보 패널이 "무엇에 대한 정보인가"를 자리(column, home)가 아니라 이것으로 알아본다 —
+// 자리로만 보면 Undo·프리셋이 같은 자리에 다른 게이트를 놓을 때 정보가 조용히 그 게이트로 바뀌었다.
+// targets 는 순서까지 본다(RCCX/RC3X 는 마지막이 타깃이라 순서가 곧 역할이다). controls 는 집합으로
+// 본다 — 덧붙일 때만 오름차순으로 넣고 기존 것은 재정렬하지 않아 같은 집합이 다른 순서로 저장될 수 있다.
+export function isSameGate(a, b) {
+  if (!a || !b || a.gate !== b.gate) return false;
+  const ta = a.targets ?? [];
+  const tb = b.targets ?? [];
+  if (ta.length !== tb.length || ta.some((q, i) => q !== tb[i])) return false;
+  const ca = [...(a.controls ?? [])].sort((x, y) => x - y);
+  const cb = [...(b.controls ?? [])].sort((x, y) => x - y);
+  return ca.length === cb.length && ca.every((q, i) => q === cb[i]);
+}
+
 // 구버전 셀({gate:"CNOT", controls, partner, theta,...}) → canonical. 이미 canonical이면 정규화만.
 // homeRow: 그 셀이 저장돼 있던 행(구버전은 타깃 행).
 export function migrateCell(cell, homeRow) {

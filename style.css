@@ -926,7 +926,10 @@ html, body {
 .gate-info {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* 세로는 정보 안에서 스크롤하고, 가로 스크롤은 행렬(.mx-scroll)에만 둔다. 예전엔 overflow:auto
+     하나라 8×8 행렬을 옆으로 밀면 제목·설명·노트가 함께 밀려 화면 밖으로 나갔다. */
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: var(--space-1) var(--space-1) var(--space-1);
   display: flex;
   flex-direction: column;
@@ -961,12 +964,25 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 라벨 붙은 유니터리 행렬. .dm-grid(밀도행렬)와 같은 시각 언어를 쓰되 크기를 일반화했다. */
+/* 행렬의 가로 스크롤 영역. 정보 폭보다 넓은 행렬만 이 안에서 옆으로 밀린다.
+   flex 아이템의 min-width:auto 는 내용(행렬) 폭이라, 0 으로 풀어야 정보 폭에 묶여 스크롤이 생긴다.
+   flex:none — overflow 가 visible 이 아닌 flex 아이템은 자동 최소 높이가 0 이라, 그대로 두면 정보
+   높이에 맞춰 세로로 짓눌려 **행렬 상자 안에서** 세로 스크롤됐다(중첩 스크롤, 그 스크롤바가 행렬 폭을
+   15px 깎았다). 내용 높이를 지켜 세로 넘침은 .gate-info 가 받는다. */
+.mx-scroll {
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* 라벨 붙은 유니터리 행렬. .dm-grid(밀도행렬)와 같은 시각 언어를 쓰되 크기를 일반화했다.
+   max-width 를 두지 않는다 — 예전 max-width:100% 는 넓은 행렬의 칸을 정보 폭 안으로 짓눌렀다.
+   자연 폭을 갖고, 넘치면 .mx-scroll 이 스크롤한다. */
 .mx-grid {
   display: grid;
   gap: var(--space-1);
   width: max-content;
-  max-width: 100%;
 }
 .mx-corner,
 .mx-collabel,
@@ -1118,6 +1134,10 @@ html, body {
 .round-btn.is-disabled {
   pointer-events: auto; /* hover 툴팁은 받아야 한다 */
 }
+
+/* 그리드 자체에는 링을 그리지 않는다 — 브라우저 기본 링(auto)이 .circuit-scroll 에 반쯤 잘린 채
+   감싸개의 링과 겹쳐 이중으로 보였다. 링은 감싸개에 그린다(중앙 focus-visible 블록, .code-text 와 같은 방식). */
+.circuit-grid:focus { outline: none; }
 
 .circuit-grid {
   position: relative;
@@ -1331,6 +1351,15 @@ html, body {
 .ctrl-dot.selected {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+/* 게이트 정보가 설명하는 게이트(대상·제어 칩 전부). 선택과 **따로** 간다 — 빈 칸을 누르거나 다른
+   게이트의 메뉴를 열어도 무엇에 대한 정보인지 회로에 남아야 한다. 선택·포커스 링(outline)과 다른
+   속성(box-shadow)이라 셋이 겹쳐도 다 보인다: 칩 바로 바깥 2px 가 후광, 그 바깥이 outline 이다.
+   폭은 간격 스케일(--space-1) — 셀(50)과 칩(40)의 여백 5px 안이라 이웃 칩에 닿지 않는다. */
+.placed-gate.info-target,
+.ctrl-dot.info-target {
+  box-shadow: 0 0 0 var(--space-1) var(--accent-6);
 }
 
 /* [3] 게이트 컨텍스트 메뉴 — 가로 아이콘 바(IBM Composer 스타일). 높이 44px 이내. */
@@ -2521,10 +2550,16 @@ html, body {
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
 .shots-input:focus-visible, .prob-hide-toggle:focus-within, .state-hide-toggle:focus-within,
 .qubit-select:focus-visible,
-.code-editor:has(.code-text:focus-visible), .code-readonly:has(.code-pre:focus-visible) {
+.code-editor:has(.code-text:focus-visible), .code-readonly:has(.code-pre:focus-visible),
+.placed-gate:focus-visible, .ctrl-dot:focus-visible, .mx-scroll:focus-visible,
+.circuit-scroll:has(.circuit-grid:focus-visible) {
   outline: 2px solid var(--accent-9);
   outline-offset: 2px;
 }
+/* 위 마지막 넷: 게이트 정보를 닫으면 포커스가 연 게이트(칩·제어점)로, 그것도 없으면 회로
+   그리드로 돌아온다(design-spec §8). 셋 다 tabindex -1 이라 Tab 으로는 닿지 않지만, 돌아온
+   포커스가 보이지 않으면 키보드 사용자에게는 body 로 떨어진 것과 같다. 그리드는 width:max-content
+   로 .circuit-scroll(overflow:auto) 의 0,0 에 붙어 자기 링이 잘리므로 감싸개에 그린다(§6). */
 
 /* --- disabled: 흐리게 + not-allowed. **pointer-events는 유지**한다(사유 툴팁을 보여줘야 한다) --- */
 .code-entry:disabled, .icon-btn:disabled, .tool-icon-btn:disabled, .stepper-btn:disabled,

@@ -48,7 +48,7 @@
           <button class="icon-btn tool-icon-btn hidden" id="gate-info-close" title="Close (Esc)" aria-label="Close gate info"><span data-icon="x"></span></button>
         </div>
         <div class="palette-body" id="gate-palette"></div>
-        <div class="gate-info hidden" id="gate-info"></div>
+        <div class="gate-info hidden" id="gate-info" role="region" aria-labelledby="gate-info-title"></div>
       </section>
 
       <section class="panel panel-circuit">
@@ -82,7 +82,7 @@
         </div>
         <div class="circuit-body">
           <div class="circuit-scroll">
-            <div class="circuit-grid" id="circuit-grid"></div>
+            <div class="circuit-grid" id="circuit-grid" tabindex="-1" role="group" aria-label="Circuit"></div>
           </div>
         </div>
         <div class="playback-controls">

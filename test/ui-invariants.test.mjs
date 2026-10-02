@@ -3,6 +3,7 @@
 // 메뉴 드로어(7단계에서 제거)의 테스트에 함께 들어 있던 것 중 **메뉴와 무관한 불변식**을 옮겨
 // 왔다: 코드 밴드는 대화상자가 아니다, 코드 밴드에 오버레이가 없다, 자리표시자 금지. 마지막은
 // 메뉴 항목에만 걸던 것을 UI 전체로 넓혔다. 여기에 헤더의 Code 버튼(코드 밴드의 유일한 입구)을 더했다.
+// 8단계: 게이트 정보도 대화상자가 아니다 · 정보를 닫을 때 포커스가 돌아오는 자리마다 링이 있다.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -58,6 +59,29 @@ test("헤더의 Code 버튼이 코드 밴드를 가리키고, 보이는 글자�
   // 아이콘은 장식이다 — 아이콘 세트가 aria-hidden 으로 그린다.
   assert.match(body, /data-icon="code"/, "아이콘 자리가 없다");
   assert.match(icon("code"), /aria-hidden="true"/, "아이콘이 보조기술에 노출된다");
+});
+
+test("게이트 정보는 대화상자가 아니다 — 제목으로 이름이 붙고 aria-modal 이 없다", () => {
+  // 팔레트를 잠깐 덮는 일시적 UI 라 포커스를 가두지 않는다. 영역 이름은 보이는 제목(게이트 이름)이다.
+  assert.equal(attr("gate-info", "role"), "region", "게이트 정보가 영역으로 선언돼 있지 않다");
+  assert.equal(attr("gate-info", "aria-labelledby"), "gate-info-title", "게이트 정보의 이름이 제목에 연결돼 있지 않다");
+  assert.doesNotMatch(tag("gate-info"), /aria-modal|role="dialog"/, "게이트 정보가 대화상자로 선언됐다");
+  // 제목 요소는 렌더할 때 만들어진다 — 연결된 id 를 실제로 다는 곳이 있어야 이름이 생긴다.
+  const gatemenu = JS.find(([f]) => f === "gatemenu.js")[1];
+  assert.match(gatemenu, /\.id = "gate-info-title"/, "gatemenu.js 가 제목에 gate-info-title 을 달지 않는다");
+});
+
+test("게이트 정보를 닫을 때 포커스가 돌아오는 자리마다 focus-visible 링이 있다", () => {
+  // 돌아온 포커스가 보이지 않으면 키보드 사용자에게는 body 로 떨어진 것과 같다.
+  // 회로 그리드는 스크롤 영역에 붙어 자기 링이 잘리므로 감싸개에 그린다.
+  const block = CSS.match(/([^{}]*)\{\s*outline: 2px solid var\(--accent-9\);/)[1];
+  for (const sel of [".placed-gate:focus-visible", ".ctrl-dot:focus-visible",
+    ".mx-scroll:focus-visible", ".circuit-scroll:has(.circuit-grid:focus-visible)"]) {
+    assert.ok(block.includes(sel), `${sel} 가 중앙 focus-visible 블록에 없다`);
+  }
+  // 그리드는 Tab 순서엔 없지만 포커스를 받을 수 있어야 마지막 귀착지가 된다.
+  assert.equal(attr("circuit-grid", "tabindex"), "-1", "회로 그리드가 포커스를 받을 수 없다");
+  assert.ok(attr("circuit-grid", "aria-label"), "회로 그리드에 이름이 없다");
 });
 
 test("헤더의 Code 버튼이 기존 5개 상태 규칙에 편입돼 있다 (별도 정의를 만들지 않는다)", () => {

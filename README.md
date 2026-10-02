@@ -75,7 +75,7 @@ node --test test/*.test.mjs
 
 ## 🗺 Roadmap
 
-The header already says *"More tools coming soon"* — some ideas on the list:
+Some ideas on the list:
 
 - **Mid-circuit measurement** (real collapse + classical feedforward) — would unlock measurement-based teleportation and more
 - **Measurement-basis selection** → a proper **CHSH / Bell-inequality** example (needs basis choice + correlation readout)
