@@ -131,10 +131,12 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
   `tokens.js` 를 임포트하지 않기 때문이다.
 - 그래서 턴이 끝날 때 Stop 훅(`run-tests.mjs`)이 **문법 전수 검사 후 테스트**를 돌린다.
   `js`·`test`·`.claude/hooks`·`.claude/skills`·`scripts` 아래 `.js`/`.mjs`/`.cjs` 전부에
-  `node --check` 를 걸고, 하나라도 깨지면 턴을 되돌린다. 편집 경로와 무관하다.
+  `node --check` 를 걸고, 하나라도 깨지거나 테스트가 실패하면 exit 2 로 출력을 모델에게
+  돌려보내 턴을 이어 가게 한다(편집을 되돌리지는 않는다). 편집 경로와 무관하다.
 - **논리를 바꾸는 Bash 편집은 여전히 아무 검사도 타지 않는다.** `sed -i` 로 상수 값을
   바꾸는 식은 문법이 멀쩡해 이 검사를 통과한다. 파일 편집은 Edit / Write 도구를 쓰고,
   Bash 로 고쳤다면 `git diff` 로 직접 확인한다.
+- InstructionsLoaded 훅(`log-instructions.mjs`)은 지시 파일이 로드될 때 입력을 기록만 한다.
 
 ## 명세를 읽어야 하는 조건
 
@@ -142,13 +144,16 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
 
 **`docs/design-spec.md`** — `style.css`, `index.html`, `js/icons.js`, `js/codepanel.js`,
 `js/layout.js`, `js/scene.js`, `js/grid.js`, `js/gatemenu.js`, `js/popover.js`,
-`js/playback.js`, `js/probview.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
+`js/playback.js`, `js/probview.js`, `js/chart.js`, `js/tokens.js` 의 **UI·색상·레이아웃·타이포그래피**를 건드릴 때.
 색 토큰 규격, 패널 구조, 게이트 카테고리 색, 인터랙티브 상태, 회로 격자 좌표 규칙,
 확률 차트 렌더링이 여기 있다.
 
 **`docs/quantum-spec.md`** — `js/quantum.js`, `js/circuit.js`, `js/trajectory.js`,
-`js/classical.js`, `js/qasm.js`, `js/export.js`, `js/presets.js`, `js/density.js`, `js/probmodel.js` 를 건드릴 때. 회로 데이터 모델, 게이트 배치와 컨트롤 부착, 측정·궤적, QASM/Qiskit 변환,
+`js/classical.js`, `js/qasm.js`, `js/export.js`, `js/presets.js`, `js/density.js`, `js/probmodel.js`, `js/gatematrix.js` 를 건드릴 때. 회로 데이터 모델, 게이트 배치와 컨트롤 부착, 측정·궤적, QASM/Qiskit 변환,
 직렬화·프리셋이 여기 있다.
+**`docs/backlog.md`** — 남은 과제와 알려진 규칙 위반. 명세 규칙을 코드에 맞춰 고치고
+싶어질 때 먼저 본다. 브라우저에서 레이아웃을 재거나 검증할 때는 design-spec 의
+"측정 규칙" 절을 먼저 읽는다.
 
 **`js/main.js` 는 양쪽에 걸친다.** DOM 배선·렌더링을 고치면 design-spec, 회로 상태
 처리를 고치면 quantum-spec 을 읽는다. 둘 다면 둘 다 읽는다.

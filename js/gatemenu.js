@@ -56,7 +56,7 @@ export function initGateMenu({ getCircuit: gc, scene: sc, showToast: stoast,
 
   // 게이트 정보는 팔레트를 잠깐 덮는 **일시적 UI** 라 Esc 로 닫는다 — 단 포커스가 정보 안(닫기 버튼
   // 포함)에 있을 때만. 레이아웃(코드 밴드)은 Esc 로 닫지 않고, 일시적 UI 는 안에 포커스가 있을 때만
-  // 닫는다(design-spec §8). 대화상자가 아니므로 포커스를 가두지도 않는다.
+  // 닫는다(design-spec "원칙 — 포커스와 Esc"). 대화상자가 아니므로 포커스를 가두지도 않는다.
   gateInfoEl.closest(".panel").addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !infoTarget || !infoHasFocus()) return;
     e.preventDefault();

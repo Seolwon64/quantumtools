@@ -2557,9 +2557,9 @@ html, body {
   outline-offset: 2px;
 }
 /* 위 마지막 넷: 게이트 정보를 닫으면 포커스가 연 게이트(칩·제어점)로, 그것도 없으면 회로
-   그리드로 돌아온다(design-spec §8). 셋 다 tabindex -1 이라 Tab 으로는 닿지 않지만, 돌아온
+   그리드로 돌아온다(design-spec "원칙 — 포커스와 Esc"). 셋 다 tabindex -1 이라 Tab 으로는 닿지 않지만, 돌아온
    포커스가 보이지 않으면 키보드 사용자에게는 body 로 떨어진 것과 같다. 그리드는 width:max-content
-   로 .circuit-scroll(overflow:auto) 의 0,0 에 붙어 자기 링이 잘리므로 감싸개에 그린다(§6). */
+   로 .circuit-scroll(overflow:auto) 의 0,0 에 붙어 자기 링이 잘리므로 감싸개에 그린다(같은 절의 감싸개 링). */
 
 /* --- disabled: 흐리게 + not-allowed. **pointer-events는 유지**한다(사유 툴팁을 보여줘야 한다) --- */
 .code-entry:disabled, .icon-btn:disabled, .tool-icon-btn:disabled, .stepper-btn:disabled,
@@ -2688,8 +2688,8 @@ html, body {
 .code-panel.is-collapsed > .code-tabs { display: none; }
 
 /* 접힘·펼침은 **즉시** 바꾼다. 높이를 애니메이션하면 밴드 → 그리드 → 행 배분·차트·구가 매
-   프레임 다시 계산돼, §8 이 width/left 애니메이션을 금지한 것과 같은 이유로 끊긴다.
-   그래서 몸통은 hidden 속성(display:none)으로 감춘다. §8 의 "드로어에 display:none 금지"는
+   프레임 다시 계산돼, design-spec "인터랙티브 상태" 가 width/height 전환을 금지한 것과 같은 이유로 끊긴다.
+   그래서 몸통은 hidden 속성(display:none)으로 감춘다. design-spec "회귀 교훈" 의 "드로어에 display:none 금지"는
    **transition 이 죽는다**가 근거였는데, 여기에는 죽을 전환이 없다. 나중에 여기에 전환을
    붙이려면 display 가 아니라 다른 방법이 필요하다 — 이 규칙부터 다시 읽을 것. */
 .code-body {
@@ -2848,7 +2848,7 @@ html, body {
 
 /* 코드 영역 자체에는 링을 그리지 않는다 — textarea 는 거터와 한 몸이고, Qiskit pre 는
    .code-readonly(overflow:hidden) 안이라 자기 링이 잘린다. 대신 **감싸개**(에디터·읽기 전용
-   박스)에 §6 과 같은 링을 그린다(중앙 focus-visible 블록).
+   박스)에 design-spec "원칙 — 포커스와 Esc" 의 감싸개 링을 그린다(중앙 focus-visible 블록).
    선택자는 :focus-within 이 아니라 :has(:focus-visible) 이다. :focus-within 은 브라우저의
    focus-visible 판단을 따르지 않아, 감싸개 안에 포커스 요소가 더 생기면 마우스 클릭에도 링이
    뜬다. 지금 결과: textarea 는 입력칸이라 클릭에도 링이 뜨고(다른 입력칸과 같다), pre 는

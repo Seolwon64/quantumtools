@@ -6,7 +6,7 @@
 [**▶ Live Demo**](https://seolwon64.github.io/quantumtools/) ·
 ![License](https://img.shields.io/badge/license-MIT-green) ·
 ![Build](https://img.shields.io/badge/build-none-lightgrey) ·
-![Tests](https://img.shields.io/badge/tests-80%2B-3182f6)
+![Tests](https://img.shields.io/badge/tests-node%3Atest-3182f6)
 
 ![Quantum Tools](docs/screenshots/hero.png)
 
@@ -23,13 +23,13 @@ It's a personal project, so it started as "let me really *see* what a Bell state
 - **Measurement sampling.** Run *N* shots and see the sampled counts overlaid on the theoretical probabilities (with a legend), CDF-sampled from `|amplitude|²`.
 - **Smooth step-by-step playback.** A playback cursor sweeps the circuit column by column, probability bars tween with ease-in-out, and the Q-sphere cross-fades. Respects `prefers-reduced-motion`.
 - **Click any placed gate** for its menu: see the unitary matrix (with basis-state row/column labels), edit a rotation angle after placing it, add or remove controls, or expand RCCX into the gate sequence it's actually built from.
-- **Classical register, measurement and `if`.** Add classical bits, measure a qubit into one of them, and condition a gate on a bit — so you can draw teleportation the way the textbook does. **How it's simulated, honestly:** this is a *statevector* simulator, and a real mid-circuit measurement would leave a mixed state that a statevector cannot represent (which would break the Bloch sphere, Q-sphere and the |ψ⟩ readout). So it uses the **principle of deferred measurement**: measurements are postponed to the end and classically-conditioned gates become quantum-controlled gates. The final measurement statistics are identical, but **the intermediate state shown is the pre-measurement (uncollapsed) one** — the app says so on screen whenever a circuit contains a measurement. Circuits that this transformation cannot express (measuring a qubit and then operating on it, or resetting it) are **refused with a reason instead of quietly returning a wrong state**.
+- **Classical register, measurement and `if`.** Add classical bits, measure a qubit into one of them, and condition a gate on a bit — so you can draw teleportation the way the textbook does. **How it's simulated, honestly:** when a measurement result matters later — a gate acts after a mid-circuit measurement or reset, or a gate is conditioned on a classical bit — the circuit runs as **real measurement trajectories**: each measurement actually collapses the state. A seeded random number generator makes this repeatable, so stepping back and forth always shows the same outcome; *Inspect* steps through one trajectory and *Resample* draws a new one. The probability panel aggregates many trajectories (counts for classical bits, averages for qubits), and the app labels every circuit computed this way, so a single pure trajectory is never mistaken for the mixed ensemble. When measurements only sit at the end, nothing after them can see the collapse, so the final statevector is used directly — exact and free.
 - **Reduced density-matrix panel.** The 2×2 ρ for any qubit, shown as complex numbers with cells shaded so the diagonal / off-diagonal structure pops out.
 - **One-click example circuits.** Bell, GHZ, W, phase kickback, Deutsch–Jozsa (balanced & constant), Bernstein–Vazirani, Grover, QFT, teleportation, superdense coding — grouped by Basics / Algorithms / Protocols, and **every one is verified against its expected statevector by a unit test** (a wrong example teaches the wrong idea).
 - **Export & share.** Copy the circuit as **OpenQASM 2.0** or **Qiskit (Python)**, or share a link — the whole circuit is encoded right in the URL.
 - **30+ gates & flexible controls.** Pauli/Clifford, phase/T, rotations, U, interaction gates (RXX/RYY/RZZ), SWAP/CSWAP, Measure/Reset/Barrier, and the relative-phase Toffolis (RCCX/RC3X). Drop a `•` control onto *any* gate to build CX, CZ, CCX, CSWAP, MCX… Up to 6 qubits.
 - **Quality-of-life:** Undo/Redo (`Ctrl+Z` / `Ctrl+Shift+Z`), "Hide 0%" states, a colorblind-safe chart palette, resizable panels, and a clean light UI.
-- **Solid engineering.** A pure, framework-free simulation core with **80+ unit tests** (exact amplitude checks, entanglement/purity, even QFT verified down to its DFT phases). Zero build tooling.
+- **Solid engineering.** A pure, framework-free simulation core, **unit-tested with Node's built-in test runner** (exact amplitude checks, entanglement/purity, even QFT verified down to its DFT phases). Zero build tooling.
 
 ---
 
@@ -77,11 +77,9 @@ node --test test/*.test.mjs
 
 Some ideas on the list:
 
-- **Mid-circuit measurement** (real collapse + classical feedforward) — would unlock measurement-based teleportation and more
 - **Measurement-basis selection** → a proper **CHSH / Bell-inequality** example (needs basis choice + correlation readout)
 - More example circuits that need the above: **Shor period-finding** (needs more qubits), delayed-choice quantum eraser, magic-state distillation
 - Noise / mixed-state playground
-- Circuit import (paste QASM back in)
 
 ---
 
