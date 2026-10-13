@@ -4,9 +4,13 @@
 // 왔다: 코드 밴드는 대화상자가 아니다, 코드 밴드에 오버레이가 없다, 자리표시자 금지. 마지막은
 // 메뉴 항목에만 걸던 것을 UI 전체로 넓혔다. 여기에 헤더의 Code 버튼(코드 밴드의 유일한 입구)을 더했다.
 // 8단계: 게이트 정보도 대화상자가 아니다 · 정보를 닫을 때 포커스가 돌아오는 자리마다 링이 있다.
+// 토큰 값의 사본(DESIGN.md·사이드카)이 리포에 없다는 약속도 여기 둔다 — 마크업은 아니지만
+// "정의는 style.css 한 곳에만"이라는, 역시 앱 전체에 걸린 약속이다.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { icon } from "../js/icons.js";
 
 const HTML = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -92,4 +96,50 @@ test("헤더의 Code 버튼이 기존 5개 상태 규칙에 편입돼 있다 (�
       `.code-entry 가 ${state} 목록에 없다`
     );
   }
+});
+
+// Impeccable(4.5.2 기준)의 `document` 와 재디자인 흐름(`new-work`)은 DESIGN.md 에 토큰 값을 쓴다 —
+// new-work 는 그것이 완료 조건이라, 그 흐름을 한 번 타면 파일이 생긴다. 사이드카도 같은 값을
+// 담는다 — `.impeccable/design.json`, 또는 DESIGN.md 옆의 `DESIGN.json`. 모두 "정의는 style.css
+// 한 곳에만"과 충돌하고, spec-tokens 테스트는 design-spec.md 가 말하는 변수 이름만 대조하므로
+// 그 사본이 style.css 에서 멀어져도 지키지 못한다.
+//
+// Impeccable 은 DESIGN.md 를 루트 → .agents/context → docs 순으로 찾고, DESIGN.json 도 그 자리에서
+// 읽는다. 이름은 소문자로 바꿔 비교한다 — Windows 는 대소문자를 무시해 어떤 철자로 두어도
+// 읽히지만, 다른 환경은 아니다.
+// 덮지 못하는 것: 환경변수 IMPECCABLE_CONTEXT_DIR 로 지정한 네 번째 위치. 리포 밖일 수 있어
+// 여기서는 볼 수 없다.
+const ROOT = fileURLToPath(new URL("../", import.meta.url));
+
+/** 리포 루트 기준 디렉터리의 항목들. 없는 디렉터리는 빈 목록이다 — `.agents/context` 는 보통 없다. */
+function entries(dir) {
+  try {
+    return readdirSync(join(ROOT, dir), { withFileTypes: true });
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw e;
+  }
+}
+
+/** 리포 안의 모든 디렉터리. .git 과 node_modules 는 리포의 내용이 아니라 내려가지 않는다. */
+function* dirs(dir = ".") {
+  yield dir;
+  for (const e of entries(dir)) {
+    if (e.isDirectory() && e.name !== ".git" && e.name !== "node_modules") yield* dirs(`${dir}/${e.name}`);
+  }
+}
+
+test("토큰 값을 따로 적는 DESIGN.md 와 사이드카가 리포에 없다 — 정의는 style.css 한 곳뿐이다", () => {
+  const named = (dir, name) =>
+    entries(dir).filter((e) => e.name.toLowerCase() === name).map((e) => `${dir}/${e.name}`);
+  const found = [
+    ...[".", ".agents/context", "docs"].flatMap((dir) =>
+      ["design.md", "design.json"].flatMap((name) => named(dir, name))),
+    // `.impeccable/` 안의 사이드카는 Impeccable 이 프로젝트 루트로 본 디렉터리 아래에 생긴다.
+    // 그게 리포 루트라는 보장이 없어 자리를 정하지 않고 다 본다.
+    ...[...dirs()]
+      .filter((dir) => dir.toLowerCase().endsWith("/.impeccable"))
+      .flatMap((dir) => named(dir, "design.json")),
+  ];
+  assert.deepEqual(found, [], `토큰 값의 사본이 생겼다: ${found.join(", ")}`);
 });

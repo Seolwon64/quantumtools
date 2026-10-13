@@ -170,9 +170,37 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
 | `debugger` | 에러·테스트 실패의 근본 원인 추적과 최소 수정 |
 | `test-writer` | `test/*.test.mjs` 에 새 테스트 작성 |
 
+## 설치한 도구
+
+모두 사용자 범위다. 리포의 `.claude/` 안에 제3자 파일을 두지 않는다 — Stop 훅이
+`.claude/skills` 를 문법 검사하고, 공개 리포에 제3자 코드가 커밋된다.
+
+- **Playwright MCP** — 브라우저 조작과 측정에만 쓴다. `--isolated` 로 띄운다.
+  `@playwright/test`·설정 파일·e2e 테스트를 리포에 만들지 않는다.
+- **Impeccable, Emil Kowalski 스킬** — 디자인 조언이다. `docs/design-spec.md` 와 충돌하면
+  명세가 이긴다. 스킬 쪽이 옳아 보이면 조용히 따르지 말고 명세 변경으로 제안한다.
+- Impeccable 은 비평·감사·다듬기 같은 좁은 명령에만 쓴다. **재디자인·새 서피스
+  흐름(new-work)과 document 는 쓰지 않는다** — 둘 다 `DESIGN.md` 에 토큰 값을 쓰고,
+  new-work 는 그걸 완료 조건으로 요구해 우리 테스트와 매 턴 부딪친다. 디자인 재작성은
+  Figma 변수 → `style.css` → 명세 경로로 하고 Impeccable 은 그 결과를 비평한다.
+- `DESIGN.md`(루트·`.agents/context/`·`docs/`, 대소문자 무관)와 `.impeccable/design.json`
+  은 리포에 두지 않는다. `test/ui-invariants.test.mjs` 가 막는다.
+- Impeccable 훅은 안티패턴 결과를 추가 맥락으로만 돌려주고 턴을 막지 않는다. 첫 스캔 때
+  `.impeccable/hook.cache.json` 을 만들고 `.git/info/exclude` 에 무시 블록을 더한다.
+
 ## 설치하지 않는 플러그인
 
 이름이 충돌해 타이프어헤드에 같은 이름이 둘 뜬다.
 
 - `feature-dev`, `pr-review-toolkit` — `code-reviewer` 충돌
 - `code-modernization` — `security-auditor` 충돌
+
+프로젝트 규칙과 충돌한다.
+
+- Taste — React·Tailwind·framer-motion 을 강제한다(빌드 없음·의존성 0 위반)
+- TDD Guard — `node:test` 를 지원하지 않고 리포터를 devDependency 로 요구한다
+- Codex 플러그인의 리뷰 게이트 — 켜지 않는다. Stop 훅(`run-tests.mjs`)과 겹친다
+
+Playwright 는 MCP 로 브라우저를 조작하는 데만 쓴다. `@playwright/test`·설정 파일·e2e
+테스트를 리포에 만들지 않는다.
+- Emil Kowalski 의 `pick-ui-library` — 라이브러리 설치를 권한다(의존성 0 위반)
