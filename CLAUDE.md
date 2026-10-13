@@ -183,8 +183,9 @@ Conventional Commits(`feat(agents): ...`)를 쓰지만 소수이므로, 지배�
   흐름(new-work)과 document 는 쓰지 않는다** — 둘 다 `DESIGN.md` 에 토큰 값을 쓰고,
   new-work 는 그걸 완료 조건으로 요구해 우리 테스트와 매 턴 부딪친다. 디자인 재작성은
   Figma 변수 → `style.css` → 명세 경로로 하고 Impeccable 은 그 결과를 비평한다.
-- `DESIGN.md`(루트·`.agents/context/`·`docs/`, 대소문자 무관)와 `.impeccable/design.json`
-  은 리포에 두지 않는다. `test/ui-invariants.test.mjs` 가 막는다.
+- `DESIGN.md`·`DESIGN.json`(루트·`.agents/context/`·`docs/`, 대소문자 무관)과
+  `.impeccable/design.json` 은 리포에 두지 않는다. `test/ui-invariants.test.mjs` 가 막는다.
+  이 이름들은 다른 용도로도 쓰지 않는다 — 테스트가 이름만 보고 실패한다.
 - Impeccable 훅은 안티패턴 결과를 추가 맥락으로만 돌려주고 턴을 막지 않는다. 첫 스캔 때
   `.impeccable/hook.cache.json` 을 만들고 `.git/info/exclude` 에 무시 블록을 더한다.
 
