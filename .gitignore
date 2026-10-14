@@ -5,3 +5,4 @@ node_modules/
 .claude/settings.local.json
 .claude/logs/
 .claude/logs/
+.playwright-mcp/
