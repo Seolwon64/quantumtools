@@ -136,6 +136,8 @@ function isValidPlacement(cell, qubitCount) {
 // 칼럼 CTRL(•) 점은 같은 칼럼 게이트들에 추가 컨트롤로 부여된다.
 // 고전 조건(params.cif)은 지연 측정 변환으로 양자 제어가 된다 — 변환 불가한 회로는 **예외를 던진다**
 // (조용히 틀린 상태를 돌려주지 않는다). 조건이 없는 회로는 그리드가 그대로 쓰여 결과가 불변이다.
+// RESET 이 든 회로도 던진다 — 순수 상태로 표현되지 않으므로 엔진이 거부한다. 그런 회로는
+// trajectory.js 의 runTrajectory / aggregateTrajectories 로 계산한다(needsTrajectorySampling 이 가른다).
 export function simulate(qubitCount, grid, steps, clbitCount = qubitCount) {
   const resolved = resolveDeferred(qubitCount, clbitCount, grid);
   if (resolved.error) throw new Error(resolved.error);
@@ -247,14 +249,23 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     }
     const resolved = resolveDeferred(qubitCount, clbitCount, grid);
     if (resolved.error) return { state: initialState(qubitCount), error: resolved.error };
-    return { state: simulateResolved(qubitCount, resolved.grid, step), clbits: null, error: null };
+    // 엔진이 거부하는 회로(같은 열 MEASURE 에 붙은 • 처럼)도 예외가 아니라 사유로 돌려준다.
+    // 예외를 그대로 올리면 notify 가 렌더를 통째로 삼켜, URL 로 연 회로가 백지로 남았다
+    // (로드 시 onChange 0회 실측). 순수 상태 경로에 RESET 이 들어오는 회귀도 여기서 사유가 된다.
+    try {
+      return { state: simulateResolved(qubitCount, resolved.grid, step), clbits: null, error: null };
+    } catch (err) {
+      return { state: initialState(qubitCount), clbits: null, error: err?.message ?? String(err) };
+    }
   }
 
   // 회로가 시뮬레이션 가능한지 — addControl/setParams 등과 같은 { ok, reason } 패턴.
   function validate() {
     // 궤적 실행은 어떤 측정 패턴이든 정확히 다룬다 — 지연 변환 제약이 적용되지 않는다.
     if (needsTrajectorySampling(qubitCount, grid)) return { ok: true };
-    const { error } = resolveDeferred(qubitCount, clbitCount, grid);
+    // 지연 변환만 보면 엔진이 거부하는 회로를 통과시켜, 재생을 누르면 같은 예외가 다시 삼켜졌다.
+    // 화면이 쓰는 stateAt 과 같은 판정을 써야 둘이 어긋나지 않는다.
+    const { error } = stateAt(usedColumnCount(grid));
     return error ? { ok: false, reason: error } : { ok: true };
   }
 

@@ -122,9 +122,9 @@ export function runTrajectory(qubitCount, clbitCount, grid, steps, nextRandom) {
       }
 
       if (cell.gate === "RESET") {
-        // 진짜 리셋: 측정한 뒤 1 이면 뒤집어 |0⟩ 으로 만든다.
-        // 기본 경로의 applyReset 은 |0⟩ 성분만 남기는 **사후선택**이라, 얽힌 상대 큐비트의
-        // 확률까지 바꿔 버린다(0.6|00⟩+0.8|11⟩ 에서 q0 리셋 → q1 이 0 으로 확정되는 문제).
+        // 진짜 리셋: 측정한 뒤 1 이면 뒤집어 |0⟩ 으로 만든다. applyPlacement 를 거치지 않는다 —
+        // 순수 상태 엔진은 RESET 을 거부한다. 엔진의 예전 리셋은 |0⟩ 성분만 남기는 **사후선택**이라
+        // 얽힌 상대 큐비트의 확률까지 바꿨다(0.6|00⟩+0.8|11⟩ 에서 q0 리셋 → q1 이 0 으로 확정).
         const target = cell.targets[0];
         const p1 = probabilityOfOne(state, target);
         const outcome = nextRandom() < p1 ? 1 : 0;
@@ -144,8 +144,8 @@ export function runTrajectory(qubitCount, clbitCount, grid, steps, nextRandom) {
 /**
  * 회로가 최종 상태벡터 샘플링(빠른 경로)으로 정확한가.
  *
- * 측정이 아예 없거나, 있더라도 **그 뒤에 아무 연산이 없고 조건부도 없으면** 중간 붕괴가
- * 이후 결과에 영향을 주지 않으므로 최종 상태에서 뽑아도 통계가 같다.
+ * RESET·조건부가 없고, 측정이 아예 없거나 있더라도 **그 뒤에 아무 연산이 없으면** 중간
+ * 붕괴가 이후 결과에 영향을 주지 않으므로 최종 상태에서 뽑아도 통계가 같다.
  * 그 밖에는 shot 마다 궤적을 돌려야 한다.
  */
 export function needsTrajectorySampling(qubitCount, grid) {
@@ -154,12 +154,14 @@ export function needsTrajectorySampling(qubitCount, grid) {
   let firstCollapse = Infinity;
   let lastOperation = -1;
   let hasCondition = false;
+  let hasReset = false;
 
   for (let col = 0; col < grid.length; col++) {
     for (let q = 0; q < qubitCount; q++) {
       const cell = grid[col][q];
       if (!cell) continue;
       if (cell.params?.cif !== undefined) hasCondition = true;
+      if (cell.gate === "RESET") hasReset = true;
       if (cell.gate === "MEASURE" || cell.gate === "RESET") {
         firstCollapse = Math.min(firstCollapse, col);
       } else if (cell.gate !== "BARRIER" && cell.gate !== "CTRL") {
@@ -171,6 +173,11 @@ export function needsTrajectorySampling(qubitCount, grid) {
   // 값을 내는 게 아니라 **에러를 낸다** — 그런 회로도 궤적은 정확히 다룬다(조건이 거짓일 뿐).
   // 순서를 뒤집으면 그 회로가 계산 자체를 못 하고 막힌다.
   if (hasCondition) return true;
+  // RESET 은 위치와 무관하게 궤적이다. 리셋은 "측정 + 결과가 1 이면 X" 라 그 자체가 붕괴 뒤의
+  // 연산이다. 예전에는 붕괴로만 세어 "뒤에 연산이 없으면" 빠른 경로로 보냈고, h·cx·reset q0 가
+  // q1 을 100% |0⟩ 으로 보였다(실제로 겪음, 정답 50/50). 빠른 경로 안에서 고칠 수도 없다 —
+  // 얽힌 큐비트를 리셋한 결과는 혼합 상태라 어떤 상태벡터로도 표현되지 않는다.
+  if (hasReset) return true;
   if (firstCollapse === Infinity) return false; // 붕괴도 조건도 없다 → 기존 경로가 정확하다
   return lastOperation > firstCollapse;         // 붕괴 뒤에 연산이 남아 있다
 }

@@ -39,6 +39,10 @@ export function resolveDeferred(qubitCount, clbitCount, grid) {
       const params = cell.params ?? {};
 
       // 1) 측정된 큐비트를 이후에 "타깃"으로 쓰거나 RESET하면 변환이 성립하지 않는다.
+      //    앱 경로에서는 이런 회로(측정 뒤 연산·RESET)를 needsTrajectorySampling 이 먼저 궤적으로
+      //    보내므로 여기 닿지 않는다. 그래도 지우지 않는다 — 이 함수는 판정과 독립된 순수 함수이고,
+      //    simulate() 처럼 판정 없이 부르는 호출자의 "조용히 틀리지 않는다" 계약을 여기서 지킨다.
+      //    알려진 오거부: 측정된 큐비트 위의 • 도 targets 를 가져 걸린다(docs/backlog.md).
       for (const t of targets) {
         if (!measuredAt.has(t)) continue;
         if (cell.gate === "MEASURE") continue; // 재측정은 상태를 바꾸지 않으므로 무해

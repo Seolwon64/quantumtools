@@ -11,7 +11,9 @@ import {
   runTrajectory, makeRng, needsTrajectorySampling,
   aggregateTrajectories, marginalClassical,
 } from "../js/trajectory.js";
-import { simulate, MAX_COLUMNS } from "../js/circuit.js";
+import { simulate, createCircuitController, MAX_COLUMNS } from "../js/circuit.js";
+import { applyPlacement, initialState } from "../js/quantum.js";
+import { probDisplay } from "../js/probmodel.js";
 import { reducedDensityInfo } from "../js/density.js";
 import { PRESETS } from "../js/presets.js";
 import { decodeCircuit } from "../js/export.js";
@@ -101,7 +103,7 @@ test("첫 측정 결과가 대략 50/50 (지연 방식이면 한쪽으로 쏠린
 
 test("RESET 이 사후선택이 아니라 진짜 리셋이다", () => {
   // 0.6|00⟩ + 0.8|11⟩ 을 만들고 q0 을 리셋한다.
-  // 기본 경로의 applyReset 은 |0⟩ 성분만 남겨 **q1 까지 0 으로 확정**해 버린다.
+  // 예전 기본 경로의 리셋은 |0⟩ 성분만 남겨 **q1 까지 0 으로 확정**했다(사후선택).
   // 진짜 리셋이면 q1 은 0.36 : 0.64 로 갈린다.
   const theta = 2 * Math.acos(0.6); // RY(theta)|0⟩ = 0.6|0⟩ + 0.8|1⟩
   const grid = build(2, [
@@ -128,9 +130,15 @@ test("RESET 이 사후선택이 아니라 진짜 리셋이다", () => {
   const ratio = q1one / N;
   assert.ok(ratio > 0.60 && ratio < 0.68, `q1=1 비율 ${(ratio * 100).toFixed(1)}% — 0.64 근처가 아니다`);
 
-  // 대조군: 기본 경로는 q1 이 0 으로 확정된다(사후선택).
-  const legacy = simulate(2, grid, 3, 0);
-  assert.ok(legacy[0].re * legacy[0].re > 0.999, "기본 경로의 사후선택 동작이 바뀌었다 — 이 대조군을 재검토하라");
+  // 대조군: 순수 상태 경로는 RESET 을 **계산하지 않는다.** 예전엔 여기서 사후선택으로 q1 을
+  // 0 으로 확정했고, 판정 함수가 끝 RESET 을 이 경로로 보내 화면이 조용히 틀렸다.
+  // 판정만 고치면 다음 호출자가 같은 문으로 들어오므로 엔진 자체가 거부한다 — 둘 다 막혀 있어야 한다.
+  assert.throws(() => simulate(2, grid, 3, 0), /RESET/, "순수 상태 경로가 RESET 을 계산했다 — 사후선택이 다시 열렸다");
+  assert.throws(
+    () => applyPlacement(initialState(2), cell("RESET", [0])),
+    /RESET/,
+    "엔진이 RESET 을 받아들였다 — simulate 를 거치지 않는 호출자가 사후선택을 받는다"
+  );
 });
 
 test("조건부 연산이 기록된 고전 비트를 그대로 읽는다", () => {
@@ -201,7 +209,7 @@ test("텔레포테이션: 네 가지 측정 결과 모두에서 q2 가 원래 �
   }
 });
 
-test("빠른 경로 판정: 중간 붕괴가 있을 때만 궤적 샘플링이 필요하다", () => {
+test("빠른 경로 판정: 중간 붕괴·RESET·조건부가 있을 때만 궤적 샘플링이 필요하다", () => {
   const plain = build(2, [{ col: 0, cell: cell("H", [0]) }]);
   assert.equal(needsTrajectorySampling(2, plain), false, "측정이 없는데 궤적을 요구한다");
 
@@ -214,6 +222,9 @@ test("빠른 경로 판정: 중간 붕괴가 있을 때만 궤적 샘플링이 �
 
   // 측정 뒤에 연산이 남아 있다 → 궤적이 필요하다
   assert.equal(needsTrajectorySampling(2, coreCircuit()), true, "중간 측정인데 빠른 경로를 쓴다");
+
+  // 끝에 있는 RESET 도 궤적이다 — 뒤에 연산이 없어도 리셋 자체가 "측정 + 조건부 X" 다
+  assert.equal(needsTrajectorySampling(2, terminalResetCircuit()), true, "끝 RESET 을 빠른 경로(사후선택)로 보낸다");
 
   // 조건부는 측정 결과에 의존한다
   const cond = build(2, [
@@ -341,5 +352,99 @@ test("집계는 시드에 둔감하다 (Resample 로 확률이 크게 안 변한
     const vals = runs.map((r) => r[i]);
     const spread = Math.max(...vals) - Math.min(...vals);
     assert.ok(spread < 4, `c=${i.toString(2).padStart(2, "0")} 편차 ${spread.toFixed(1)}%p: ${vals.join(", ")}`);
+  }
+});
+
+// ---------------------------------------------------------------- 끝에 있는 RESET
+
+/** 재현 회로: h q0 · cx q0,q1 · reset q0. 정답은 |00⟩ 50% · |10⟩ 50% 다. */
+function terminalResetCircuit() {
+  return build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("X", [1], [0]) },
+    { col: 2, cell: cell("RESET", [0]) },
+  ]);
+}
+
+/**
+ * 붕괴 갈래를 전부 열어 가중합한 **정확한** 앙상블의 큐비트 확률 — 난수 없이 정답표를 만든다.
+ * runTrajectory 는 k 번째 붕괴에 k 번째 난수를 쓰고 `난수 < p1` 이면 1 이므로, 0 을 먹이면 1 을,
+ * 1 에 가까운 값을 먹이면 0 을 강제할 수 있다. 각 갈래는 기록된 p1 으로 가중한다.
+ * 확률 0 인 결과는 강제해도 반대가 나오므로, 요청과 다른 갈래는 버린다(가중치가 0 이다).
+ */
+function exactEnsemble(qubitCount, clbitCount, grid) {
+  const probs = new Array(1 << qubitCount).fill(0);
+  (function branch(prefix) {
+    let k = 0;
+    const r = runTrajectory(qubitCount, clbitCount, grid, undefined, () => {
+      const want = prefix[k++];
+      return want === undefined ? 0.5 : want === 1 ? 0 : 1 - 1e-15;
+    });
+    // 강제한 것보다 붕괴가 더 있다 → 다음 붕괴에서 두 갈래로 나눈다.
+    if (r.measurements.length > prefix.length) {
+      branch([...prefix, 0]);
+      branch([...prefix, 1]);
+      return;
+    }
+    let weight = 1;
+    for (let i = 0; i < prefix.length; i++) {
+      const m = r.measurements[i];
+      if (m.outcome !== prefix[i]) return;
+      weight *= m.outcome ? m.p1 : 1 - m.p1;
+    }
+    r.state.forEach((z, i) => { probs[i] += weight * (z.re * z.re + z.im * z.im); });
+  })([]);
+  return probs;
+}
+
+test("끝에 있는 RESET 은 사후선택이 아니라 주변화된 분포를 보인다 — h·cx·reset q0 의 q1 은 50/50", () => {
+  const grid = terminalResetCircuit();
+
+  // 정답표: 갈래를 모두 연 정확한 앙상블. 사후선택이었다면 [1, 0, 0, 0] 이다.
+  const exact = exactEnsemble(2, 0, grid);
+  [0.5, 0, 0.5, 0].forEach((p, i) => {
+    assert.ok(Math.abs(exact[i] - p) < 1e-12, `정확값 idx ${i} = ${exact[i]} (기대 ${p})`);
+  });
+
+  // 화면이 실제로 보이는 값: 컨트롤러 스냅샷 → (궤적이면) 집계 → probDisplay.
+  // 집계는 probview.js scheduleAggregate 가 하는 일을 고정 시드로 재현한다(DOM 은 쓰지 않는다).
+  const c = createCircuitController({
+    onChange: () => {},
+    onAnimateStep: async () => {},
+    initial: { qubitCount: 2, clbitCount: 0, grid },
+  });
+  const snap = c.getSnapshot();
+  const aggregate = snap.usesTrajectory
+    ? aggregateTrajectories(snap.qubitCount, snap.clbitCount, snap.grid, 2000, seedSource(4242))
+    : null;
+  const shown = probDisplay(snap, { probView: "qubits", aggregate }).entries.map((e) => e.probability);
+
+  // 궤적 2000개 평균의 표준편차는 1.1%p 다 — 4σ 밖이면 통계 오차가 아니다.
+  assert.ok(Math.abs(shown[2] - 50) < 4.5, `화면의 |10⟩ 이 ${shown[2].toFixed(1)}% — 사후선택이면 0% 다`);
+  // q0 은 모든 궤적에서 리셋되므로 q0=1 인 기저는 통계 오차 없이 정확히 0 이다.
+  assert.equal(shown[1], 0, "|01⟩ 이 0 이 아니다 — q0 이 리셋되지 않았다");
+  assert.equal(shown[3], 0, "|11⟩ 이 0 이 아니다 — q0 이 리셋되지 않았다");
+  assert.ok(Math.abs(shown[0] + shown[2] - 100) < 1e-9, `합이 100 이 아니다: ${shown.join(", ")}`);
+  // 고정 시드라 값이 결정론적이다 — 회귀로 못 박는다.
+  assert.deepEqual(shown.map((p) => +p.toFixed(1)), [51.3, 0, 48.6, 0], `실제 분포: ${shown.join(", ")}`);
+});
+
+test("얽히지 않은 큐비트의 리셋은 궤적으로 가도 정확값과 같다 — 모든 궤적이 같은 상태로 끝난다", () => {
+  // "RESET 이 있으면 궤적" 규칙이 잃는 것이 없는지 본다. q0 이 나머지와 곱 상태면 측정 결과가
+  // 0 이든 1 이든 리셋 뒤 상태가 같아서, 평균이 통계 오차 없이 정확값과 일치해야 한다.
+  // 이 경우는 예전 사후선택도 맞았다. 궤적으로 보내도 값이 같으니, 얽힘을 따져 빠른 경로로
+  // 돌려보내는 판정이 얻는 것은 정확도가 아니라 라벨뿐이다(quantum-spec §5).
+  const grid = build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 0, cell: cell("H", [1]) },
+    { col: 1, cell: cell("RESET", [0]) },
+  ]);
+  const exact = exactEnsemble(2, 0, grid);
+  [0.5, 0, 0.5, 0].forEach((p, i) => {
+    assert.ok(Math.abs(exact[i] - p) < 1e-12, `정확값 idx ${i} = ${exact[i]} (기대 ${p})`);
+  });
+  const { qubitProbs } = aggregateTrajectories(2, 0, grid, 64, seedSource(7));
+  for (let i = 0; i < exact.length; i++) {
+    assert.ok(Math.abs(qubitProbs[i] - exact[i]) < 1e-12, `idx ${i}: 평균 ${qubitProbs[i]} ≠ 정확값 ${exact[i]}`);
   }
 });

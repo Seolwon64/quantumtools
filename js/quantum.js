@@ -95,7 +95,7 @@ const PARAM_MATRIX_BUILDERS = {
 // kind: fixed(고정 1큐비트) | param(각도 1개) | param3(U: θ,φ,λ) |
 //       controlled(base 게이트 + 컨트롤 N개) | swap(파트너 1개) |
 //       pair-param(파트너 1개 + 각도) | dot(칼럼 컨트롤 점) |
-//       reset(|0⟩ 사영) | noop(상태 불변)
+//       reset(|0⟩ 초기화 — 궤적 경로 전용, 이 엔진은 거부) | noop(상태 불변)
 // minQubits: 배치에 필요한 최소 큐비트 수 (팔레트 비활성 판단용)
 export const GATE_INFO = {
   H: { label: "H", kind: "fixed", group: "hadamard", ready: true, desc: "Hadamard — creates superposition" },
@@ -345,7 +345,14 @@ export function applyPlacement(state, cell, extraControls = []) {
     if (controls.length > 0 || extraControls.length > 0) {
       throw new Error(`${gate} cannot be controlled`);
     }
-    if (gate === "RESET") return applyReset(state, targets[0]);
+    // RESET 은 순수 상태 연산이 아니다. 얽힌 큐비트를 리셋하면 혼합 상태가 되는데 상태벡터 하나로는
+    // 그걸 담을 수 없어, 예전 구현은 |0⟩ 성분만 남기는 **사후선택**을 했고 상대 큐비트의 확률을
+    // 조용히 바꿨다(h·cx·reset q0 → q1 100% |0⟩, 정답 50/50). 판정 함수가 RESET 회로를 궤적으로
+    // 보내지만, 이 함수를 직접 부르는 다음 호출자는 판정을 거치지 않으므로 여기서 막는다.
+    // 컨트롤 검사 뒤에 둔다 — 제어가 붙은 RESET 은 그 사유가 먼저다.
+    if (gate === "RESET") {
+      throw new Error("RESET is not a pure-state operation — run it on the trajectory path");
+    }
     return state; // MEASURE, BARRIER, CTRL: 상태벡터 불변
   }
 
@@ -361,27 +368,6 @@ export function applyPlacement(state, cell, extraControls = []) {
   if (gate === "U") return applyUnitary(state, targets[0], uMatrix(params.theta ?? 0, params.phi ?? 0, params.lambda ?? 0), ctrl);
   if (SINGLE_QUBIT_GATES.has(gate)) return applyUnitary(state, targets[0], matrixFor(gate, params.theta), ctrl);
   return state; // 알 수 없는 게이트: 무시
-}
-
-// Reset(|0⟩): 결정론적으로 |0⟩ 분기에 사영 후 재정규화.
-// 해당 큐비트가 확정 |1⟩이면 1-분기 진폭을 0-분기로 옮긴다 (X 후 사영과 동일).
-export function applyReset(state, q) {
-  const mask = 1 << q;
-  let norm0 = 0;
-  for (let i = 0; i < state.length; i++) {
-    if ((i & mask) === 0) norm0 += state[i].re * state[i].re + state[i].im * state[i].im;
-  }
-  if (norm0 < 1e-12) {
-    const next = state.map(() => c(0));
-    for (let i = 0; i < state.length; i++) {
-      if (i & mask) next[i & ~mask] = c(state[i].re, state[i].im);
-    }
-    return next;
-  }
-  const scale = 1 / Math.sqrt(norm0);
-  return state.map((amp, i) =>
-    (i & mask) ? c(0) : c(amp.re * scale, amp.im * scale)
-  );
 }
 
 // 축소 밀도행렬·블로흐·순도 계산은 js/density.js로 분리했다(DM 뷰와 Bloch sphere가 공유).

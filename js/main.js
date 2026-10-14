@@ -466,7 +466,8 @@ function renderStateFormula(snapshot) {
     const err = document.createElement("div");
     err.className = "state-error";
     err.textContent = snapshot.deferredError;
-    // 중간 측정은 이제 궤적으로 계산되므로 여기 오는 사유는 **재생 중 예외**뿐이다.
+    // 중간 측정은 이제 궤적으로 계산되므로 여기 오는 사유는 지연 변환·엔진이 거부한 회로
+    // (예: 측정된 큐비트 위의 혼자 있는 •)와 **재생 중 예외**다.
     // Inspect 를 켜라는 옛 안내는 더는 맞지 않는다.
     const hint = document.createElement("div");
     hint.className = "state-error-hint";

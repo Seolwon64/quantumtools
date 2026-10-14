@@ -316,6 +316,25 @@ function throwingController() {
   return c;
 }
 
+test("엔진이 거부하는 회로도 숫자 대신 사유로 보인다 — 로드 때 렌더가 삼켜지지 않는다", () => {
+  // 같은 열의 MEASURE q0 와 혼자 있는 • q1: • 가 MEASURE 에 제어로 붙어 엔진이 던진다.
+  // 팔레트로는 못 만들지만(빈 칸의 • 는 같은 열 게이트에 붙는다) 공유 URL·저장 회로로는 들어온다.
+  // 예전에는 stateAt 이 그 예외를 그대로 올려 notify 가 렌더를 통째로 삼켰다 —
+  // 로드 시 onChange 0회, 화면 백지, validate 는 ok(재생을 누르면 같은 예외가 다시 삼켜진다).
+  const g = emptyGrid(2);
+  g[0][0] = cell("MEASURE", [0], [], { cbit: 0 });
+  g[0][1] = cell("CTRL", [1]);
+  let renders = 0;
+  const c = createCircuitController({
+    onChange: () => { renders++; },
+    onAnimateStep: async () => {},
+    initial: { qubitCount: 2, clbitCount: 2, grid: g },
+  });
+  assert.ok(renders > 0, "로드 때 한 번도 렌더되지 않았다 — 화면이 백지로 남는다");
+  assert.match(c.getSnapshot().deferredError ?? "", /cannot be controlled/, "사유가 스냅샷에 실리지 않았다");
+  assert.equal(c.validate().ok, false, "엔진이 거부하는 회로의 재생이 막히지 않는다");
+});
+
 test("재생 중 예외가 나도 isPlaying/isAnimating 이 풀려 있다", async () => {
   const c = throwingController();
   await c.play();
