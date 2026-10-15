@@ -32,7 +32,7 @@ OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치
 | `trajectory.js` | 측정을 실제로 수행해 상태를 붕괴시키는 두 번째 실행 경로 |
 | `classical.js` | 지연 측정(deferred measurement) 변환. 순수 함수 |
 | `qasm.js` | OpenQASM 2.0 ↔ canonical 회로. **양방향이 이 파일 하나를 본다** |
-| `export.js` | 공유 URL 해시 인코딩(base64url), QASM / Qiskit 코드 생성 |
+| `export.js` | 공유 URL 해시 인코딩(base64url), QASM / Qiskit 코드 생성, Apply 가 지울 게이트 판정 |
 | `codepanel.js` | 그리드 아래 QASM / Qiskit 코드 밴드 |
 | `presets.js` | 회로 프리셋 |
 | `scene.js` | Three.js Bloch sphere 렌더링, Slerp 상태 벡터 애니메이션 |
@@ -63,6 +63,10 @@ node --test
 Biome / tsconfig 설정 파일도 없다. **빌드·린트·포맷 명령은 존재하지 않는다** — 없는
 명령을 지어내지 말 것.
 
+수동 도구가 하나 있다. `node scripts/mutation-control.mjs` — 새 테스트가 막으려는
+실패를 잡는지 메모리 변이로 확인한다. 쓰는 법은 파일 머리 주석에 있다. 자동으로
+돌지 않는다.
+
 배포도 명령이 아니다. GitHub Pages 가 `main` 브랜치를 그대로 서빙한다
 (`https://seolwon64.github.io/quantumtools/`). 빌드 단계가 없으니 `main` 에 푸시하면
 그게 배포다. 로컬에서는 `index.html` 을 정적으로 서빙하면 그대로 뜬다.
@@ -81,7 +85,10 @@ Biome / tsconfig 설정 파일도 없다. **빌드·린트·포맷 명령은 존
 - **통과 개수를 미리 가정하지 않는다.** 작업 전에 `node --test` 를 한 번 돌려 기준선을
   재고, 작업 후 실패가 0인지 확인한다. 통과 수가 기준선보다 줄었다면 지운 테스트와
   그 이유, 다른 곳으로 옮긴 불변식을 보고한다. 개수를 맞추려고 테스트를 만들지 않는다.
-- 통과시키려고 단언을 약화시키지 않는다. **테스트를 통과시키려고 소스를 고치지
+- 통과시키려고 단언을 약화시키지 않는다.
+- 새 테스트는 그 테스트가 막으려는 실패를 일부러 만든 변이에서 실패하는지 확인한다.
+  옛 코드는 대조군이 될 수 없는 경우가 있다 — 옛 코드가 다른 이유로 통과하면 테스트는
+  아무것도 증명하지 못한다. `scripts/mutation-control.mjs` 로 디스크를 건드리지 않고 돌린다. **테스트를 통과시키려고 소스를 고치지
   않는다** — 소스가 틀린 것 같으면 보고한다. 근본 원인이 소스에 있다고 판단해
   고치는 것은 `debugger` 의 일이며 이 금지에 해당하지 않는다.
 - 브라우저 API(DOM, `localStorage`, Three.js)는 Node 에 없다. 그것들에 의존하지 않는
