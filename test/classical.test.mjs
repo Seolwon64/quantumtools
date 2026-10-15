@@ -266,13 +266,16 @@ test("QASM: creg + 지정된 고전 비트로의 measure + 조건부 if", () => 
   assert.match(qasm, /if \(c==2\) x q\[2\];/);
 });
 
-test("QASM: 고전 비트가 0이면 creg도 measure도 나오지 않는다", () => {
+test("QASM: 고전 비트가 0이면 creg도 measure 문도 나오지 않고, 그 측정은 표시 줄로 남는다", () => {
   const g = emptyGrid(2);
   g[0][0] = cell("H", [0]);
   g[1][0] = cell("MEASURE", [0], [], {});
   const qasm = toQASM(2, g, 0).code;
   assert.ok(!/creg/.test(qasm), qasm);
-  assert.ok(!/measure/.test(qasm), qasm);
+  // 예전 단언 !/measure/ 는 "measure 가 글자로도 없다" 였다. 이제 표시 줄이 측정을 이름으로 말하므로
+  // (대문자 MEASURE 라 그 정규식은 우연히 통과한다) 우연에 기대지 않고 "measure **문**이 없다" 를 본다.
+  assert.ok(!/^\s*measure\b/m.test(qasm), qasm);
+  assert.match(qasm, /^\/\/ cannot be represented in OpenQASM 2\.0: MEASURE on q\[0\]/m, "측정이 표시 줄 없이 사라졌다");
   assert.match(qasm, /h q\[0\];/);
 });
 

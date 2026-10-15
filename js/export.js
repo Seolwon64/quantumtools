@@ -42,6 +42,18 @@ export function encodeCircuit(qubitCount, grid, clbitCount) {
   return b64urlEncode(JSON.stringify(data));
 }
 
+/**
+ * 회로 자체의 서명 — "회로가 바뀌었는가" 를 렌더와 구별할 때 쓴다(코드 밴드의 충돌 줄·두 단계 Apply).
+ * **공유 URL 인코딩을 그대로 쓴다.** 그 형식이 이미 "회로를 빠짐없이, 보기 상태는 빼고" 를 지키도록 만들어져 있어
+ * 회로의 정의처가 하나로 남는다. 따로 JSON.stringify(grid) 로 만들면 두 방향으로 틀린다 — grid 에 무관한 값이 붙거나
+ * 키 순서가 다르면 거짓 충돌이 남고(넘침), 회로 정보가 grid 밖에 생기면 진짜 변경을 놓쳐 Apply 가 그것을 소리 없이
+ * 덮어쓴다(모자람 — 데이터 손실).
+ * 한계: 각도는 인코딩처럼 소수 6자리다. UI 로 만들 수 있는 가장 작은 변경은 1° 슬라이더(0.017 rad)라 닿지 않는다.
+ */
+export function circuitSignature(snapshot) {
+  return encodeCircuit(snapshot.qubitCount, snapshot.grid, snapshot.clbitCount);
+}
+
 export function decodeCircuit(encoded) {
   try {
     const data = JSON.parse(b64urlDecode(encoded));
@@ -139,9 +151,56 @@ function eachCell(qubitCount, grid, visit) {
     for (let row = 0; row < qubitCount; row++) {
       const cell = grid[col][row];
       if (!cell || cell.gate === "CTRL") continue;
-      visit(cell);
+      visit(cell, col, row);
     }
   }
+}
+
+/**
+ * "S with 1 control" · "Z with 2 controls" · "S" — 제어가 붙은 게이트를 부르는 이름은 이 규칙 하나다.
+ * 표시 줄·화면 경고·상태 줄·Qiskit 주석이 모두 여기서 이름을 얻는다(예전엔 "control(s)" 를 네 곳에 따로 적었다).
+ */
+function withControls(gate, controlCount) {
+  if (!controlCount) return gate;
+  return `${gate} with ${controlCount} control${controlCount === 1 ? "" : "s"}`;
+}
+
+/** 표현 불가 표시 줄의 머리말. Apply 판정이 이 머리말로 "내보내기가 남긴 표시 줄이었던 줄" 을 알아본다. */
+export const UNREPRESENTABLE_PREFIX = "// cannot be represented in OpenQASM 2.0:";
+
+/**
+ * 셀 하나가 QASM 문으로 나가지 못하면 그 사실을, 나갈 수 있으면 null 을 돌려준다.
+ * 표시 줄·화면 경고·Apply 판정이 **이 함수 하나**에서 나온다 — 내보내기와 판정이 따로 규칙을 적으면
+ * "표시 줄이 남았는데 알리지 않는" 경우가 조용히 생긴다(QASM_OPS 표를 하나로 둔 것과 같은 이유).
+ *
+ * 표시 줄에 큐비트를 넣는다. 예전엔 게이트 이름뿐이라 다른 큐비트의 CS 두 개가 같은 줄이 되어, 사용자가
+ * 어느 쪽 줄을 지웠는지 가릴 수 없었다. 열은 넣지 않는다 — 텍스트는 정규화(ASAP)된 순서라 위치가 회로의
+ * 열이 아니고, 충돌 뒤 Keep 처럼 회로가 바뀌어도 게이트·큐비트는 맞는다.
+ * @param column 원래 그리드의 열(1부터) — 경고와 상태 줄이 사용자가 보는 열을 말한다.
+ * @returns {{what, marker, warning, label} | null}
+ */
+function unrepresentable(cell, clbitCount, column) {
+  const { gate, targets, controls = [], params = {} } = cell;
+  if (gate === "MEASURE") {
+    const cb = params.cbit ?? targets[0];
+    if (clbitCount > 0 && cb < clbitCount) return null;
+    // 예전엔 줄을 아예 쓰지 않았다 — 배너 경고만 있어 Apply 판정이 "사용자가 지웠다" 와 구별할 수 없었다.
+    const what = `MEASURE on q[${targets[0]}]`;
+    return {
+      what,
+      marker: `${UNREPRESENTABLE_PREFIX} ${what} (no classical bit to write to)`,
+      warning: `${what} at column ${column} has no classical bit to write to — that line is a comment, not a measurement.`,
+      label: `${what} (column ${column}, no classical bit)`,
+    };
+  }
+  if (gate === "RESET" || gate === "BARRIER" || opFor(gate, controls.length)) return null;
+  const what = `${withControls(gate, controls.length)} on ${[...controls, ...targets].map((i) => `q[${i}]`).join(",")}`;
+  return {
+    what,
+    marker: `${UNREPRESENTABLE_PREFIX} ${what}`,
+    warning: `${what} at column ${column} cannot be represented in OpenQASM 2.0 — that line is a comment, not a gate.`,
+    label: `${what} (column ${column})`,
+  };
 }
 
 /** 조건부 연산이 하나라도 있는가. */
@@ -159,7 +218,7 @@ function hasConditions(qubitCount, grid) {
  *   표현하지 못한 게이트를 조용히 주석 처리하고 넘어가면 사용자가 **틀린 코드를 복사해 간다**.
  */
 export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
-  const { grid } = normalizeCircuit(qubitCount, rawGrid);
+  const { grid, origin } = normalizeCircuit(qubitCount, rawGrid);
   const warnings = [];
   const lines = ["OPENQASM 2.0;", 'include "qelib1.inc";', `qreg q[${qubitCount}];`];
   if (clbitCount > 0) lines.push(`creg c[${clbitCount}];`);
@@ -177,25 +236,23 @@ export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
   const push = (stmt, params) =>
     lines.push(params?.cif !== undefined ? `if (c==${1 << params.cif}) ${stmt}` : stmt);
 
-  eachCell(qubitCount, grid, (cell) => {
+  eachCell(qubitCount, grid, (cell, col, row) => {
     const { gate, targets, controls = [], params = {} } = cell;
 
+    const lost = unrepresentable(cell, clbitCount, origin[col][row] + 1);
+    if (lost) {
+      lines.push(lost.marker);
+      warnings.push(lost.warning);
+      return;
+    }
     if (gate === "MEASURE") {
-      const cb = params.cbit ?? targets[0];
-      if (clbitCount > 0 && cb < clbitCount) lines.push(`measure ${q(targets[0])} -> c[${cb}];`);
-      else warnings.push(`Measure on q[${targets[0]}] has no classical bit to write to.`);
+      lines.push(`measure ${q(targets[0])} -> c[${params.cbit ?? targets[0]}];`);
       return;
     }
     if (gate === "RESET") { lines.push(`reset ${q(targets[0])};`); return; }
     if (gate === "BARRIER") { lines.push(`barrier ${q(targets[0])};`); return; }
 
     const op = opFor(gate, controls.length);
-    if (!op) {
-      const what = controls.length ? `${gate} with ${controls.length} control(s)` : gate;
-      lines.push(`// cannot be represented in OpenQASM 2.0: ${what}`);
-      warnings.push(`${what} cannot be represented in OpenQASM 2.0 — that line is a comment, not a gate.`);
-      return;
-    }
     const args = [...controls, ...targets].map(q).join(",");
     const ps = (op.params ?? []).map((k) => fmt(params[k] ?? GATE_INFO[gate]?.defaultTheta));
     const call = ps.length ? `${op.qasm}(${ps.join(",")})` : op.qasm;
@@ -203,6 +260,58 @@ export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
   });
 
   return { code: lines.join("\n") + "\n", warnings };
+}
+
+/**
+ * Apply 가 **알리지 않고** 지울 게이트 — 표현 못 한 게이트 가운데 그 표시 줄이 편집된 텍스트에 남은 것.
+ *
+ * Apply 는 텍스트에서 회로를 통째로 다시 만든다. 표시 줄은 주석이라 파서가 버리고 게이트는 사라진다.
+ * 그 줄이 남아 있으면 사용자는 그 게이트를 지울 생각이 없었고, 직접 지웠으면 지운다는 뜻이다.
+ * **의심스러우면 알린다.** 머리말로 시작하는데 어느 게이트와도 맞지 않는 줄이 남아 있으면(큐비트를 고쳤다든지)
+ * 무엇을 뜻했는지 모르므로, 짝을 못 찾은 게이트를 모두 넣는다. 지울 뜻이 있었는데 경고하는 비용은 클릭
+ * 한 번이고, 지울 뜻이 없었는데 경고하지 않는 비용은 조용한 회로 변경이다.
+ * 줄 앞뒤 공백은 무시한다. 글자까지 같은 표시 줄(같은 게이트·같은 큐비트)은 내보낸 순서대로 짝짓는다.
+ *
+ * DOM 을 모른다 — 코드 밴드(codepanel.js)가 두 단계 Apply 와 배너에 쓴다.
+ * @returns {Array<{gate, controls, targets, column, what, label, warning}>} 내보낸 순서. column 은 원래 그리드의 열(1부터).
+ */
+export function gatesApplyWouldDrop(qubitCount, rawGrid, clbitCount, editedText) {
+  return lossesOnApply(qubitCount, rawGrid, clbitCount, editedText).unannounced;
+}
+
+/**
+ * Apply 가 지울 표현 불가 게이트 전부를 둘로 나눈다.
+ *   unannounced — 알리지 않고 지울 것(표시 줄이 남았거나, 의심스러운 줄이 있어 모두 알린다). 두 단계 확인을 거친다.
+ *   lineDeleted — 사용자가 표시 줄을 직접 지운 것. 확인은 건너뛰지만 **실행 뒤 상태 줄에 적는다** — 지울 뜻을
+ *                 잘못 판정했을 때의 비용이 크다(조용한 회로 변경).
+ * 둘 다 내보낸 순서. 항목 모양은 gatesApplyWouldDrop 와 같다.
+ */
+export function lossesOnApply(qubitCount, rawGrid, clbitCount, editedText) {
+  const { grid, origin } = normalizeCircuit(qubitCount, rawGrid);
+  const lost = [];
+  eachCell(qubitCount, grid, (cell, col, row) => {
+    const column = origin[col][row] + 1;
+    const u = unrepresentable(cell, clbitCount, column);
+    if (u) lost.push({ gate: cell.gate, controls: [...(cell.controls ?? [])], targets: [...cell.targets], column, ...u });
+  });
+  if (!lost.length) return { unannounced: [], lineDeleted: [] };
+
+  const remaining = new Map();
+  for (const line of editedText.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith(UNREPRESENTABLE_PREFIX)) remaining.set(t, (remaining.get(t) ?? 0) + 1);
+  }
+  const kept = lost.map((g) => {
+    const n = remaining.get(g.marker) ?? 0;
+    if (n > 0) remaining.set(g.marker, n - 1);
+    return n > 0;
+  });
+  const strayMarker = [...remaining.values()].some((n) => n > 0);
+  const strip = ({ marker, ...g }) => g;
+  return {
+    unannounced: lost.filter((_, i) => kept[i] || strayMarker).map(strip),
+    lineDeleted: lost.filter((_, i) => !kept[i] && !strayMarker).map(strip),
+  };
 }
 
 /** Qiskit 메서드명은 QASM 이름과 거의 같다. 다른 것만 예외로 적는다. */
@@ -248,7 +357,7 @@ export function toQiskit(qubitCount, rawGrid, clbitCount = qubitCount) {
 
     const op = opFor(gate, controls.length);
     if (!op) {
-      const what = controls.length ? `${gate} with ${controls.length} control(s)` : gate;
+      const what = withControls(gate, controls.length);
       lines.push(`# cannot be represented: ${what}`);
       warnings.push(`${what} cannot be represented in Qiskit's basic gate set here.`);
       return;

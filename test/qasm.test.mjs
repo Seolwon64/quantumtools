@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { toQASM, toQiskit, IF_SEMANTICS_WARNING } from "../js/export.js";
+import { toQASM, toQiskit, IF_SEMANTICS_WARNING, gatesApplyWouldDrop, lossesOnApply } from "../js/export.js";
 import { parseQASM, normalizeCircuit, sameCircuit, QASM_OPS, opFor } from "../js/qasm.js";
 import { MAX_COLUMNS, simulate } from "../js/circuit.js";
 import { PRESETS } from "../js/presets.js";
@@ -300,6 +300,144 @@ test("표현할 수 없는 게이트는 조용히 넘어가지 않는다", () =>
   assert.match(code, /cannot be represented/, "주석이 없다");
   assert.equal(warnings.length, 1, "warnings 에 안 잡혔다 — 사용자가 틀린 코드를 복사해 간다");
   assert.match(warnings[0], /Z with 2 control/);
+});
+
+// ---------------------------------------------------------------- Apply 가 알리지 않고 지우는 게이트
+//
+// Apply 는 텍스트에서 회로를 통째로 다시 만든다. 표현 못 한 게이트의 표시 줄은 주석이라 파서가 버리고,
+// 그 게이트는 회로에서 사라진다. 예전엔 한 글자만 고쳐 Apply 해도 아무 말 없이 사라졌다.
+// 판단은 표시 줄로 한다 — 줄이 남아 있으면 지울 뜻이 없었고, 사용자가 줄을 지웠으면 지울 뜻이다.
+
+const MARKER = "// cannot be represented in OpenQASM 2.0:";
+const withoutLines = (code, pick) => code.split("\n").filter((l) => !pick(l)).join("\n");
+const summary = (drops) => drops.map((d) => [d.gate, d.controls, d.targets, d.column]);
+
+/** S·CCZ·S(같은 큐비트) — 표현 불가 게이트 셋. 두 CS 는 표시 줄이 글자까지 같다. */
+function threeLosses() {
+  return build(3, [
+    { col: 0, cell: cell("S", [1], [0]) },
+    { col: 1, cell: cell("Z", [2], [0, 1]) },
+    { col: 2, cell: cell("S", [1], [0]) },
+  ]);
+}
+
+test("표시 줄을 남긴 편집이면 Apply 가 지울 게이트로 알린다 — 열은 정규화 전 그리드의 열이다", () => {
+  // S 에 같은 열의 • 가 붙어 CS 가 된다 — 표현 불가는 • 를 접은 **뒤**의 제어 수로 정해진다.
+  // 빈 열 셋 뒤 5열에 두어, 내보낸 텍스트의 순서(정규화로 앞당겨진다)와 회로의 열이 다르게 한다.
+  const g = build(2, [{ col: 0, cell: cell("H", [0]) }]);
+  g[4][1] = cell("S", [1]);
+  g[4][0] = cell("CTRL", [0]);
+  const { code } = toQASM(2, g, 0);
+  const edited = code.replace("h q[0];", "x q[0];"); // 한 글자 편집
+  assert.notEqual(edited, code, "편집이 일어나지 않았다 — 이 테스트의 전제가 깨졌다");
+  assert.deepEqual(summary(gatesApplyWouldDrop(2, g, 0, edited)), [["S", [0], [1], 5]]);
+});
+
+test("표시 줄을 직접 지운 편집이면 지운다는 뜻이라 알리지 않는다", () => {
+  const g = build(2, [{ col: 0, cell: cell("S", [1], [0]) }]);
+  const edited = withoutLines(toQASM(2, g, 0).code, (l) => l.startsWith(MARKER));
+  assert.deepEqual(gatesApplyWouldDrop(2, g, 0, edited), []);
+});
+
+test("표현 못 하는 게이트가 없는 회로는 Apply 가 지울 것이 없다", () => {
+  const g = build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("X", [1], [0]) },
+  ]);
+  const edited = toQASM(2, g, 0).code.replace("h q[0];", "x q[0];");
+  assert.deepEqual(gatesApplyWouldDrop(2, g, 0, edited), []);
+});
+
+test("표현 못 하는 게이트가 여럿이면 표시 줄이 남은 것만, 내보낸 순서대로 알린다", () => {
+  const g = threeLosses();
+  const { code } = toQASM(3, g, 0);
+  const all = [["S", [0], [1], 1], ["Z", [0, 1], [2], 2], ["S", [0], [1], 3]];
+  assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, code + " ")), all);
+
+  // 글자까지 같은 두 CS 의 표시 줄 중 하나를 지우면 하나만 지울 뜻이다 — 남은 줄은 앞의 CS 와 짝짓는다.
+  const lines = code.split("\n");
+  const last = lines.findLastIndex((l) => l.includes("S with 1 control on"));
+  const oneCsGone = lines.filter((_, i) => i !== last).join("\n");
+  assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, oneCsGone)), [all[0], all[1]]);
+
+  const cczGone = withoutLines(code, (l) => l.includes("Z with 2 controls on"));
+  assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, cczGone)), [all[0], all[2]]);
+});
+
+test("기록할 고전 비트가 없는 Measure 도 표시 줄을 남기고, 그 줄로 같은 판정을 받는다", () => {
+  // 예전엔 줄을 아예 쓰지 않아(배너 경고뿐) "사용자가 지웠다" 와 구별할 수 없었다.
+  const g = build(2, [
+    { col: 0, cell: cell("H", [0]) },
+    { col: 1, cell: cell("MEASURE", [0]) },
+  ]);
+  const { code } = toQASM(2, g, 0);
+  assert.ok(code.split("\n").some((l) => l.startsWith(MARKER) && l.includes("MEASURE on q[0]")),
+    `비트 없는 Measure 의 표시 줄이 없다:\n${code}`);
+  assert.deepEqual(summary(gatesApplyWouldDrop(2, g, 0, code + " ")), [["MEASURE", [], [0], 2]]);
+  assert.deepEqual(gatesApplyWouldDrop(2, g, 0, withoutLines(code, (l) => l.startsWith(MARKER))), []);
+});
+
+test("내보내기의 표시 줄·경고와 Apply 판정이 같은 곳에서 나온다 — 편집 없는 텍스트에서 둘이 일치한다", () => {
+  // 조건이 없는 회로라 warnings 에는 표현 불가 경고만 있다.
+  const g = threeLosses();
+  g[3][0] = cell("MEASURE", [0]);
+  const { code, warnings } = toQASM(3, g, 0);
+  const drops = gatesApplyWouldDrop(3, g, 0, code);
+  assert.equal(drops.length, 4, `표현 불가 넷이 모두 잡히지 않았다:\n${code}`);
+  assert.deepEqual(drops.map((d) => d.warning), warnings);
+});
+
+test("표시 줄을 고쳤으면 무엇을 뜻했는지 모르니 짝 없는 게이트를 모두 알린다 — 앞뒤 공백만은 무시한다", () => {
+  const g = build(3, [
+    { col: 0, cell: cell("S", [1], [0]) },
+    { col: 1, cell: cell("Z", [2], [0, 1]) },
+  ]);
+  const { code } = toQASM(3, g, 0);
+  const cczGone = withoutLines(code, (l) => l.includes("Z with 2 controls on"));
+  const cs = ["S", [0], [1], 1];
+  const ccz = ["Z", [0, 1], [2], 2];
+
+  // 들여쓰기·끝 공백은 같은 줄이다 → CS 는 짝을 찾고, 줄을 지운 CCZ 는 지울 뜻으로 남는다.
+  const padded = cczGone.replace(/^(\/\/ cannot be represented.*S with 1 control on.*)$/m, "   $1  ");
+  assert.notEqual(padded, cczGone, "공백을 넣지 못했다 — 이 테스트의 전제가 깨졌다");
+  assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, padded)), [cs]);
+
+  // CS 표시 줄의 큐비트를 고치면 어느 게이트와도 맞지 않는 표시 줄이 남는다 → 줄을 지운 CCZ 까지 알린다.
+  const retargeted = cczGone.replace(/(S with 1 control on q\[0\]),q\[1\]/, "$1,q[2]");
+  assert.notEqual(retargeted, cczGone, "큐비트를 고치지 못했다 — 이 테스트의 전제가 깨졌다");
+  assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, retargeted)), [cs, ccz]);
+});
+
+test("표시 줄을 직접 지운 게이트는 확인 없이 지우되, 지운 것으로 알린다", () => {
+  // 확인은 건너뛰고 알림은 남긴다 — 지울 뜻을 잘못 판정했을 때의 비용이 크다(실행 뒤 상태 줄이 이 목록을 적는다).
+  const g = build(2, [{ col: 0, cell: cell("S", [1], [0]) }]);
+  const { code } = toQASM(2, g, 0);
+  const cs = ["S", [0], [1], 1];
+
+  const deleted = lossesOnApply(2, g, 0, withoutLines(code, (l) => l.startsWith(MARKER)));
+  assert.deepEqual(summary(deleted.unannounced), [], "줄을 지웠는데 확인을 요구한다");
+  assert.deepEqual(summary(deleted.lineDeleted), [cs], "줄을 지운 게이트가 실행 뒤 알림 목록에 없다");
+
+  const kept = lossesOnApply(2, g, 0, code + " ");
+  assert.deepEqual(summary(kept.unannounced), [cs]);
+  assert.deepEqual(summary(kept.lineDeleted), []);
+
+  const plain = build(2, [{ col: 0, cell: cell("H", [0]) }]);
+  assert.deepEqual(lossesOnApply(2, plain, 0, toQASM(2, plain, 0).code + " "), { unannounced: [], lineDeleted: [] });
+});
+
+test("의심스러운 표시 줄이 있으면 줄을 지운 게이트도 지운 뜻으로 보지 않고 확인을 거친다", () => {
+  const g = build(3, [
+    { col: 0, cell: cell("S", [1], [0]) },
+    { col: 1, cell: cell("Z", [2], [0, 1]) },
+  ]);
+  const { code } = toQASM(3, g, 0);
+  // CCZ 줄을 지우고 CS 줄의 큐비트를 고친다 — 남은 표시 줄이 어느 게이트와도 맞지 않는다.
+  const edited = withoutLines(code, (l) => l.includes("Z with 2 control"))
+    .replace(/(S with 1 control\S* on q\[0\]),q\[1\]/, "$1,q[2]");
+  const { unannounced, lineDeleted } = lossesOnApply(3, g, 0, edited);
+  assert.deepEqual(summary(unannounced), [["S", [0], [1], 1], ["Z", [0, 1], [2], 2]]);
+  assert.deepEqual(lineDeleted, [], "의심스러운데 '지운 뜻' 으로 판정했다");
 });
 
 // ---------------------------------------------------------------- 표 단일성

@@ -11,13 +11,42 @@
 // 63px 가 1536×740 회로를 49px 스크롤시켰다). 예외는 충돌 줄 하나다. 대화상자가 아니므로
 // 포커스 트랩이 없다.
 
-import { toQASM, toQiskit } from "./export.js";
+import { toQASM, toQiskit, gatesApplyWouldDrop, lossesOnApply, circuitSignature } from "./export.js";
 import { parseQASM, normalizeCircuit } from "./qasm.js";
 import { bandStartsOpen } from "./layout.js";
 
 // v1 은 드로어 폭(%) 하나였다. 이제 값의 뜻이 밴드 펼침·높이(px)·탭으로 바뀌어 키를 올리고
 // 구버전은 읽지 않는다.
 const STORAGE_KEY = "bloch-code-panel-v2";
+
+// 두 번째 단계("Apply and remove N gates")가 나타난 직후 이만큼은 실행 요청을 무시한다. 더블클릭의 두 번째
+// 클릭이나 Ctrl+Enter 키 반복이 확인 없이 삭제를 확정하지 않게 하려는 입력 보호다 — 전환 시간이 아니므로 토큰으로 두지 않는다.
+const CONFIRM_GUARD_MS = 400;
+
+// 상태 줄에는 앞의 몇 개만 적는다. 밴드 안 우선순위가 상태 줄 > 에디터라, 긴 목록이 1366×640 에서 에디터 줄을
+// 먹는다. 전체 목록은 배너가 맡는다(게이트마다 한 문장).
+const STATUS_LIST_MAX = 2;
+
+const gateCount = (n) => `${n} gate${n === 1 ? "" : "s"}`;
+const them = (n) => (n === 1 ? "it" : "them");
+
+/**
+ * 충돌 줄("Circuit changed" + Reload / Keep)을 띄울지 — 편집이 있고, 편집의 바탕이 된 회로와 지금 회로가 **다를 때만**.
+ * main.js render 가 렌더마다 onCircuitChanged 를 부른다. 예전엔 편집 중이면 그 렌더마다 충돌로 봐서, 큐비트 선택·
+ * 재생·스텝·Inspect·Resample·Classical↔Qubits·샘플링 Run 만으로도 "Circuit changed" 가 떴다(실측). 거짓 문구가
+ * 편집을 버리는 Reload 를 누르게 했다. 비교는 공유 URL 인코딩 서명으로 한다(export.js circuitSignature).
+ * DOM 을 모른다 — 테스트가 실제 컨트롤러의 렌더마다 이 판정을 본다.
+ */
+export function codeConflict({ modified, baseSignature, snapshot }) {
+  return modified && circuitSignature(snapshot) !== baseSignature;
+}
+
+/** "A; B; and 3 more" — 상태 줄용 짧은 목록. */
+function shortList(drops) {
+  const shown = drops.slice(0, STATUS_LIST_MAX).map((d) => d.label);
+  const more = drops.length - shown.length;
+  return more > 0 ? `${shown.join("; ")}; and ${more} more` : shown.join("; ");
+}
 
 /** 저장값을 필드마다 따로 검증한다 — 하나가 깨져도 나머지는 살린다. 없는 필드는 없는 채로 둔다. */
 function loadStored() {
@@ -45,6 +74,13 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
   let expanded = false;
   let tab = "qasm";
   let modified = false;
+  // 두 번째 단계 대기: { drops, since, circuit }. Apply 가 알리지 않고 지울 게이트가 있어 한 번 멈춘 상태다.
+  // 확인한 목록과 실행할 목록이 어긋나지 않게, 무엇이든 바뀌면(입력·회로·탭·Reload·접기) 푼다.
+  let pendingDrop = null;
+  // 에디터의 QASM 텍스트를 만든 회로의 서명 — 충돌 판정의 바탕. QASM 을 다시 만들 때(refresh)와 Keep 에서만 바뀐다.
+  let baseSignature = null;
+  // 편집 배너를 마지막으로 계산한 회로의 서명. 렌더마다 다시 계산하지 않고 회로가 바뀐 렌더에서만 한다.
+  let bannerSignature = null;
   // 사용자가 밴드를 한 번이라도 만졌다 — 로드 시 기본 펼침 판정을 건너뛴다.
   let userTouched = false;
   let errorLineNo = 0;
@@ -59,8 +95,7 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
   }
 
   // ---------- 코드 생성 ----------
-  function generate() {
-    const snap = circuit.getSnapshot();
+  function generate(snap = circuit.getSnapshot()) {
     const fn = tab === "qasm" ? toQASM : toQiskit;
     return fn(snap.qubitCount, snap.grid, snap.clbitCount);
   }
@@ -109,9 +144,13 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
    * 거터만은 보일 때 잰다.
    */
   function refresh() {
-    const { code, warnings } = generate();
+    const snap = circuit.getSnapshot();
+    const { code, warnings } = generate(snap);
     if (tab === "qasm") {
       text.value = code;
+      // 바탕은 QASM 텍스트를 다시 만들 때만 옮긴다 — 편집 중에 Qiskit 탭으로 가면 refresh 가 돌지만, 그때 옮기면
+      // 편집이 바탕으로 삼은 옛 회로를 잊어 진짜 충돌을 놓친다.
+      baseSignature = circuitSignature(snap);
       clearError();
       renderGutter();
     } else {
@@ -120,16 +159,37 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     setBanner(warnings);
   }
 
+  /** 지금 회로와 편집된 텍스트로 본, Apply 가 알리지 않고 지울 게이트. */
+  function currentDrops(snap = circuit.getSnapshot()) {
+    return gatesApplyWouldDrop(snap.qubitCount, snap.grid, snap.clbitCount, text.value);
+  }
+
+  /**
+   * 편집 중의 배너. 숨기지 않고 **편집된 텍스트와 지금 회로에서 다시 만든다** — 표시 줄이 남은 표현 불가
+   * 게이트만 경고한다. 예전엔 편집이 시작되면 배너를 감췄다. 배너가 생성 당시 코드의 설명이라, 편집 중에
+   * 회로가 바뀌면(refresh 를 건너뛴다) "superdense 인데 if 경고가 뜬다" 처럼 낡았기 때문이다. 다시 계산하면
+   * 낡을 수 없다. 그 대가로 감추던 사이 표현 불가 경고까지 사라져, 한 글자 고친 Apply 가 게이트를 조용히 지웠다.
+   * if 의미 경고는 여전히 감춘다 — 표시 줄로 대조할 대상이 아니다.
+   */
+  function refreshEditBanner(snap = circuit.getSnapshot()) {
+    bannerSignature = circuitSignature(snap);
+    setBanner(currentDrops(snap).map((d) => d.warning));
+  }
+
   function setModified(value) {
     modified = value;
     badge.classList.toggle("hidden", !value);
-    // 편집이 시작되면 경고 배너를 감춘다. 배너는 **우리가 생성한 코드**에 대한 설명인데,
-    // 사용자가 손댄 순간 더 이상 그 코드가 아니다.
-    // (이걸 안 하면: 텔레포테이션에서 코드를 고친 뒤 다른 프리셋으로 바꿔도 — modified 라
-    //  refresh 가 건너뛰어지므로 — 조건 경고가 남아 "superdense 인데 if 경고가 뜬다"로 보인다.)
-    if (value) setBanner([]);
+    if (value) refreshEditBanner();
     updateApplyState();
     syncBand(); // 입구의 표시 점
+  }
+
+  /** 두 번째 단계를 푼다. 그 단계의 안내가 상태 줄에 있으므로 함께 지운다(에러는 남긴다). */
+  function clearPending() {
+    if (!pendingDrop) return;
+    pendingDrop = null;
+    updateApplyState();
+    if (!status.classList.contains("is-error")) status.textContent = "";
   }
 
   /**
@@ -141,9 +201,14 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     const off = tab !== "qasm" || !modified;
     apply.classList.toggle("is-disabled", off);
     apply.setAttribute("aria-disabled", String(off));
+    // 두 번째 단계에서는 버튼이 **결과를 말한다** — "확인" 이 아니라 무엇이 일어나는지가 글자에 있다.
+    const removing = pendingDrop ? `Apply and remove ${gateCount(pendingDrop.drops.length)}` : null;
+    apply.textContent = removing ?? "Apply";
     apply.title = off
       ? "Nothing to apply — edit the code first"
-      : "Apply to circuit (Ctrl+Enter)";
+      : removing
+        ? `${removing} the code can't express (Ctrl+Enter)`
+        : "Apply to circuit (Ctrl+Enter)";
   }
 
   // ---------- 보이는 상태 ----------
@@ -212,6 +277,8 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
   function collapse() {
     userTouched = true;
     if (!expanded) return;
+    // 접히면 두 번째 단계의 안내(상태 줄)가 보이지 않는다 — 보이지 않는 확인을 남겨 두지 않는다.
+    clearPending();
     keepingFocus(() => setExpanded(false));
     persist({ expanded: false });
     layout.relayout();
@@ -256,6 +323,9 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
 
   // ---------- Apply ----------
   // Apply 버튼과 Ctrl+Enter 는 펼친 밴드에만 있다 — 상태 줄이 늘 보이는 자리에서만 적용된다.
+  // **Apply 는 사용자가 지우라고 하지 않은 게이트를 알리지 않고 지우지 않는다.** 표시 줄이 남은 표현 불가 게이트가
+  // 있으면 바로 실행하지 않고, 무엇이 어디서 사라지는지 상태 줄에 적은 뒤 버튼을 결과를 말하는 두 번째 단계로
+  // 바꾼다. 다시 누르면 실행한다. 모달·confirm 은 쓰지 않는다(6단계에서 지웠다) — 상태 줄과 버튼 안에서 끝난다.
   function doApply() {
     if (tab !== "qasm") return;
     if (!modified) return; // 편집이 없으면 회로를 건드리지 않는다(Undo 스택도 그대로)
@@ -263,9 +333,28 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     const parsed = parseQASM(text.value);
     if (!parsed.ok) {
       // 파싱 실패 시 회로는 **전혀** 바뀌지 않는다 — parseQASM 이 부분 결과를 주지 않는다.
+      clearPending();
       showError(parsed.line, parsed.message);
       return;
     }
+
+    const snap = circuit.getSnapshot();
+    // drops 는 확인을 거칠 것, lineDeleted 는 사용자가 표시 줄을 직접 지운 것(확인 없이 지우고 실행 뒤 알린다).
+    const { unannounced: drops, lineDeleted } = lossesOnApply(snap.qubitCount, snap.grid, snap.clbitCount, text.value);
+    const confirmed = pendingDrop && pendingDrop.drops.map((d) => d.label).join("\n") === drops.map((d) => d.label).join("\n");
+    if (drops.length && !confirmed) {
+      clearError();
+      pendingDrop = { drops, since: performance.now(), circuit: circuitSignature(snap) };
+      updateApplyState();
+      status.textContent =
+        `Apply would remove ${gateCount(drops.length)} the code can't express: ${shortList(drops)}. ` +
+        `Apply again to remove ${them(drops.length)}, or keep editing.`;
+      return;
+    }
+    // 두 번째 단계가 막 나타났다 — 더블클릭의 두 번째 클릭·버튼 위 Enter·Ctrl+Enter 키 반복은 모두 여기로 온다.
+    if (confirmed && performance.now() - pendingDrop.since < CONFIRM_GUARD_MS) return;
+
+    pendingDrop = null;
     clearError();
 
     // 정규화로 모양이 달라지는지 미리 본다(안내를 띄울지 결정하기 위해).
@@ -278,14 +367,30 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     const notes = [];
     if (changed.emptyColumns) notes.push("empty columns removed");
     if (changed.controlDots) notes.push("control dots folded into gate controls");
-    // 실제로 바뀐 게 없으면 안내도 없다 — 매번 뜨면 읽히지 않는다.
-    status.textContent = notes.length
-      ? `Circuit was normalized: ${notes.join(", ")}.`
-      : "Applied.";
+    const parts = [];
+    // 무엇을 지웠는지 남긴다 — "Applied." 만으로는 Undo 할 이유를 모른다. 사용자가 표시 줄을 직접 지운 게이트도
+    // 적는다: 확인은 건너뛰었지만, 지울 뜻을 잘못 판정했다면 그 비용(조용한 회로 변경)이 크다.
+    // Undo **버튼**을 가리킨다 — 포커스가 에디터에 있는 동안 Ctrl+Z 는 텍스트 편집 키라 회로를 되돌리지 않는다
+    // (main.js 단축키가 TEXTAREA 를 건너뛴다).
+    const removed = drops.length + lineDeleted.length;
+    if (removed) {
+      const said = ["Applied."];
+      if (drops.length) said.push(`Removed ${gateCount(drops.length)} the code can't express: ${shortList(drops)}.`);
+      if (lineDeleted.length) {
+        const whose = lineDeleted.length === 1 ? "whose line you deleted" : "whose lines you deleted";
+        said.push(`Removed ${gateCount(lineDeleted.length)} ${whose}: ${shortList(lineDeleted)}.`);
+      }
+      said.push(`Use the Undo button to restore ${them(removed)}.`);
+      parts.push(said.join(" "));
+    }
+    // 실제로 바뀐 게 없으면 정규화 안내도 없다 — 매번 뜨면 읽히지 않는다.
+    if (notes.length) parts.push(`Circuit was normalized: ${notes.join(", ")}.`);
+    status.textContent = parts.length ? parts.join(" ") : "Applied.";
   }
 
   // ---------- 탭 ----------
   function setTab(next) {
+    clearPending();
     tab = next;
     tabQasm.classList.toggle("is-active", next === "qasm");
     tabQiskit.classList.toggle("is-active", next === "qiskit");
@@ -297,7 +402,12 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     apply.classList.toggle("hidden", next !== "qasm");
     updateApplyState();
     if (next === "qiskit" || !modified) refresh();
-    else renderGutter(); // 편집 중인 QASM 으로 돌아왔다 — 감춰져 있던 동안 못 잰 거터를 잰다
+    else {
+      // 편집 중인 QASM 으로 돌아왔다 — 감춰져 있던 동안 못 잰 거터를 잰다. 배너는 Qiskit 탭의 것이 남아 있으므로
+      // 편집된 텍스트 기준으로 다시 만든다.
+      renderGutter();
+      refreshEditBanner();
+    }
   }
 
   // 탭은 펼친 밴드의 머리글에만 있다 — 누르면 탭만 바꾼다.
@@ -327,6 +437,7 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
 
   // ---------- 편집 ----------
   text.addEventListener("input", () => {
+    clearPending(); // 확인한 텍스트가 아니다
     setModified(true);
     clearError();
     renderGutter();
@@ -369,22 +480,32 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     layout.relayout();
   }
 
-  // 접혀 있어도 돈다. 편집이 있으면 충돌 줄을 띄운다 — 머리글·몸통 밖이라 접힌 상태에서도 보인다.
-  function onCircuitChanged() {
-    if (modified) {
-      // 사용자의 편집을 덮어쓰지 않는다. 어느 쪽을 살릴지는 사용자가 고른다.
-      showConflict(true);
-      return;
-    }
-    refresh();
+  // 접혀 있어도 돈다. 편집이 있고 회로가 정말 바뀌었으면 충돌 줄을 띄운다 — 머리글·몸통 밖이라 접힌 상태에서도 보인다.
+  // 이름과 달리 회로가 바뀔 때만 오지 않는다 — main.js render 가 렌더마다 부른다(큐비트 선택·재생 스텝도 렌더다).
+  // 그래서 모든 판단을 회로 서명으로 한다: 충돌 줄(codeConflict), 두 번째 단계 해제, 편집 배너 재계산.
+  // snapshot 은 render 가 이미 가진 것을 받는다 — 렌더마다 상태를 다시 계산하지 않게.
+  function onCircuitChanged(snapshot = circuit.getSnapshot()) {
+    const now = circuitSignature(snapshot);
+    if (pendingDrop && pendingDrop.circuit !== now) clearPending(); // 확인한 회로가 아니다
+    if (!modified) { refresh(); return; }
+    // 사용자의 편집을 덮어쓰지 않는다. 어느 쪽을 살릴지는 사용자가 고른다 — 단, 회로가 정말 바뀌었을 때만 묻는다.
+    // Undo 로 바탕에 돌아오면 물을 것이 없으니 내린다.
+    showConflict(codeConflict({ modified, baseSignature, snapshot }));
+    if (now !== bannerSignature) refreshEditBanner(snapshot); // 바뀐 회로 기준으로 — 낡은 배너를 남기지 않는다
   }
 
   reload.addEventListener("click", () => {
+    clearPending();
     setModified(false);
     refresh();
     showConflict(false);
   });
-  keep.addEventListener("click", () => showConflict(false));
+  // Keep my edits — 편집을 지금 회로에 맞서 남기겠다는 선택이다. 바탕을 지금 회로로 옮겨, 다음 진짜 변경까지는 다시
+  // 묻지 않는다. 예전엔 숨기기만 해서 다음 렌더(큐비트 선택 하나라도)가 충돌 줄을 다시 띄웠다 — Keep 이 붙지 않았다.
+  keep.addEventListener("click", () => {
+    baseSignature = circuitSignature(circuit.getSnapshot());
+    showConflict(false);
+  });
 
   // ---------- 복원과 기본 펼침 ----------
   // Apply 의 비활성 표시는 처음부터 맞아야 한다. 드로어 시절에는 열 때마다 setModified·setTab 이

@@ -112,10 +112,13 @@ function cloneCell(cell) {
  * 2. 빈 열을 없앤다(ASAP 압축). QASM 은 순차 명령 목록이라 열 번호가 남지 않으므로,
  *    파싱해 되돌리면 어차피 압축된 모양이 된다. 양쪽을 같은 규칙으로 맞춰 둔다.
  *
- * @returns {{grid, changed: {emptyColumns: boolean, controlDots: boolean}}}
+ * @returns {{grid, changed: {emptyColumns: boolean, controlDots: boolean}, placed: number, origin}}
+ *   origin[col][row] — 정규형의 그 셀이 원래 그리드에서 있던 열(0부터). 정규화가 셀을 앞당기므로
+ *   내보낸 텍스트의 순서로는 사용자가 보는 열을 알 수 없다 — Apply 가 지울 게이트를 "몇 열" 로 말할 때 쓴다.
  */
 export function normalizeCircuit(qubitCount, grid) {
   const out = emptyGrid(qubitCount);
+  const origin = emptyGrid(qubitCount);
   let controlDots = false;
   let moved = false;
 
@@ -159,6 +162,7 @@ export function normalizeCircuit(qubitCount, grid) {
       if (at >= MAX_COLUMNS) continue; // 열이 넘치면 버린다(파서도 같은 상한을 쓴다)
       if (at !== col) moved = true;
       out[at][next.targets[0]] = next;
+      origin[at][next.targets[0]] = col;
       for (const x of used) nextFree[x] = at + 1;
       if (next.gate === "MEASURE") {
         const cb = next.params?.cbit ?? next.targets[0];
@@ -170,7 +174,7 @@ export function normalizeCircuit(qubitCount, grid) {
 
   // "빈 열 제거"는 게이트가 실제로 왼쪽으로 당겨졌을 때만 보고한다 —
   // 열 개수만 비교하면 gap 이 있어도 개수가 같아 못 잡는다.
-  return { grid: out, changed: { emptyColumns: moved, controlDots }, placed };
+  return { grid: out, changed: { emptyColumns: moved, controlDots }, placed, origin };
 }
 
 /** 두 회로가 셀 단위로 같은지. 왕복 테스트의 판정 기준. */

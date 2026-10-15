@@ -609,9 +609,9 @@ function render(snapshot) {
   // 궤적으로 계산하는 순간 화면의 상태벡터는 여러 결과 중 하나이기 때문이다.
   trajBadge.classList.toggle("hidden", !snapshot.usesTrajectory);
 
-  // 코드 밴드에 회로 변경을 알린다 — 펼쳐져 있으면 코드를 갱신하고, 접혀 있으면 펼칠 때
-  // 갱신한다. 편집 중이면 덮어쓰지 않고 충돌 줄을 띄운다(접혀 있어도 보인다).
-  codePanel?.onCircuitChanged();
+  // 코드 밴드에 렌더를 알린다 — 편집이 없으면 코드를 갱신하고, 편집 중이면 회로가 정말 바뀌었을 때만 충돌 줄을
+  // 띄운다(접혀 있어도 보인다). 렌더마다 부르므로 판정은 코드 밴드가 회로 서명으로 한다. 스냅샷을 넘겨 다시 계산하지 않게 한다.
+  codePanel?.onCircuitChanged(snapshot);
 
   const busy = snapshot.isAnimating || snapshot.isPlaying;
   clearBtn.disabled = busy;
