@@ -72,13 +72,17 @@ function flip(state, q) {
   return out;
 }
 
-/** 게이트가 하나라도 있는 열의 개수. circuit.js 의 같은 이름 함수와 규칙이 같아야 한다. */
-function usedColumnCount(grid) {
-  let n = 0;
-  for (let col = 0; col < grid.length; col++) {
-    if (grid[col].some((cell) => cell)) n++;
+/**
+ * steps 를 안 주면 도는 열 수 — **게이트가 있는 마지막 열 + 1**. circuit.js 의 같은 이름 함수(컨트롤러의 스텝 수)와 규칙이 같아야 한다.
+ * 예전엔 "게이트가 있는 열의 **개수**" 를 세어, 빈 열이 하나 끼면 마지막 열들을 돌지 않았다 — steps 없이 부르는 집계
+ * (aggregateTrajectories)·샘플링이 열 0·1·3 의 H·측정·조건부 X 에서 P(q1=1) 0.000 을 냈다(정답 0.5). 스텝 k 는 "열 k 까지" 라
+ * 열 번호이지 개수가 아니다. export 는 두 정의가 같은지 보는 테스트용이다.
+ */
+export function usedColumnCount(grid) {
+  for (let col = grid.length - 1; col >= 0; col--) {
+    if (grid[col].some((cell) => cell)) return col + 1;
   }
-  return n;
+  return 0;
 }
 
 /**

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 
 import {
   runTrajectory, makeRng, needsTrajectorySampling,
-  aggregateTrajectories, marginalClassical,
+  aggregateTrajectories, marginalClassical, usedColumnCount,
 } from "../js/trajectory.js";
 import { simulate, createCircuitController, MAX_COLUMNS } from "../js/circuit.js";
 import { applyPlacement, initialState } from "../js/quantum.js";
@@ -447,4 +447,53 @@ test("얽히지 않은 큐비트의 리셋은 궤적으로 가도 정확값과 �
   for (let i = 0; i < exact.length; i++) {
     assert.ok(Math.abs(qubitProbs[i] - exact[i]) < 1e-12, `idx ${i}: 평균 ${qubitProbs[i]} ≠ 정확값 ${exact[i]}`);
   }
+});
+
+// ---------- 빈 열 ----------
+// 집계(aggregateTrajectories)와 샘플링 Run(probview.js sampleTrajectories)은 steps 없이 runTrajectory 를 부른다. 그때의 열 상한이
+// "게이트가 있는 열의 개수" 였어서, 빈 열이 하나 끼면 마지막 열들이 통째로 빠졌다 — 열 0·1·3 의 H·측정·조건부 X 에서 P(q1=1) 0.000
+// (정답 0.5, 실측). 상태 패널은 circuit.js 가 steps(= 마지막 열 + 1)를 넘겨 맞았고, 확률 막대만 틀렸다.
+
+/** H q0 · measure q0→c0 · c0 이면 X q1 — 열 위치만 바꿔 빈 열을 끼운다. */
+function gapCircuit([hCol, mCol, xCol]) {
+  return build(2, [
+    { col: hCol, cell: cell("H", [0]) },
+    { col: mCol, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
+    { col: xCol, cell: cell("X", [1], [], { cif: 0 }) },
+  ]);
+}
+
+test("빈 열이 있어도 궤적 집계가 그 뒤의 게이트를 버리지 않는다", () => {
+  // 두 회로는 측정 순서가 같아 같은 시드열이면 같은 난수를 먹는다 — 통계 오차 없이 결과가 정확히 같아야 한다.
+  const gap = aggregateTrajectories(2, 2, gapCircuit([0, 1, 3]), 512, seedSource(31));
+  const packed = aggregateTrajectories(2, 2, gapCircuit([0, 1, 2]), 512, seedSource(31));
+  const pQ1 = (probs) => probs[2] + probs[3]; // 기저 인덱스의 비트 1 이 q1
+  assert.ok(pQ1(packed.qubitProbs) > 0.4, `전제: 빈 열 없는 회로의 P(q1=1) 이 ${pQ1(packed.qubitProbs)} — 조건부 X 가 돌아야 한다`);
+  assert.deepEqual(gap.qubitProbs, packed.qubitProbs, "빈 열 하나로 큐비트 확률이 달라졌다 — 빈 열 뒤의 게이트가 빠졌다");
+  assert.deepEqual(gap.classical, packed.classical, "빈 열 하나로 고전 비트 분포가 달라졌다");
+});
+
+test("궤적 실행의 열 상한은 컨트롤러의 스텝 수와 같다 — 빈 열이 끼어도 '마지막 열 + 1' 이다", () => {
+  // 같은 이름 함수가 trajectory.js 와 circuit.js 에 두 벌 있다. 갈라지면 위 테스트의 버그가 다시 생긴다.
+  const rng = makeRng(20261017);
+  let gapped = 0;
+  for (let trial = 0; trial < 200; trial++) {
+    const n = 2 + Math.floor(rng() * 3);
+    const grid = Array.from({ length: MAX_COLUMNS }, () => new Array(n).fill(null));
+    for (let col = 0; col < MAX_COLUMNS; col++) {
+      if (rng() < 0.4) {
+        const q = Math.floor(rng() * n);
+        grid[col][q] = cell("H", [q]);
+      }
+    }
+    const steps = createCircuitController({
+      onChange: () => {},
+      onAnimateStep: async () => {},
+      initial: { qubitCount: n, clbitCount: n, grid },
+    }).getSnapshot().totalSteps;
+    assert.equal(usedColumnCount(grid), steps, `무작위 그리드 ${trial}: 궤적 ${usedColumnCount(grid)} ≠ 컨트롤러 ${steps}`);
+    if (grid.slice(0, steps).some((col) => !col.some(Boolean))) gapped++;
+  }
+  // 빈 열이 없는 그리드만 나오면 두 정의가 같은 값을 내서 이 테스트가 아무것도 가리지 못한다.
+  assert.ok(gapped > 100, `전제: 마지막 열 앞에 빈 열이 낀 그리드가 200개 중 ${gapped}개뿐이다`);
 });
