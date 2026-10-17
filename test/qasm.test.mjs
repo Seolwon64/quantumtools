@@ -102,7 +102,8 @@ test("파라미터 게이트가 왕복한다 (RX·RY·RZ·P·U)", () => {
     { col: 3, cell: cell("P", [1], [], { theta: Math.PI / 3 }) },
     { col: 4, cell: cell("U", [1], [], { theta: 0.5, phi: 1.25, lambda: -0.75 }) },
   ]);
-  // 첫 왕복에서 toFixed(6) 반올림이 한 번 일어나므로, 그 이후가 고정점인지를 본다.
+  // 예전엔 첫 왕복에서 toFixed(6) 반올림이 한 번 일어나, 한 번 돌린 뒤의 고정점을 봤다. 지금은 전체 정밀도라 첫 왕복부터
+  // === 다 — 그 보장은 test/params.test.mjs 가 단언한다. 여기는 한 번 돌린 회로가 다시 왕복하는지를 본다.
   const first = parseQASM(toQASM(2, g, 0).code);
   assert.ok(first.ok, first.message);
   roundTrip("params(고정점)", 2, first.grid, 0);

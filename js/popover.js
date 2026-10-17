@@ -48,12 +48,36 @@ function closePlacePopover() {
 }
 
 
-function radToDegRound(rad) {
-  return Math.round((rad * 180) / Math.PI);
+/**
+ * 각도 슬라이더가 보여 주는 값 — 정수 도, 0…359 로 감싼다. 슬라이더(0–360, 1° 눈금)의 범위·눈금 안이라 브라우저가 값을
+ * 고치지 않는다. **표시 전용이다** — 이 값을 다시 라디안으로 바꿔 저장하면 1° 단위로 양자화된다(아래 editedParams).
+ */
+export function shownDegree(rad) {
+  const deg = Math.round((rad * 180) / Math.PI);
+  return ((deg % 360) + 360) % 360;
+}
+
+/**
+ * 파라미터 편집기 Apply 의 새 파라미터. **움직인 슬라이더만 새 값으로 쓰고, 움직이지 않은 파라미터는 원래 값을 그대로 둔다.**
+ * 예전엔 모든 파라미터를 `슬라이더 × π/180` 으로 다시 써서, θ 만 움직여도 φ·λ 가 1° 단위로 양자화됐다(1.235 → 1.239,
+ * 2.346 → 2.339). "움직였다" 는 슬라이더가 실제로 가진 보이는 값이 처음과 달라진 것이다 — 끌었다가 같은 눈금으로
+ * 돌아오면 보이는 값이 그대로라 원래 값을 지킨다. 아무것도 안 움직였으면 **같은 params 객체**를 돌려준다(호출부가
+ * setParams 를 건너뛰어 헛 Undo 단계가 생기지 않게).
+ * @param shownDeg 슬라이더를 채운 직후 다시 읽은 값, nowDeg Apply 때 읽은 값 — keys 와 같은 순서.
+ */
+export function editedParams(params, keys, shownDeg, nowDeg) {
+  let next = params;
+  keys.forEach((k, i) => {
+    if (nowDeg[i] === shownDeg[i]) return; // 움직이지 않았다 — 원래 값 그대로
+    if (next === params) next = { ...params };
+    next[k] = (nowDeg[i] * Math.PI) / 180;
+  });
+  return next;
 }
 
 // θ/φ/λ 각도 슬라이더 행을 팝오버에 붙이고 input 요소들을 돌려준다.
-// 배치 팝오버와 "Edit parameters" 편집 팝오버가 같은 UI를 쓰도록 공용화한 부분.
+// 배치 팝오버와 "Edit parameters" 편집 팝오버가 같은 UI를 쓰도록 공용화한 부분. 값은 받은 그대로 쓴다 —
+// 0…359 로 감싸는 것은 shownDegree 가 한다(두 번 감싸지 않는다).
 function buildSliderRows(names, initialDegrees) {
   const inputs = [];
   names.forEach((name, i) => {
@@ -68,7 +92,7 @@ function buildSliderRows(names, initialDegrees) {
     slider.min = "0";
     slider.max = "360";
     slider.step = "1";
-    const deg = ((initialDegrees[i] ?? 0) % 360 + 360) % 360;
+    const deg = initialDegrees[i] ?? 0;
     slider.value = String(deg);
     label.textContent = name;
     valueSpan.textContent = `${deg}°`;
@@ -151,7 +175,7 @@ function openPlacePopover(column, qubit, gateName, clientX, clientY, qubitCount)
 
   const sliderInputs = buildSliderRows(
     sliderNames,
-    sliderNames.map((name) => (name === "θ" ? radToDegRound(info.defaultTheta ?? Math.PI / 2) : 0))
+    sliderNames.map((name) => (name === "θ" ? shownDegree(info.defaultTheta ?? Math.PI / 2) : 0))
   );
 
   const actions = document.createElement("div");
@@ -403,7 +427,11 @@ function openParamEditor(column, home, cell, clientX, clientY) {
   title.textContent = `${standardGateName(cell)} — parameters`;
   placePopover.appendChild(title);
 
-  const sliders = buildSliderRows(names.map(([, sym]) => sym), names.map(([k]) => radToDegRound(params[k])));
+  const keys = names.map(([k]) => k);
+  const sliders = buildSliderRows(names.map(([, sym]) => sym), keys.map((k) => shownDegree(params[k])));
+  // "보이는 값" 은 슬라이더가 실제로 가진 값이다 — 계산값이 아니라 넣은 직후 다시 읽는다. 계산과 슬라이더가 갈라지면
+  // (범위·눈금 밖이라 브라우저가 고치는 등) 움직이지 않은 값을 움직였다고 볼 수 있기 때문이다.
+  const shown = sliders.map((s) => s.valueAsNumber);
 
   const actions = document.createElement("div");
   actions.className = "place-popover-actions";
@@ -415,8 +443,9 @@ function openParamEditor(column, home, cell, clientX, clientY) {
   apply.className = "pill-btn-primary";
   apply.textContent = "Apply";
   apply.addEventListener("click", () => {
-    const next = { ...params };
-    names.forEach(([k], i) => { next[k] = (Number(sliders[i].value) * Math.PI) / 180; });
+    const next = editedParams(params, keys, shown, sliders.map((s) => s.valueAsNumber));
+    // 아무것도 안 움직였다 — 회로를 건드리지 않는다(setParams 는 값이 같아도 Undo 단계를 하나 쌓는다).
+    if (next === params) { closePlacePopover(); return; }
     const res = circuit.setParams(column, home, next);
     closePlacePopover();
     if (!res.ok) showToast(res.reason);

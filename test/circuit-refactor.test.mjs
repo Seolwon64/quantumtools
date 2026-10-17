@@ -322,8 +322,8 @@ test("RYY 유니터리성: U†U = I", () => {
 
 test("[1] RYY export: ryy(θ) / qc.ryy", () => {
   const grid = gridWith(2, [{ col: 0, row: 0, cell: { gate: "RYY", targets: [0, 1], controls: [], params: { theta: Math.PI / 2 } } }]);
-  assert.match(toQASM(2, grid).code, /^ryy\(1\.570796\) q\[0\],q\[1\];$/m);
-  assert.match(toQiskit(2, grid).code, /qc\.ryy\(1\.570796, 0, 1\)/);
+  assert.match(toQASM(2, grid).code, /^ryy\(1\.5707963267948966\) q\[0\],q\[1\];$/m);
+  assert.match(toQiskit(2, grid).code, /qc\.ryy\(1\.5707963267948966, 0, 1\)/);
 });
 
 // ---------- CSWAP (Fredkin): SWAP + controls[1] 프리셋 ----------

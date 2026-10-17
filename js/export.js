@@ -1,4 +1,4 @@
-// 회로 공유/내보내기: URL 해시 인코딩(base64url), OpenQASM 2.0 / Qiskit 코드 생성.
+// 회로 공유/내보내기: URL 해시 인코딩(base64url), OpenQASM 2.0 / Qiskit 코드 생성, Apply 가 지울 게이트 판정.
 // 셀은 canonical { gate, targets, controls, params } 구조. 구버전(v:1) URL도 계속 열린다.
 import { GATE_INFO } from "./quantum.js";
 import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell } from "./circuit.js";
@@ -27,9 +27,11 @@ export function encodeCircuit(qubitCount, grid, clbitCount) {
       if (cell.controls && cell.controls.length) p.x = cell.controls;
       const prm = cell.params ?? {};
       const params = {};
-      if (prm.theta !== undefined) params.t = +prm.theta.toFixed(6);
-      if (prm.phi !== undefined) params.f = +prm.phi.toFixed(6);
-      if (prm.lambda !== undefined) params.l = +prm.lambda.toFixed(6);
+      // 각도는 반올림하지 않는다. 예전엔 소수 6자리로 잘라, 링크를 한 번 열기만 해도 손대지 않은 각도가 바뀌었다
+      // (1.2345678901 → 1.234568). JSON 은 숫자를 가장 짧은 정확 왕복 표현으로 쓴다 — 옛 6자리 링크도 그대로 읽힌다.
+      if (prm.theta !== undefined) params.t = prm.theta;
+      if (prm.phi !== undefined) params.f = prm.phi;
+      if (prm.lambda !== undefined) params.l = prm.lambda;
       if (prm.cbit !== undefined) params.cb = prm.cbit; // Measure가 기록하는 고전 비트
       if (prm.cif !== undefined) params.ci = prm.cif;   // 조건부 연산의 조건 비트
       if (Object.keys(params).length) p.p = params;
@@ -47,8 +49,7 @@ export function encodeCircuit(qubitCount, grid, clbitCount) {
  * **공유 URL 인코딩을 그대로 쓴다.** 그 형식이 이미 "회로를 빠짐없이, 보기 상태는 빼고" 를 지키도록 만들어져 있어
  * 회로의 정의처가 하나로 남는다. 따로 JSON.stringify(grid) 로 만들면 두 방향으로 틀린다 — grid 에 무관한 값이 붙거나
  * 키 순서가 다르면 거짓 충돌이 남고(넘침), 회로 정보가 grid 밖에 생기면 진짜 변경을 놓쳐 Apply 가 그것을 소리 없이
- * 덮어쓴다(모자람 — 데이터 손실).
- * 한계: 각도는 인코딩처럼 소수 6자리다. UI 로 만들 수 있는 가장 작은 변경은 1° 슬라이더(0.017 rad)라 닿지 않는다.
+ * 덮어쓴다(모자람 — 데이터 손실). 인코딩이 각도를 전체 정밀도로 담으므로 서명도 모든 각도 변경을 본다.
  */
 export function circuitSignature(snapshot) {
   return encodeCircuit(snapshot.qubitCount, snapshot.grid, snapshot.clbitCount);
@@ -125,8 +126,11 @@ export function buildShareUrl(qubitCount, grid, clbitCount) {
 // 예전엔 SIMPLE/PARAM/qasmControlled/본문 if-else 로 다섯 군데에 흩어져 있었고,
 // 역방향 파서가 그 지식을 다시 적으면 export 와 parse 가 조용히 갈라진다.
 
+// 각도는 전체 정밀도 — String(x) 는 가장 짧은 정확 왕복 표현이라 Number(String(x)) === x 다. 예전엔 소수 6자리로 잘라
+// QASM Apply 한 번에 손대지 않은 각도가 바뀌었다. |x| < 1e-6 이나 ≥ 1e21 은 지수 표기(1e-7, 1e+21)가 되는데 소수점이
+// 없어 엄밀한 OpenQASM 2.0 실수 문법은 아니다 — 앱 파서와 Qiskit(qasm2.loads·from_qasm_str)은 정확히 읽는다(실측).
 function fmt(x) {
-  return String(+Number(x ?? 0).toFixed(6));
+  return String(Number(x ?? 0));
 }
 
 /** 조건이 하나라도 있고 고전 비트가 2개 이상일 때만 붙는 안내. */
