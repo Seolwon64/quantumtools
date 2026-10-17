@@ -1,6 +1,6 @@
 # quantumtools
 브라우저에서 전부 도는 양자 회로 시뮬레이터 겸 시각화 도구. 게이트를 놓으면 상태벡터를 계산해 Bloch sphere(Three.js)·
-Q-sphere·확률 차트·축소 밀도행렬로 보여 주고, OpenQASM 2.0 / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치도 없다.
+Q-sphere·확률 차트·축소 밀도행렬로 보여 주고, QASM(OpenQASM 2.0 문법, Qiskit 게이트 이름) / Qiskit 코드와 공유 URL 로 내보낸다. 백엔드도 설치도 없다.
 
 ## 아키텍처 결정
 

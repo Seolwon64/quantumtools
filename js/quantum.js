@@ -1,4 +1,4 @@
-// n큐비트 상태벡터 엔진: 게이트 적용, 부분상태(축약밀도행렬) Bloch 벡터, 계산기저 확률, 게이트 정의표 `GATE_INFO`.
+// n큐비트 상태벡터 엔진: 게이트 적용, 한 열의 실행 순서(`homeRow`·`columnCells`), 부분상태(축약밀도행렬) Bloch 벡터, 계산기저 확률, 게이트 정의표 `GATE_INFO`.
 
 const SQRT1_2 = Math.SQRT1_2;
 
@@ -330,6 +330,28 @@ export function applyRCCX(state, a, b, t) {
 
 export function applyRC3X(state, a, b, c, t) {
   return applySteps(state, RC3X_STEPS, [a, b, c, t]);
+}
+
+// ---------- 한 열의 실행 순서 ----------
+
+/**
+ * 셀의 홈 행 — 그리드에 저장되는 칸이자 **한 열 안의 실행 순서 키**. 여러 큐비트에 걸친 게이트도 이 행 하나로 센다
+ * (CX c=q0 → t=q3 은 행 3, RCCX 는 첫 큐비트). 실행기(runTrajectory·simulateResolved)와 QASM 배치기(qasm.js)가 이 정의를 함께
+ * 쓴다 — 같은 열의 측정과 조건 중 무엇이 먼저 도는지를 둘이 다르게 보면, 내보낸 회로의 실행 순서가 뒤집힌다. 실측: 측정 q1(행 1)과
+ * 조건부 CX c=q0 → t=q3 이 한 열이면 측정이 먼저다(P(q3=1) 1). "관여 큐비트 최솟값"(0)으로 세면 CX 가 먼저가 되어 0 이 된다.
+ */
+export function homeRow(cell) {
+  return cell.targets[0];
+}
+
+/** 한 열의 실행 셀(CTRL 제외)을 실행 순서(homeRow 오름차순)로. 실행기와 배치기가 같은 순서로 돈다. */
+export function columnCells(grid, col, qubitCount) {
+  const cells = [];
+  for (let q = 0; q < qubitCount; q++) {
+    const cell = grid[col]?.[q];
+    if (cell && cell.gate !== "CTRL") cells.push(cell);
+  }
+  return cells.sort((a, b) => homeRow(a) - homeRow(b));
 }
 
 // ---------- 정규(canonical) placement 적용: { gate, targets, controls, params } ----------

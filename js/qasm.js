@@ -5,8 +5,8 @@
 // 다시 적으면 export 와 parse 가 조용히 갈라져 왕복이 깨진다. 그래서 QASM_OPS 표 하나로
 // 합치고 export 도 parse 도 이 표만 인덱싱한다.
 
-import { GATE_INFO } from "./quantum.js";
-import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS } from "./circuit.js";
+import { GATE_INFO, homeRow, columnCells } from "./quantum.js";
+import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, canCondition, conditionRejection } from "./circuit.js";
 
 /**
  * canonical 게이트 ↔ QASM 이름.
@@ -104,13 +104,55 @@ function cloneCell(cell) {
 }
 
 /**
+ * ASAP 배치기 — **normalizeCircuit(내보내기)과 parseQASM(가져오기)이 같은 함수를 쓴다.** 예전엔 같은 규칙이 두 곳에 따로 적혀
+ * 있었다. 갈라지면 정규형이 둘이 되어 왕복이 깨진다.
+ *
+ * 셀을 실행 순서(원래 열, 그다음 homeRow — 앱이 도는 순서. 가져오기에서는 문장 순서)로 받아, 그 셀이 갈 수 있는 가장 이른 열을
+ * 돌려준다. 넘치면 -1. 순서를 정하는 자원은 큐비트와 **고전 비트**다. 고전 비트는 읽기(조건 cif)와 쓰기(measure 의 기록 비트)를
+ * 구분한다 — 읽기는 마지막 쓰기 뒤, 쓰기는 마지막 읽기·쓰기 뒤, 읽기끼리는 같은 열을 나눠 쓴다. "뒤" 는 다음 열 이후이거나, 같은
+ * 열이면 더 아래 행이다(앱은 한 열을 homeRow 오름차순으로 돈다).
+ *
+ * 예전엔 고전 비트를 "조건은 그 비트를 쓴 measure 의 다음 열" 하나로만 봤다. 그래서 (1) 조건이 읽은 뒤 그 비트를 덮어쓰는 measure 가
+ * 조건 앞으로 당겨졌고(P(q1=1) 1 → 0), (2) 같은 열에서 같은 비트를 쓰는 측정 둘의 순서가 뒤집혔고, (3) 같은 열의 쓰기 → 읽기가 열을
+ * 하나 더 써서 12열을 다 쓴 회로의 마지막 게이트가 내보내기에서 조용히 사라졌다(셀 13 → 12) — 모두 실측. 이 규칙이면 앱이 만든 회로는
+ * 열이 늘지 않는다: 앞선 제약은 모두 원래 더 앞 열이거나 같은 열의 위 행이라 원래 열 이하에서 풀린다.
+ */
+function createPlacer(qubitCount) {
+  const nextFree = new Array(qubitCount).fill(0);
+  const lastWrite = new Map(); // 비트 → { col, row }
+  const lastRead = new Map(); // 비트 → { col, row } — 실행 순서로 가장 늦은 읽기
+  // mark 뒤에 도는 가장 이른 열 — 같은 열이라도 아래 행이면 뒤다.
+  const after = (mark, row) => (mark === undefined ? 0 : row > mark.row ? mark.col : mark.col + 1);
+  const isLater = (mark, than) => !than || mark.col > than.col || (mark.col === than.col && mark.row > than.row);
+  return function place(cell) {
+    const row = homeRow(cell);
+    const qubits = [...cell.targets, ...(cell.controls ?? [])];
+    const read = cell.params?.cif;
+    const write = cell.gate === "MEASURE" ? (cell.params?.cbit ?? cell.targets[0]) : undefined;
+    let col = Math.max(...qubits.map((q) => nextFree[q]));
+    if (read !== undefined) col = Math.max(col, after(lastWrite.get(read), row));
+    if (write !== undefined) col = Math.max(col, after(lastWrite.get(write), row), after(lastRead.get(write), row));
+    if (col >= MAX_COLUMNS) return -1;
+    for (const q of qubits) nextFree[q] = col + 1;
+    const mark = { col, row };
+    if (read !== undefined && isLater(mark, lastRead.get(read))) lastRead.set(read, mark);
+    if (write !== undefined) lastWrite.set(write, mark);
+    return col;
+  };
+}
+
+/**
  * 회로를 QASM 이 표현할 수 있는 정규형으로 바꾼다. **의미는 완전히 보존된다.**
  *
  * 1. 제어점(CTRL)을 같은 열 게이트들의 명시적 controls 로 접는다.
  *    QASM 에는 "열 전체에 제어를 건다"는 문법이 없다. 예전 export 는 CTRL 을 그냥
  *    건너뛰고 주석만 남겨서 **제어가 빠진 다른 회로**를 내보내고 있었다.
- * 2. 빈 열을 없앤다(ASAP 압축). QASM 은 순차 명령 목록이라 열 번호가 남지 않으므로,
- *    파싱해 되돌리면 어차피 압축된 모양이 된다. 양쪽을 같은 규칙으로 맞춰 둔다.
+ * 2. 빈 열을 없앤다(ASAP 압축, createPlacer). QASM 은 순차 명령 목록이라 열 번호가 남지 않으므로,
+ *    파싱해 되돌리면 어차피 압축된 모양이 된다. 양쪽이 같은 배치기를 쓴다.
+ *
+ * 넘치면 **던진다.** 앱이 만든 회로에서는 일어나지 않는다(createPlacer 주석). 일어났다면 그리드가 앱 규칙을 어긴 것이다 — 같은 열에서
+ * 큐비트가 겹치는 셀(공유 링크는 막지 않는다)이나 여러 게이트에 걸린 제어점처럼. 예전엔 넘친 셀을 조용히 버려, 내보낸 코드에서 게이트가
+ * 사라졌다. 코드 밴드가 이 예외를 받아 사유로 보인다(codepanel.js exportCode).
  *
  * @returns {{grid, changed: {emptyColumns: boolean, controlDots: boolean}, placed: number, origin}}
  *   origin[col][row] — 정규형의 그 셀이 원래 그리드에서 있던 열(0부터). 정규화가 셀을 앞당기므로
@@ -121,13 +163,7 @@ export function normalizeCircuit(qubitCount, grid) {
   const origin = emptyGrid(qubitCount);
   let controlDots = false;
   let moved = false;
-
-  // **배치 규칙은 parseQASM 과 반드시 같아야 한다** — 큐비트별로 비는 즉시(ASAP) 놓는다.
-  // 한쪽은 열 단위로 압축하고 다른 쪽은 ASAP 이면 정규형이 둘이 되어 왕복 비교가 깨진다.
-  const nextFree = new Array(qubitCount).fill(0);
-  // 고전 비트도 자원이다. 이걸 빼먹으면 조건부 게이트가 **그 조건을 쓰는 measure 앞으로**
-  // 당겨져 인과가 뒤집힌다(왕복 테스트가 실제로 이걸 잡았다).
-  const clbitReady = new Map();
+  const place = createPlacer(qubitCount);
   let placed = 0;
 
   for (let col = 0; col < grid.length; col++) {
@@ -138,10 +174,8 @@ export function normalizeCircuit(qubitCount, grid) {
     }
     if (dots.length) controlDots = true;
 
-    // 행 순서로 순회한다 — toQASM 이 내보내는 순서와 같아야 파서가 같은 열에 되놓는다.
-    for (let q = 0; q < qubitCount; q++) {
-      const cell = grid[col]?.[q];
-      if (!cell || cell.gate === "CTRL") continue;
+    // 실행 순서로 돈다 — 배치기의 "같은 열의 아래 행" 판정이 앱이 그 열을 도는 순서와 같아야 한다.
+    for (const cell of columnCells(grid, col, qubitCount)) {
       const next = cloneCell(cell);
       if (dots.length) {
         const seen = new Set(next.controls);
@@ -154,20 +188,16 @@ export function normalizeCircuit(qubitCount, grid) {
         }
         next.controls.sort((a, b) => a - b);
       }
-      const used = [...next.targets, ...next.controls];
-      let at = Math.max(...used.map((x) => nextFree[x]));
-      // 조건부 게이트는 그 비트에 기록한 measure 뒤에 와야 한다.
-      const cif = next.params?.cif;
-      if (cif !== undefined) at = Math.max(at, clbitReady.get(cif) ?? 0);
-      if (at >= MAX_COLUMNS) continue; // 열이 넘치면 버린다(파서도 같은 상한을 쓴다)
-      if (at !== col) moved = true;
-      out[at][next.targets[0]] = next;
-      origin[at][next.targets[0]] = col;
-      for (const x of used) nextFree[x] = at + 1;
-      if (next.gate === "MEASURE") {
-        const cb = next.params?.cbit ?? next.targets[0];
-        clbitReady.set(cb, at + 1);
+      const at = place(next);
+      if (at < 0) {
+        throw new Error(
+          `This circuit can't be exported: written one operation per line it needs more than ${MAX_COLUMNS} columns ` +
+            `(gates in column ${col + 1} overlap or share a control dot).`
+        );
       }
+      if (at !== col) moved = true;
+      out[at][homeRow(next)] = next;
+      origin[at][homeRow(next)] = col;
       placed++;
     }
   }
@@ -230,19 +260,55 @@ function parseParamList(text, line) {
   return { values: out };
 }
 
-/** 조건 `if (c==N)` → 비트 인덱스. 2의 거듭제곱이 아니면 이 앱의 조건 모델로 표현할 수 없다. */
-function conditionBit(value, line, cregName, name) {
-  if (name !== cregName) return { error: fail(line, `unknown classical register '${name}'`) };
-  if (value <= 0 || (value & (value - 1)) !== 0) {
+/** `c[3]` → { name: "c", index: 3 }. 인덱스가 없으면 null. */
+function parseBitRef(token) {
+  const m = /^([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]$/.exec(token.trim());
+  return m ? { name: m[1], index: Number(m[2]) } : null;
+}
+
+/**
+ * `if (r==v)` 을 **OpenQASM 의 뜻(레지스터 r 전체가 정수 v 와 같다)** 으로 읽어 앱의 조건 비트(c[k] == 1)로 옮긴다. 옮길 수 없으면
+ * 줄 번호와 이유를 붙여 거부한다.
+ *   - 1비트 r: v = 1 일 때만 그 비트. 그 밖(v = 0 등)은 거부한다 — 앱의 조건은 "비트가 1" 뿐이다.
+ *   - 여러 비트 r: v = 2^k 이고 k < r 의 폭이며, 그 줄 앞에서 r 의 **다른** 비트를 쓴 measure 가 없을 때만 받는다. 레지스터는 0 으로
+ *     시작하므로 그때 "r == 2^k" 와 "r[k] == 1" 이 같은 뜻이다. k 가 폭을 넘으면 이어 붙인 번호가 옆 레지스터로 넘어가므로 거부한다.
+ * 예전엔 다른 비트를 무시하고 `c==2^k` 를 비트 k 로 읽었다(앱만의 뜻). 표준대로 쓴 Qiskit 텍스트가 조용히 다른 회로가 됐다 — c[0]·c[1] 을
+ * 쓴 뒤의 `if (c==2)` 는 표준으로 P(q2=1) 0.25 인데 0.5 로 읽혔다(실측). 같은 이유로 앱이 예전에 비트 둘 이상을 쓰고 내보낸
+ * 텍스트(텔레포테이션)는 이제 거부된다. 비트 하나만 쓰인 예전 텍스트는 같은 뜻이라 그대로 읽힌다.
+ * 전체 레지스터 measure(`measure q -> c;`)는 받지 않는다(parseBitRef 가 인덱스를 요구한다). 받게 되면 아래 "다른 비트가 먼저 쓰였나" 에서
+ * 레지스터의 모든 비트를 쓴 것으로 세야 한다.
+ * @param writtenAt 앱 비트 번호 → 그 비트를 처음 쓴 measure 의 줄. 문장 순서로 채워지므로 "그 줄 앞" 이다.
+ */
+function conditionBit(name, value, line, cregs, writtenAt) {
+  const reg = cregs.get(name);
+  if (!reg) return { error: fail(line, `unknown classical register '${name}'`) };
+  const { offset, size } = reg;
+  if (size === 1) {
+    if (value === 1) return { bit: offset };
     return {
-      error: fail(
-        line,
-        `Not supported: multi-bit conditions (if (${name}==${value})). ` +
-          `This app conditions on a single bit, so only powers of two work.`
-      ),
+      error: fail(line, `Not supported: if (${name}==${value}) — this app conditions on a classical bit being 1, ` +
+        `so a 1-bit register can only be compared with 1`),
     };
   }
-  return { bit: Math.log2(value) };
+  const k = Math.log2(value);
+  if (!Number.isInteger(k)) {
+    return {
+      error: fail(line, `Not supported: multi-bit conditions (if (${name}==${value})). ` +
+        `This app conditions on one classical bit being 1.`),
+    };
+  }
+  if (k >= size) {
+    return { error: fail(line, `Not supported: if (${name}==${value}) is never true — ${name} has only ${size} bits`) };
+  }
+  for (let j = 0; j < size; j++) {
+    if (j === k || !writtenAt.has(offset + j)) continue;
+    return {
+      error: fail(line, `if (${name}==${value}) compares all ${size} bits of ${name}, but ${name}[${j}] is written on line ` +
+        `${writtenAt.get(offset + j)} — this app conditions on one bit. Use a 1-bit register per condition bit ` +
+        `(creg ${name}${k}[1]; … if (${name}${k}==1) …).`),
+    };
+  }
+  return { bit: offset + k };
 }
 
 /**
@@ -262,7 +328,10 @@ export function parseQASM(text) {
   let qubitCount = null;
   let clbitCount = 0;
   let qregName = null;
-  let cregName = null;
+  // 고전 레지스터는 여럿 받아 선언 순서로 이어 붙인다 — 앱의 고전 비트는 번호 하나다. 내보내기가 조건 있는 회로를 비트마다 1비트
+  // 레지스터(c0[1], c1[1] …)로 쓰기 때문에 받아야 왕복한다.
+  const cregs = new Map(); // 이름 → { offset, size }
+  const writtenAt = new Map(); // 앱 비트 번호 → 그 비트를 처음 쓴 measure 의 줄
   const ops = []; // { line, name, params, args, cif }
 
   // 블록 주석은 QASM 2.0 표준이 아니지만 흔히 섞여 들어온다 — 제거하되 줄 수는 유지한다.
@@ -334,17 +403,22 @@ export function parseQASM(text) {
     let m = /^(qreg|creg)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*(\d+)\s*\]$/.exec(text);
     if (m) {
       const size = Number(m[3]);
+      const name = m[2];
       if (m[1] === "qreg") {
-        if (qregName !== null) return fail(line, "Not supported: multiple qreg/creg (only one of each)");
+        if (qregName !== null) return fail(line, "Not supported: multiple qreg (only one quantum register)");
+        if (cregs.has(name)) return fail(line, `quantum register '${name}' has the same name as a classical register`);
         if (size < MIN_QUBITS) return fail(line, `needs at least ${MIN_QUBITS} qubit`);
         if (size > MAX_QUBITS) return fail(line, `needs ${size} qubits, but the maximum is ${MAX_QUBITS}`);
-        qregName = m[2];
+        qregName = name;
         qubitCount = size;
       } else {
-        if (cregName !== null) return fail(line, "Not supported: multiple qreg/creg (only one of each)");
-        if (size > MAX_QUBITS) return fail(line, `needs ${size} classical bits, but the maximum is ${MAX_QUBITS}`);
-        cregName = m[2];
-        clbitCount = size;
+        if (cregs.has(name)) return fail(line, `classical register '${name}' is declared twice`);
+        if (name === qregName) return fail(line, `classical register '${name}' has the same name as the quantum register`);
+        if (clbitCount + size > MAX_QUBITS) {
+          return fail(line, `needs ${clbitCount + size} classical bits, but the maximum is ${MAX_QUBITS}`);
+        }
+        cregs.set(name, { offset: clbitCount, size });
+        clbitCount += size;
       }
       continue;
     }
@@ -354,8 +428,8 @@ export function parseQASM(text) {
     let cif;
     m = /^if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*==\s*(\d+)\s*\)\s*(.*)$/.exec(text);
     if (m) {
-      if (cregName === null) return fail(line, "condition used but no creg is declared");
-      const cond = conditionBit(Number(m[2]), line, cregName, m[1]);
+      if (cregs.size === 0) return fail(line, "condition used but no creg is declared");
+      const cond = conditionBit(m[1], Number(m[2]), line, cregs, writtenAt);
       if (cond.error) return cond.error;
       cif = cond.bit;
       text = m[3].trim();
@@ -368,12 +442,17 @@ export function parseQASM(text) {
     m = /^measure\s+(\S+)\s*->\s*(\S+)$/.exec(text);
     if (m) {
       const q = parseReg(m[1], qregName);
-      const c = cregName === null ? null : parseReg(m[2], cregName);
+      const ref = parseBitRef(m[2]);
+      const reg = ref && cregs.get(ref.name);
       if (q === null) return fail(line, `unknown qubit '${m[1].trim()}'`);
-      if (c === null) return fail(line, `unknown classical bit '${m[2].trim()}'`);
+      if (!reg) return fail(line, `unknown classical bit '${m[2].trim()}'`);
       if (q >= qubitCount) return fail(line, `qubit index ${q} is out of range`);
-      if (c >= clbitCount) return fail(line, `classical bit index ${c} is out of range`);
-      ops.push({ line, name: "measure", args: [q], params: [], cif, cbit: c });
+      // 레지스터마다 폭을 본다 — 이어 붙인 번호만 보면 a[2] 가 옆 레지스터 b[0] 으로 넘어간다.
+      if (ref.index >= reg.size) return fail(line, `classical bit index ${ref.index} is out of range (${ref.name} has ${reg.size})`);
+      if (cif !== undefined) return fail(line, conditionRejection("MEASURE"));
+      const cbit = reg.offset + ref.index;
+      if (!writtenAt.has(cbit)) writtenAt.set(cbit, line);
+      ops.push({ line, name: "measure", args: [q], params: [], cbit });
       continue;
     }
     if (/^measure\b/.test(text)) return fail(line, "malformed measure (expected: measure q[i] -> c[j])");
@@ -406,7 +485,9 @@ export function parseQASM(text) {
     }
 
     if (SPECIAL_QASM.has(name)) {
-      ops.push({ line, name, args, params, cif });
+      // 앱은 reset·barrier 에 조건을 붙이지 않는다(canCondition). 받으면 셀에 조건이 남는데 화면 메뉴로는 지울 수도 없다.
+      if (cif !== undefined) return fail(line, conditionRejection(name.toUpperCase()));
+      ops.push({ line, name, args, params });
       continue;
     }
 
@@ -427,16 +508,15 @@ export function parseQASM(text) {
     }
     if (args.some((a) => a < 0)) return fail(line, `${name} needs indexed qubits like ${qregName}[0]`);
     if (new Set(args).size !== args.length) return fail(line, `${name} uses the same qubit twice`);
+    if (cif !== undefined && !canCondition(op.gate)) return fail(line, conditionRejection(op.gate));
     ops.push({ line, name, args, params, cif, op });
   }
 
   if (qubitCount === null) return fail(1, "no qreg declared (expected: qreg q[n];)");
 
-  // ---- 배치: 각 연산을 가능한 가장 이른 열에 놓는다(ASAP). normalizeCircuit 과 같은 규칙. ----
+  // ---- 배치: 문장 순서로 가능한 가장 이른 열에 놓는다 — normalizeCircuit 과 같은 배치기(createPlacer). ----
   const grid = emptyGrid(qubitCount);
-  const nextFree = new Array(qubitCount).fill(0);
-  // 고전 비트도 자원이다 — normalizeCircuit 과 같은 규칙이어야 정규형이 하나로 유지된다.
-  const clbitReady = new Map();
+  const place = createPlacer(qubitCount);
 
   for (const o of ops) {
     let cell;
@@ -459,18 +539,11 @@ export function parseQASM(text) {
       cell = { gate: op.gate, targets, controls, params };
       if (!GATE_INFO[op.gate]) return fail(o.line, `unknown gate '${o.name}'`);
     }
-    if (o.cif !== undefined && cell.params.cif === undefined) cell.params.cif = o.cif;
 
-    const used = [...cell.targets, ...cell.controls];
-    let col = Math.max(...used.map((q) => nextFree[q]));
-    const cif = cell.params?.cif;
-    if (cif !== undefined) col = Math.max(col, clbitReady.get(cif) ?? 0);
-    if (col >= MAX_COLUMNS) {
-      return fail(o.line, `too many columns (the circuit holds at most ${MAX_COLUMNS})`);
-    }
-    grid[col][cell.targets[0]] = cell;
-    for (const q of used) nextFree[q] = col + 1;
-    if (cell.gate === "MEASURE") clbitReady.set(cell.params.cbit, col + 1);
+    // 외부 텍스트는 12열에 안 들어갈 수 있다 — 내보내기와 달리 정상적인 실패다.
+    const col = place(cell);
+    if (col < 0) return fail(o.line, `too many columns (the circuit holds at most ${MAX_COLUMNS})`);
+    grid[col][homeRow(cell)] = cell;
   }
 
   return { ok: true, qubitCount, clbitCount, grid };

@@ -13,6 +13,7 @@ import {
   basisProbabilities,
   GATE_INFO,
   decompositionOf,
+  columnCells,
 } from "./quantum.js";
 import { qubitBlochVector } from "./density.js";
 import { resolveDeferred } from "./classical.js";
@@ -37,6 +38,23 @@ function controlRejection(cell) {
   if (NON_CONTROLLABLE.has(cell.gate)) return `${cell.gate} cannot be controlled`;
   if (FIXED_MULTI.has(cell.gate)) return `${cell.gate} is a fixed relative-phase gate — add its qubits via placement, not the • control`;
   return null;
+}
+
+// 고전 조건(params.cif)을 붙일 수 없는 게이트 — 측정·리셋·배리어·제어점·if 도구는 게이트가 아니고, RCCX/RC3X 는 분해가 고정됐다.
+const NON_CONDITIONABLE = new Set([...NON_CONTROLLABLE, ...FIXED_MULTI, "IF"]);
+
+/**
+ * 이 게이트에 조건을 붙일 수 있는가. **판정은 이 함수 하나다** — setCondition·isValidPlacement·게이트 메뉴·QASM 가져오기·공유 링크가
+ * 같이 쓴다. 예전엔 메뉴가 같은 집합을 따로 적었고, 가져오기와 공유 링크는 아무 게이트에나 조건을 받았다. 그렇게 들어온
+ * `if (c==1) reset q[1];` 은 셀에 조건이 남는데 내보내기가 조건을 빼고 `reset q[1];` 로 써서, 다음 Apply 에서 조건 없는 리셋이 됐다(실측).
+ */
+export function canCondition(gate) {
+  return Boolean(GATE_INFO[gate]) && !NON_CONDITIONABLE.has(gate);
+}
+
+/** 조건을 붙일 수 없는 사유 — 메뉴·가져오기·공유 링크가 같은 문장을 쓴다. */
+export function conditionRejection(gate) {
+  return `${gate} cannot be conditioned`;
 }
 
 function emptyGrid(qubitCount) {
@@ -129,6 +147,9 @@ function isValidPlacement(cell, qubitCount) {
   if (NON_CONTROLLABLE.has(cell.gate) && controls.length > 0) return false; // [4]
   if (FIXED_MULTI.has(cell.gate) && controls.length > 0) return false; // RCCX/RC3X는 controls를 안 씀
   if (targets.length !== (TARGET_COUNT[cell.gate] ?? 1)) return false;
+  // 저장 회로·loadCircuit 도 같은 규칙으로 거른다 — 컨트롤러가 조건 붙은 측정·리셋을 갖지 않으면, 앱이 내보낸 텍스트를 앱의
+  // 가져오기가 거부하는 경우가 생기지 않는다. 예전 파서로 가져와 저장한 그런 셀은 다른 무효 셀처럼 적재 때 빠진다(docs/backlog.md).
+  if (cell.params?.cif !== undefined && !canCondition(cell.gate)) return false;
   return true;
 }
 
@@ -154,9 +175,7 @@ function simulateResolved(qubitCount, grid, steps) {
     for (let q = 0; q < qubitCount; q++) {
       if (grid[col][q]?.gate === "CTRL") dotControls.push(q);
     }
-    for (let q = 0; q < qubitCount; q++) {
-      const cell = grid[col][q];
-      if (!cell || cell.gate === "CTRL") continue;
+    for (const cell of columnCells(grid, col, qubitCount)) {
       state = applyPlacement(state, cell, dotControls);
     }
   }
@@ -518,8 +537,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     if (bit !== null) {
       if (clbitCount === 0) return { ok: false, reason: "There are no classical bits — add one first" };
       if (bit < 0 || bit >= clbitCount) return { ok: false, reason: "That classical bit doesn't exist" };
-      if (NON_CONTROLLABLE.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be conditioned` };
-      if (FIXED_MULTI.has(cell.gate)) return { ok: false, reason: `${cell.gate} cannot be conditioned` };
+      if (!canCondition(cell.gate)) return { ok: false, reason: conditionRejection(cell.gate) };
     }
     pushUndo();
     const params = { ...(cell.params ?? {}) };

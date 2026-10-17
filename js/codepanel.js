@@ -11,7 +11,7 @@
 // 63px 가 1536×740 회로를 49px 스크롤시켰다). 예외는 충돌 줄 하나다. 대화상자가 아니므로
 // 포커스 트랩이 없다.
 
-import { toQASM, toQiskit, gatesApplyWouldDrop, lossesOnApply, circuitSignature } from "./export.js";
+import { toQASM, toQiskit, lossesOnApply, circuitSignature } from "./export.js";
 import { parseQASM, normalizeCircuit } from "./qasm.js";
 import { bandStartsOpen } from "./layout.js";
 
@@ -39,6 +39,30 @@ const them = (n) => (n === 1 ? "it" : "them");
  */
 export function codeConflict({ modified, baseSignature, snapshot }) {
   return modified && circuitSignature(snapshot) !== baseSignature;
+}
+
+/**
+ * 밴드가 코드를 만드는 **유일한** 길 — 내보내기의 예외를 밴드 안의 사유로 바꾼다. 내보내기의 넘침(qasm.js normalizeCircuit)은 앱이
+ * 만든 회로에서는 일어나지 않지만, 공유 링크는 같은 열에서 큐비트가 겹치는 셀을 막지 않아 닿을 수 있다. 예외가 render 밖으로 새면
+ * notify 가 렌더를 통째로 삼켜 다른 패널까지 멈춘다(quantum-spec §7). DOM 을 모른다 — 테스트가 넘치는 그리드로 이 길을 본다.
+ * @returns {{code: string, warnings: string[], error: string|null}}
+ */
+export function exportCode(snapshot, tab) {
+  try {
+    const fn = tab === "qasm" ? toQASM : toQiskit;
+    return { ...fn(snapshot.qubitCount, snapshot.grid, snapshot.clbitCount), error: null };
+  } catch (e) {
+    return { code: "", warnings: [], error: e?.message ?? String(e) };
+  }
+}
+
+/** Apply 가 지울 게이트 — exportCode 와 같은 이유로 예외를 사유로 바꾼다(lossesOnApply 도 정규화를 거친다). */
+export function exportLosses(snapshot, editedText) {
+  try {
+    return { ...lossesOnApply(snapshot.qubitCount, snapshot.grid, snapshot.clbitCount, editedText), error: null };
+  } catch (e) {
+    return { unannounced: [], lineDeleted: [], error: e?.message ?? String(e) };
+  }
 }
 
 /** "A; B; and 3 more" — 상태 줄용 짧은 목록. */
@@ -84,6 +108,9 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
   // 사용자가 밴드를 한 번이라도 만졌다 — 로드 시 기본 펼침 판정을 건너뛴다.
   let userTouched = false;
   let errorLineNo = 0;
+  // 지금 회로를 코드로 쓰지 못한 사유(exportCode). 있으면 상태 줄에 보이고 Apply·Copy 를 막는다 — Apply 는 지금 회로에서 무엇이 사라지는지
+  // 알아야 하고(exportLosses), Copy 할 코드가 없다.
+  let exportError = null;
 
   // 사용자가 정한 것만 저장한다. 로드 시 자동 판정은 여기에 들어오지 않는다 — 들어오면
   // 다음 로드부터 그 화면의 판정이 아니라 첫 화면의 판정이 굳는다.
@@ -96,8 +123,7 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
 
   // ---------- 코드 생성 ----------
   function generate(snap = circuit.getSnapshot()) {
-    const fn = tab === "qasm" ? toQASM : toQiskit;
-    return fn(snap.qubitCount, snap.grid, snap.clbitCount);
+    return exportCode(snap, tab);
   }
 
   /**
@@ -145,7 +171,7 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
    */
   function refresh() {
     const snap = circuit.getSnapshot();
-    const { code, warnings } = generate(snap);
+    const { code, warnings, error } = generate(snap);
     if (tab === "qasm") {
       text.value = code;
       // 바탕은 QASM 텍스트를 다시 만들 때만 옮긴다 — 편집 중에 Qiskit 탭으로 가면 refresh 가 돌지만, 그때 옮기면
@@ -157,11 +183,29 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
       pre.textContent = code;
     }
     setBanner(warnings);
+    setExportError(error);
+  }
+
+  /** 내보내기 실패 사유를 상태 줄에 보이고 Apply·Copy 를 그 사유와 함께 막는다. 사유가 없어지면 그 표시만 거둔다. */
+  function setExportError(error) {
+    const had = exportError;
+    exportError = error;
+    if (error) {
+      status.textContent = error;
+      status.classList.add("is-error");
+    } else if (had && status.textContent === had) {
+      status.textContent = "";
+      status.classList.remove("is-error");
+    }
+    copy.classList.toggle("is-disabled", Boolean(error));
+    copy.setAttribute("aria-disabled", String(Boolean(error)));
+    copy.title = error ? `Nothing to copy — ${error}` : "Copy to clipboard";
+    updateApplyState();
   }
 
   /** 지금 회로와 편집된 텍스트로 본, Apply 가 알리지 않고 지울 게이트. */
   function currentDrops(snap = circuit.getSnapshot()) {
-    return gatesApplyWouldDrop(snap.qubitCount, snap.grid, snap.clbitCount, text.value);
+    return exportLosses(snap, text.value).unannounced;
   }
 
   /**
@@ -169,7 +213,6 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
    * 게이트만 경고한다. 예전엔 편집이 시작되면 배너를 감췄다. 배너가 생성 당시 코드의 설명이라, 편집 중에
    * 회로가 바뀌면(refresh 를 건너뛴다) "superdense 인데 if 경고가 뜬다" 처럼 낡았기 때문이다. 다시 계산하면
    * 낡을 수 없다. 그 대가로 감추던 사이 표현 불가 경고까지 사라져, 한 글자 고친 Apply 가 게이트를 조용히 지웠다.
-   * if 의미 경고는 여전히 감춘다 — 표시 줄로 대조할 대상이 아니다.
    */
   function refreshEditBanner(snap = circuit.getSnapshot()) {
     bannerSignature = circuitSignature(snap);
@@ -198,13 +241,15 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
    * 마우스 이벤트를 막아 "왜 못 누르는지" 툴팁이 아예 뜨지 않는다(이 프로젝트의 기존 규약).
    */
   function updateApplyState() {
-    const off = tab !== "qasm" || !modified;
+    const off = tab !== "qasm" || !modified || Boolean(exportError);
     apply.classList.toggle("is-disabled", off);
     apply.setAttribute("aria-disabled", String(off));
     // 두 번째 단계에서는 버튼이 **결과를 말한다** — "확인" 이 아니라 무엇이 일어나는지가 글자에 있다.
     const removing = pendingDrop ? `Apply and remove ${gateCount(pendingDrop.drops.length)}` : null;
     apply.textContent = removing ?? "Apply";
-    apply.title = off
+    apply.title = exportError
+      ? `Can't apply — ${exportError}`
+      : off
       ? "Nothing to apply — edit the code first"
       : removing
         ? `${removing} the code can't express (Ctrl+Enter)`
@@ -293,8 +338,9 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
   function clearError() {
     errorLineNo = 0;
     errorLine.classList.add("hidden");
-    status.textContent = "";
-    status.classList.remove("is-error");
+    // 내보내기 실패 사유는 지우지 않는다 — 회로가 바뀔 때까지 Apply·Copy 가 막힌 이유다(setExportError).
+    status.textContent = exportError ?? "";
+    status.classList.toggle("is-error", Boolean(exportError));
   }
 
   // 에러 띠는 미러에서 잰 그 줄의 위치·높이를 따른다 — 줄바꿈된 줄이면 띠도 그만큼 두껍다.
@@ -340,7 +386,10 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
 
     const snap = circuit.getSnapshot();
     // drops 는 확인을 거칠 것, lineDeleted 는 사용자가 표시 줄을 직접 지운 것(확인 없이 지우고 실행 뒤 알린다).
-    const { unannounced: drops, lineDeleted } = lossesOnApply(snap.qubitCount, snap.grid, snap.clbitCount, text.value);
+    // 지금 회로를 코드로 못 쓰면 무엇이 사라질지 모른다 — 버튼이 막혀 있어도 Ctrl+Enter 는 여기로 오므로 다시 막는다.
+    const losses = exportLosses(snap, text.value);
+    if (losses.error) { setExportError(losses.error); return; }
+    const { unannounced: drops, lineDeleted } = losses;
     const confirmed = pendingDrop && pendingDrop.drops.map((d) => d.label).join("\n") === drops.map((d) => d.label).join("\n");
     if (drops.length && !confirmed) {
       clearError();
@@ -357,7 +406,7 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     pendingDrop = null;
     clearError();
 
-    // 정규화로 모양이 달라지는지 미리 본다(안내를 띄울지 결정하기 위해).
+    // 정규화로 모양이 달라지는지 미리 본다(안내를 띄울지 결정하기 위해). 파서가 같은 배치기로 만든 그리드라 넘치지 않는다.
     const { changed } = normalizeCircuit(parsed.qubitCount, parsed.grid);
     circuit.loadCircuit(parsed.qubitCount, parsed.grid, parsed.clbitCount);
     setModified(false);
@@ -424,12 +473,14 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
     if (apply.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
     doApply();
   });
-  copy.addEventListener("click", async () => {
-    // 경고 주석은 code 문자열 안에 있다 — 붙여넣은 사람도 차이를 알 수 있어야 한다.
+  copy.addEventListener("click", async (e) => {
+    if (copy.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
+    // 표시 줄(표현 못 한 게이트)은 code 문자열 안에 있다 — 붙여넣은 사람도 무엇이 빠졌는지 알 수 있어야 한다.
     const value = tab === "qasm" ? text.value : pre.textContent;
     try {
       await navigator.clipboard.writeText(value);
-      showToast?.(tab === "qasm" ? "OpenQASM 2.0 copied" : "Qiskit code copied");
+      // "OpenQASM 2.0" 이라고 단정하지 않는다 — 게이트 이름은 Qiskit 의 확장 qelib1 이다(README). 탭 이름과 같게 쓴다.
+      showToast?.(tab === "qasm" ? "QASM copied" : "Qiskit code copied");
     } catch {
       showToast?.("Copy failed");
     }

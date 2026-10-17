@@ -1,7 +1,7 @@
 // 회로 공유/내보내기: URL 해시 인코딩(base64url), OpenQASM 2.0 / Qiskit 코드 생성, Apply 가 지울 게이트 판정.
 // 셀은 canonical { gate, targets, controls, params } 구조. 구버전(v:1) URL도 계속 열린다.
 import { GATE_INFO } from "./quantum.js";
-import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell } from "./circuit.js";
+import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell, canCondition, conditionRejection } from "./circuit.js";
 import { opFor, normalizeCircuit } from "./qasm.js";
 
 function b64urlEncode(str) {
@@ -55,7 +55,13 @@ export function circuitSignature(snapshot) {
   return encodeCircuit(snapshot.qubitCount, snapshot.grid, snapshot.clbitCount);
 }
 
-export function decodeCircuit(encoded) {
+/**
+ * 공유 URL 해시 → 회로. **실패는 늘 null 이다**(계약 — 프리셋·테스트 20곳이 이것만 본다).
+ * 조건을 붙일 수 없는 게이트(측정·리셋 등)에 조건이 있으면 링크 전체를 거부한다. 받으면 셀에 조건이 남는데 내보내기가 그 조건을
+ * 쓸 수 없고 화면 메뉴로도 지울 수 없다. 거부 사유는 반환값이 아니라 `onReject(reason)` 으로 준다 — QASM 가져오기와 같은 문장이다.
+ * 그 밖의 해독 실패(형식 오류)는 사유 없이 null 이다.
+ */
+export function decodeCircuit(encoded, onReject) {
   try {
     const data = JSON.parse(b64urlDecode(encoded));
     if (typeof data.n !== "number" || !Array.isArray(data.p)) return null;
@@ -75,6 +81,10 @@ export function decodeCircuit(encoded) {
           if (typeof p.p.l === "number") params.lambda = p.p.l;
           if (typeof p.p.cb === "number") params.cbit = p.p.cb;
           if (typeof p.p.ci === "number") params.cif = p.p.ci;
+        }
+        if (params.cif !== undefined && !canCondition(p.g)) {
+          onReject?.(conditionRejection(p.g));
+          return null;
         }
         grid[p.c][home] = {
           gate: p.g,
@@ -112,9 +122,10 @@ export function decodeCircuit(encoded) {
   }
 }
 
-export function parseShareHash(hash) {
+/** `#c=…` 해시 → 회로, 아니면 null. 거부 사유는 decodeCircuit 처럼 onReject 로 준다. 해시가 링크인지는 호출부가 `#c=` 로 본다. */
+export function parseShareHash(hash, onReject) {
   const match = /^#c=([A-Za-z0-9_-]+)$/.exec(hash);
-  return match ? decodeCircuit(match[1]) : null;
+  return match ? decodeCircuit(match[1], onReject) : null;
 }
 
 export function buildShareUrl(qubitCount, grid, clbitCount) {
@@ -133,18 +144,24 @@ function fmt(x) {
   return String(Number(x ?? 0));
 }
 
-/** 조건이 하나라도 있고 고전 비트가 2개 이상일 때만 붙는 안내. */
-const IF_SEMANTICS_NOTE = [
-  "// NOTE: This app treats `if (c==2^k)` as \"bit c[k] is 1\" regardless of",
-  "// other bits. OpenQASM 2.0 compares the whole register value.",
-  "// With 2+ classical bits these differ: below, `if (c==2) x q[2];` runs",
-  "// in this app whenever c[1]==1, but in Qiskit only when c is exactly 0b10.",
-];
-
-export const IF_SEMANTICS_WARNING =
-  'Conditions differ from OpenQASM 2.0: this app reads `if (c==2^k)` as "bit c[k] is 1" ' +
-  "regardless of other bits, while OpenQASM compares the whole register value. " +
-  "With 2+ classical bits the exported `if` lines behave differently in Qiskit.";
+/**
+ * 고전 비트를 QASM 으로 쓰는 법 — 선언·측정 대상·조건 글자를 **한 곳**에서 만든다.
+ * OpenQASM 2.0 의 `if (c==n)` 은 레지스터 **전체**를 정수와 비교하고, 비트 하나를 고르는 문법이 없다. 앱의 조건은 "c[k] 가 1" 이라,
+ * 조건이 있고 비트가 2개 이상이면 비트마다 1비트 레지스터(`creg c0[1]; …`)를 두고 `if (ck==1)` 로 쓴다. 예전엔 `creg c[n]; if (c==2^k)` 로
+ * 써서 Qiskit 이 "c 가 정확히 2^k" 로 읽었다 — 텔레포테이션의 q2 가 (+0.356, +0.707, 0) 이 됐다(정답 (+0.707, +0.707, 0), Aer 실측).
+ * 그 밖에는 예전 글자 그대로다: 조건이 없으면 레지스터 하나가 Qiskit counts 키를 '000' 으로 남기고(1비트 레지스터면 '0 0 0'), 비트가
+ * 하나면 `if (c==1)` 이 이미 정확하다(아래 condition 의 `1 << k` 는 그때 k = 0 이다).
+ */
+function classicalLayout(clbitCount, conditional) {
+  const perBit = conditional && clbitCount > 1;
+  return {
+    declarations: clbitCount === 0 ? []
+      : perBit ? Array.from({ length: clbitCount }, (_, k) => `creg c${k}[1];`)
+        : [`creg c[${clbitCount}];`],
+    bit: (k) => (perBit ? `c${k}[0]` : `c[${k}]`),
+    condition: (k) => (perBit ? `if (c${k}==1)` : `if (c==${1 << k})`),
+  };
+}
 
 /**
  * 정규화된 회로를 열 순서로 순회한다. 정규화가 이미 제어점을 접었으므로
@@ -169,8 +186,12 @@ function withControls(gate, controlCount) {
   return `${gate} with ${controlCount} control${controlCount === 1 ? "" : "s"}`;
 }
 
-/** 표현 불가 표시 줄의 머리말. Apply 판정이 이 머리말로 "내보내기가 남긴 표시 줄이었던 줄" 을 알아본다. */
-export const UNREPRESENTABLE_PREFIX = "// cannot be represented in OpenQASM 2.0:";
+/**
+ * 표현 불가 표시 줄의 머리말. Apply 판정이 이 머리말로 "내보내기가 남긴 표시 줄이었던 줄" 을 알아본다.
+ * "이 앱이 못 쓴다" 로 말한다 — 예전엔 "cannot be represented in OpenQASM 2.0" 이었는데, CS 처럼 엄격한 2.0 의 `cu1(pi/2)` 로 쓸 수
+ * 있는 게이트도 이 줄이 됐다(docs/backlog.md QASM 호환).
+ */
+export const UNREPRESENTABLE_PREFIX = "// this app can't export to QASM:";
 
 /**
  * 셀 하나가 QASM 문으로 나가지 못하면 그 사실을, 나갈 수 있으면 null 을 돌려준다.
@@ -202,7 +223,7 @@ function unrepresentable(cell, clbitCount, column) {
   return {
     what,
     marker: `${UNREPRESENTABLE_PREFIX} ${what}`,
-    warning: `${what} at column ${column} cannot be represented in OpenQASM 2.0 — that line is a comment, not a gate.`,
+    warning: `${what} at column ${column} can't be exported to QASM by this app — that line is a comment, not a gate.`,
     label: `${what} (column ${column})`,
   };
 }
@@ -224,21 +245,12 @@ function hasConditions(qubitCount, grid) {
 export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
   const { grid, origin } = normalizeCircuit(qubitCount, rawGrid);
   const warnings = [];
-  const lines = ["OPENQASM 2.0;", 'include "qelib1.inc";', `qreg q[${qubitCount}];`];
-  if (clbitCount > 0) lines.push(`creg c[${clbitCount}];`);
-
-  // 이 안내는 **코드 문자열 안에** 있어야 한다 — 배너는 화면에만 있으므로,
-  // Copy 로 붙여넣은 사람도 차이를 알 수 있어야 한다.
-  const conditional = hasConditions(qubitCount, grid);
-  if (conditional && clbitCount > 1) {
-    lines.push("", ...IF_SEMANTICS_NOTE);
-    warnings.push(IF_SEMANTICS_WARNING);
-  }
-  lines.push("");
+  const layout = classicalLayout(clbitCount, hasConditions(qubitCount, grid));
+  const lines = ["OPENQASM 2.0;", 'include "qelib1.inc";', `qreg q[${qubitCount}];`, ...layout.declarations, ""];
 
   const q = (i) => `q[${i}]`;
   const push = (stmt, params) =>
-    lines.push(params?.cif !== undefined ? `if (c==${1 << params.cif}) ${stmt}` : stmt);
+    lines.push(params?.cif !== undefined ? `${layout.condition(params.cif)} ${stmt}` : stmt);
 
   eachCell(qubitCount, grid, (cell, col, row) => {
     const { gate, targets, controls = [], params = {} } = cell;
@@ -249,11 +261,13 @@ export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
       warnings.push(lost.warning);
       return;
     }
+    // 측정·리셋의 조건도 push 를 탄다 — 예전엔 조건을 조용히 빼고 썼다. 컨트롤러는 그런 셀을 갖지 않지만(canCondition) 이 함수는 순수
+    // 함수라 받은 그리드를 그대로 쓴다. 배리어는 조건을 쓰지 않는다 — OpenQASM 2.0 의 if 뒤에는 qop 만 오고, 배리어는 상태를 바꾸지 않는다.
     if (gate === "MEASURE") {
-      lines.push(`measure ${q(targets[0])} -> c[${params.cbit ?? targets[0]}];`);
+      push(`measure ${q(targets[0])} -> ${layout.bit(params.cbit ?? targets[0])};`, params);
       return;
     }
-    if (gate === "RESET") { lines.push(`reset ${q(targets[0])};`); return; }
+    if (gate === "RESET") { push(`reset ${q(targets[0])};`, params); return; }
     if (gate === "BARRIER") { lines.push(`barrier ${q(targets[0])};`); return; }
 
     const op = opFor(gate, controls.length);
@@ -332,31 +346,26 @@ export function toQiskit(qubitCount, rawGrid, clbitCount = qubitCount) {
     "from qiskit import QuantumCircuit",
     "",
     `qc = QuantumCircuit(${qubitCount}${clbitCount > 0 ? `, ${clbitCount}` : ""})`,
+    "",
   ];
-  const conditional = hasConditions(qubitCount, grid);
-  if (conditional && clbitCount > 1) {
-    lines.push(
-      "",
-      "# NOTE: This app treats a condition as \"bit c[k] is 1\" regardless of other bits.",
-      "# .c_if(creg, value) compares the whole register value.",
-      "# With 2+ classical bits these differ."
-    );
-    warnings.push(IF_SEMANTICS_WARNING);
-  }
-  lines.push("");
 
-  const push = (stmt, params) =>
-    lines.push(params?.cif !== undefined ? `${stmt}.c_if(qc.cregs[0], ${1 << params.cif})` : stmt);
+  // 조건은 if_test 블록이다. 예전의 `.c_if(qc.cregs[0], 2^k)` 는 Qiskit 2.0 에서 없어져 실행되지 않았고(AttributeError, 실측),
+  // 그 전에도 레지스터 전체 비교였다. if_test 는 고전 비트 하나를 받으므로 앱의 조건이 그대로 들어간다 — 레지스터는 하나로 둔다.
+  const push = (stmt, params) => {
+    if (params?.cif === undefined) { lines.push(stmt); return; }
+    lines.push(`with qc.if_test((qc.clbits[${params.cif}], 1)):`, `    ${stmt}`);
+  };
 
   eachCell(qubitCount, grid, (cell) => {
     const { gate, targets, controls = [], params = {} } = cell;
 
+    // 측정·리셋의 조건도 잃지 않는다(toQASM 과 같은 이유). 배리어는 상태를 바꾸지 않아 조건을 쓰지 않는다.
     if (gate === "MEASURE") {
       const cb = params.cbit ?? targets[0];
-      if (clbitCount > 0 && cb < clbitCount) lines.push(`qc.measure(${targets[0]}, ${cb})`);
+      if (clbitCount > 0 && cb < clbitCount) push(`qc.measure(${targets[0]}, ${cb})`, params);
       return;
     }
-    if (gate === "RESET") { lines.push(`qc.reset(${targets[0]})`); return; }
+    if (gate === "RESET") { push(`qc.reset(${targets[0]})`, params); return; }
     if (gate === "BARRIER") { lines.push(`qc.barrier(${targets[0]})`); return; }
 
     const op = opFor(gate, controls.length);

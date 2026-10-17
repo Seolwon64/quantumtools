@@ -11,7 +11,7 @@
 // 난수는 인자로 받는다(`nextRandom`). 시퀀스를 이 모듈이 소유하면 되감기마다 다른 결과가 나와
 // 스텝 재생이 성립하지 않는다 — 호출부가 시드를 쥐고 같은 시퀀스를 다시 먹인다.
 
-import { applyPlacement, initialState } from "./quantum.js";
+import { applyPlacement, initialState, columnCells } from "./quantum.js";
 
 /**
  * 32비트 시드 하나로 결정론적 난수열을 만든다(mulberry32).
@@ -106,10 +106,9 @@ export function runTrajectory(qubitCount, clbitCount, grid, steps, nextRandom) {
       if (grid[col][q]?.gate === "CTRL") dotControls.push(q);
     }
 
-    for (let q = 0; q < qubitCount; q++) {
-      const cell = grid[col][q];
-      if (!cell || cell.gate === "CTRL") continue;
-
+    // 한 열은 홈 행 순서로 돈다(quantum.js columnCells). 같은 열의 측정과 조건 중 무엇이 먼저인지가 이 순서로 정해지고,
+    // QASM 배치기(qasm.js createPlacer)가 같은 정의로 "뒤" 를 판정한다 — 둘이 갈라지면 내보낸 회로의 실행 순서가 뒤집힌다.
+    for (const cell of columnCells(grid, col, qubitCount)) {
       // 조건부 연산: 지연 측정 변환을 타지 않고 **기록된 고전 비트를 그대로 읽는다.**
       const cif = cell.params?.cif;
       if (cif !== undefined && clbits[cif] !== 1) continue;

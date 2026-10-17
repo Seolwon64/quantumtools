@@ -673,10 +673,17 @@ buildPalette();
 
 // 공유 URL(#c=...)이 있으면 저장된 회로보다 우선 적용하고, 이후 편집이
 // 오래된 해시로 되돌아가지 않도록 주소창에서 해시를 제거한다.
-const sharedCircuit = parseShareHash(location.hash);
+// 열지 못한 링크는 알린다(토스트는 showToast 가 정의된 뒤에 띄운다 — 아래 shareLinkProblem). 예전엔 조용히 저장 회로를 열어,
+// 받은 링크 대신 다른 회로를 보고 있다는 것을 알 수 없었다. 조건 규칙 위반은 그 사유(QASM 가져오기와 같은 문장), 그 밖은 일반 문구다.
+let shareRejection = null;
+const sharedCircuit = parseShareHash(location.hash, (reason) => { shareRejection = reason; });
 if (sharedCircuit) {
   history.replaceState(null, "", location.pathname + location.search);
 }
+const shareLinkProblem = location.hash.startsWith("#c=") && !sharedCircuit
+  ? (shareRejection ? `This link wasn't opened: ${shareRejection}. Showing your saved circuit.`
+    : "This link couldn't be opened — showing your saved circuit.")
+  : null;
 
 // 게이트 메뉴도 컨트롤러보다 **먼저** 배선한다 — render 가 invalidateSelection ·
 // renderGateInfo · markSelection 을 부르고, 그 render 가 컨트롤러 생성 도중에 이미 돈다.
@@ -871,6 +878,9 @@ function showToast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800);
 }
+
+// 열지 못한 공유 링크 — toastEl 이 위에서 만들어진 뒤라야 띄울 수 있다(그 전에 부르면 TDZ).
+if (shareLinkProblem) showToast(shareLinkProblem);
 
 async function copyText(text, label) {
   try {

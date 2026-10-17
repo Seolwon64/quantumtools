@@ -10,9 +10,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { toQASM, toQiskit, IF_SEMANTICS_WARNING, gatesApplyWouldDrop, lossesOnApply } from "../js/export.js";
+import { toQASM, toQiskit, gatesApplyWouldDrop, lossesOnApply } from "../js/export.js";
 import { parseQASM, normalizeCircuit, sameCircuit, QASM_OPS, opFor } from "../js/qasm.js";
-import { MAX_COLUMNS, simulate } from "../js/circuit.js";
+import { MAX_COLUMNS } from "../js/circuit.js";
+import { runTrajectory } from "../js/trajectory.js";
 import { PRESETS } from "../js/presets.js";
 import { decodeCircuit } from "../js/export.js";
 
@@ -145,10 +146,20 @@ test("고전 레지스터와 측정이 왕복한다", () => {
   assert.equal(find("MEASURE").params.cbit, 2, "측정 대상 비트가 보존되지 않았다");
   assert.equal(find("X").params.cif, 2, "조건 비트가 보존되지 않았다");
 
-  // 조건부 게이트는 그 비트를 쓰는 measure **뒤** 열에 있어야 한다 —
-  // ASAP 이 고전 비트 의존을 무시하면 인과가 뒤집힌다.
-  const colOf = (gate) => parsed.grid.findIndex((col) => col.some((c) => c && c.gate === gate));
-  assert.ok(colOf("X") > colOf("MEASURE"), "조건부 게이트가 measure 앞으로 당겨졌다");
+  // 조건부 게이트는 그 비트를 쓰는 measure **뒤**에 돌아야 한다 — ASAP 이 고전 비트 의존을 무시하면 인과가 뒤집힌다.
+  // "뒤" 는 앱의 실행 순서(열, 그다음 홈 행)다: 다음 열이거나 같은 열의 아래 행. 예전엔 "다음 열" 만 맞다고 봐서 같은 열의 쓰기 → 읽기가
+  // 열을 하나 더 썼고, 12열을 다 쓴 회로의 마지막 게이트가 사라졌다(test/qasm-conditions.test.mjs).
+  const at = (gate) => {
+    for (let col = 0; col < MAX_COLUMNS; col++) {
+      const row = parsed.grid[col].findIndex((c) => c && c.gate === gate);
+      if (row >= 0) return [col, row];
+    }
+    return null;
+  };
+  const [mCol, mRow] = at("MEASURE");
+  const [xCol, xRow] = at("X");
+  assert.ok(xCol > mCol || (xCol === mCol && xRow > mRow),
+    `조건부 게이트(열 ${xCol} 행 ${xRow})가 measure(열 ${mCol} 행 ${mRow})보다 먼저 돈다`);
 });
 
 test("SWAP·CSWAP·RXX·RYY·RZZ 가 왕복한다", () => {
@@ -213,8 +224,10 @@ test("에러에 줄 번호와 구체적 사유가 함께 붙는다", () => {
     ["알 수 없는 게이트", `OPENQASM 2.0;\nqreg q[2];\nfoo q[0];\n`, 3, /unknown gate 'foo'/],
     ["커스텀 게이트 정의", `OPENQASM 2.0;\nqreg q[2];\ngate mine a { h a; }\n`, 3, /Not supported: custom gate definitions/],
     ["반복문", `OPENQASM 2.0;\nqreg q[2];\nfor i in [0:2] { h q[0]; }\n`, 3, /Not supported: (loops and functions|custom gate definitions)/],
-    ["복수 qreg", `OPENQASM 2.0;\nqreg q[2];\nqreg r[2];\n`, 3, /Not supported: multiple qreg\/creg/],
-    ["복수 creg", `OPENQASM 2.0;\nqreg q[2];\ncreg c[1];\ncreg d[1];\n`, 4, /Not supported: multiple qreg\/creg/],
+    ["복수 qreg", `OPENQASM 2.0;\nqreg q[2];\nqreg r[2];\n`, 3, /Not supported: multiple qreg/],
+    // creg 는 여럿 받는다(조건 있는 회로를 비트마다 1비트 레지스터로 내보내므로) — 대신 이름이 겹치면 거부한다.
+    ["creg 이름 중복", `OPENQASM 2.0;\nqreg q[2];\ncreg c[1];\ncreg c[1];\n`, 4, /classical register 'c' is declared twice/],
+    ["qreg 와 같은 이름의 creg", `OPENQASM 2.0;\nqreg q[2];\ncreg q[1];\n`, 3, /classical register 'q' has the same name as the quantum register/],
     ["큐비트 수 초과", `OPENQASM 2.0;\nqreg q[9];\n`, 2, /needs 9 qubits, but the maximum is 6/],
     ["다중 비트 조건", `OPENQASM 2.0;\nqreg q[2];\ncreg c[2];\nif (c==3) x q[0];\n`, 4, /Not supported: multi-bit conditions/],
     ["제어 수 초과", `OPENQASM 2.0;\nqreg q[6];\nc5x q[0],q[1],q[2],q[3],q[4],q[5];\n`, 3, /Not supported: c5x/],
@@ -242,63 +255,15 @@ test("주석과 pi 표기를 읽는다", () => {
   assert.ok(Math.abs(r.grid[0][0].params.theta - Math.PI / 2) < 1e-9);
 });
 
-// ---------------------------------------------------------------- if 경고
-
-/** 주석 블록이 코드에 들어 있는가. Copy 가 이 문자열을 그대로 넘기므로 코드로 확인한다. */
-const hasNote = (code) => /This app treats/.test(code);
-
-test("if 경고는 조건이 있고 고전 비트가 2개 이상일 때만 뜬다", () => {
-  // (1) 고전 비트 1개 + 조건 1개 → 안 뜸
-  const one = build(2, [
-    { col: 0, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
-    { col: 1, cell: cell("X", [1], [], { cif: 0 }) },
-  ]);
-  const r1 = toQASM(2, one, 1);
-  assert.equal(hasNote(r1.code), false, "1비트인데 주석이 붙었다 — 불필요한 경고");
-  assert.ok(!r1.warnings.includes(IF_SEMANTICS_WARNING), "1비트인데 if 경고가 붙었다");
-
-  // (2) 텔레포테이션 프리셋(고전 비트 2개 + 조건 2개) → 뜸
-  const tele = PRESETS.find((p) => /teleport/i.test(p.name));
-  assert.ok(tele, "텔레포테이션 프리셋을 찾지 못했다");
-  const dec = decodeCircuit(tele.circuit);
-  const r2 = toQASM(dec.qubitCount, dec.grid, dec.clbitCount);
-  assert.ok(dec.clbitCount > 1, "이 프리셋은 고전 비트가 2개 이상이어야 한다");
-  assert.equal(hasNote(r2.code), true, "텔레포테이션에 주석이 안 붙었다");
-  assert.ok(r2.warnings.includes(IF_SEMANTICS_WARNING), "warnings 에 안 잡혔다");
-
-  // (3) 조건 없음 → 고전 비트가 몇 개든 안 뜸
-  for (const n of [0, 1, 2, 6]) {
-    const plain = build(2, [
-      { col: 0, cell: cell("H", [0]) },
-      { col: 1, cell: cell("MEASURE", [0], [], { cbit: 0 }) },
-    ]);
-    const r = toQASM(2, plain, n);
-    assert.equal(hasNote(r.code), false, `조건이 없는데 clbit=${n} 에서 주석이 붙었다`);
-    // clbit=0 이면 "쓸 고전 비트가 없다"는 별개의 정당한 경고가 뜬다 — if 경고만 없으면 된다.
-    assert.ok(
-      !r.warnings.includes(IF_SEMANTICS_WARNING),
-      `조건이 없는데 clbit=${n} 에서 if 경고가 생겼다`
-    );
-  }
-});
-
-test("if 경고 문구가 무엇이 어떻게 다른지 말한다", () => {
-  const tele = PRESETS.find((p) => /teleport/i.test(p.name));
-  const dec = decodeCircuit(tele.circuit);
-  const { code } = toQASM(dec.qubitCount, dec.grid, dec.clbitCount);
-  // "may behave differently" 류로 뭉뚱그리지 않았는지 — 세 조각이 모두 있어야 한다.
-  assert.match(code, /if \(c==2\^k\)/, "조건 표기 예시가 없다");
-  assert.match(code, /bit c\[k\] is 1/, "이 앱의 의미 설명이 없다");
-  assert.match(code, /whole register value/, "OpenQASM 쪽 의미 설명이 없다");
-  assert.match(IF_SEMANTICS_WARNING, /whole register value/);
-});
+// if 의미 경고(레지스터 비교 차이 안내)는 없어졌다 — 내보내기가 조건을 비트마다 1비트 레지스터로 정확히 쓴다.
+// "조건 있는 회로에 경고가 없다·조건 없는 회로와 비트 1개 회로는 글자 그대로" 는 test/qasm-conditions.test.mjs 가 본다.
 
 test("표현할 수 없는 게이트는 조용히 넘어가지 않는다", () => {
   // Z + 2제어(CCZ)는 QASM_OPS 에 없다 — 주석으로 나가되 warnings 에 반드시 잡혀야 한다.
   assert.equal(opFor("Z", 2), null, "이 테스트의 전제(CCZ 미지원)가 깨졌다");
   const g = build(3, [{ col: 0, cell: cell("Z", [2], [0, 1]) }]);
   const { code, warnings } = toQASM(3, g, 0);
-  assert.match(code, /cannot be represented/, "주석이 없다");
+  assert.match(code, /can't export to QASM/, "주석이 없다");
   assert.equal(warnings.length, 1, "warnings 에 안 잡혔다 — 사용자가 틀린 코드를 복사해 간다");
   assert.match(warnings[0], /Z with 2 control/);
 });
@@ -309,7 +274,7 @@ test("표현할 수 없는 게이트는 조용히 넘어가지 않는다", () =>
 // 그 게이트는 회로에서 사라진다. 예전엔 한 글자만 고쳐 Apply 해도 아무 말 없이 사라졌다.
 // 판단은 표시 줄로 한다 — 줄이 남아 있으면 지울 뜻이 없었고, 사용자가 줄을 지웠으면 지울 뜻이다.
 
-const MARKER = "// cannot be represented in OpenQASM 2.0:";
+const MARKER = "// this app can't export to QASM:";
 const withoutLines = (code, pick) => code.split("\n").filter((l) => !pick(l)).join("\n");
 const summary = (drops) => drops.map((d) => [d.gate, d.controls, d.targets, d.column]);
 
@@ -399,7 +364,7 @@ test("표시 줄을 고쳤으면 무엇을 뜻했는지 모르니 짝 없는 게
   const ccz = ["Z", [0, 1], [2], 2];
 
   // 들여쓰기·끝 공백은 같은 줄이다 → CS 는 짝을 찾고, 줄을 지운 CCZ 는 지울 뜻으로 남는다.
-  const padded = cczGone.replace(/^(\/\/ cannot be represented.*S with 1 control on.*)$/m, "   $1  ");
+  const padded = cczGone.replace(/^(\/\/ this app can't export to QASM.*S with 1 control on.*)$/m, "   $1  ");
   assert.notEqual(padded, cczGone, "공백을 넣지 못했다 — 이 테스트의 전제가 깨졌다");
   assert.deepEqual(summary(gatesApplyWouldDrop(3, g, 0, padded)), [cs]);
 
@@ -476,7 +441,40 @@ function sameState(a, b, label) {
   }
 }
 
-test("[3] 고전 레지스터 프리셋이 왕복해도 **상태벡터**가 같다", () => {
+/**
+ * 붕괴 갈래마다 (고전 비트 → 가중치·상태벡터) — 앱이 조건부 회로를 도는 궤적 경로 그대로다. 갈래마다 상태벡터까지 보므로 지연 측정
+ * 경로(simulate)의 상태벡터 하나를 비교하던 것보다 약하지 않다. simulate 를 쓰지 않는 이유: 왕복한 텔레포테이션은 조건이 그 비트를 쓰는
+ * 측정과 같은 열의 아래 행에 놓이는데(배치 규칙, quantum-spec §10), 지연 변환(classical.js resolveDeferred)은 같은 열의 기록을 보지 않아
+ * "nothing has measured into c[1] yet" 으로 거부한다 — 앱과 다른 그 읽기는 docs/backlog.md 에 있다.
+ */
+function branches(qubitCount, clbitCount, grid) {
+  const out = new Map();
+  (function branch(prefix) {
+    let k = 0;
+    const r = runTrajectory(qubitCount, clbitCount, grid, MAX_COLUMNS, () => {
+      const want = prefix[k++];
+      return want === undefined ? 0.5 : want === 1 ? 0 : 1 - 1e-15;
+    });
+    if (r.measurements.length > prefix.length) {
+      branch([...prefix, 0]);
+      branch([...prefix, 1]);
+      return;
+    }
+    let w = 1;
+    for (let i = 0; i < prefix.length; i++) {
+      const m = r.measurements[i];
+      if (m.outcome !== prefix[i]) return;
+      w *= m.outcome ? m.p1 : 1 - m.p1;
+    }
+    if (w < 1e-12) return;
+    const key = r.clbits.join("");
+    assert.ok(!out.has(key), `고전 비트 ${key} 로 끝나는 갈래가 둘이다 — 이 비교의 전제가 깨졌다`);
+    out.set(key, { w, state: r.state });
+  })([]);
+  return out;
+}
+
+test("[3] 고전 레지스터 프리셋이 왕복해도 갈래마다 **상태벡터**가 같다", () => {
   // 구조(셀) 비교는 위에서 했다. 여기서는 의미까지 같은지 본다 —
   // 구조가 같아 보여도 조건 비트나 측정 대상이 어긋나면 상태가 달라진다.
   for (const name of ["Quantum teleportation", "Superdense coding"]) {
@@ -484,11 +482,13 @@ test("[3] 고전 레지스터 프리셋이 왕복해도 **상태벡터**가 같�
     const dec = decodeCircuit(preset.circuit);
     const parsed = parseQASM(toQASM(dec.qubitCount, dec.grid, dec.clbitCount).code);
     assert.ok(parsed.ok, `${name}: ${parsed.message}`);
-    sameState(
-      simulate(dec.qubitCount, dec.grid, undefined, dec.clbitCount),
-      simulate(parsed.qubitCount, parsed.grid, undefined, parsed.clbitCount),
-      name
-    );
+    const before = branches(dec.qubitCount, dec.clbitCount, dec.grid);
+    const after = branches(parsed.qubitCount, parsed.clbitCount, parsed.grid);
+    assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort(), `${name}: 갈래(고전 비트 결과)가 다르다`);
+    for (const [key, { w, state }] of before) {
+      assert.ok(Math.abs(after.get(key).w - w) < 1e-12, `${name} c=${key}: 가중치 ${w} → ${after.get(key).w}`);
+      sameState(state, after.get(key).state, `${name} c=${key}`);
+    }
   }
 });
 
@@ -498,17 +498,19 @@ test("[3] creg 선언과 measure 문의 인덱스 쌍이 정확하다", () => {
   const { code } = toQASM(dec.qubitCount, dec.grid, dec.clbitCount);
 
   // 정규식보다 줄 단위 문자열 비교가 안전하다(대괄호 이스케이프가 조용히 깨지기 쉽다).
+  // 텔레포테이션은 조건이 있고 고전 비트가 2개 이상이라 비트마다 1비트 레지스터다(c0[1] … — 조건을 비트 하나로 쓰려고).
   const lines = code.split("\n");
-  assert.ok(
-    lines.includes(`creg c[${dec.clbitCount}];`),
-    `creg 선언이 없거나 크기가 다르다 — 실제: ${lines.filter((l) => l.startsWith("creg")).join(" / ") || "없음"}`
+  const wantCregs = Array.from({ length: dec.clbitCount }, (_, k) => `creg c${k}[1];`);
+  assert.deepEqual(
+    lines.filter((l) => l.startsWith("creg")), wantCregs,
+    `creg 선언이 비트마다 하나가 아니다 — 실제: ${lines.filter((l) => l.startsWith("creg")).join(" / ") || "없음"}`
   );
 
   // 원본의 (측정 큐비트 → 고전 비트) 쌍과 QASM 의 measure 줄이 정확히 대응해야 한다.
   const want = dec.grid
     .flat()
     .filter((c) => c && c.gate === "MEASURE")
-    .map((c) => `measure q[${c.targets[0]}] -> c[${c.params.cbit ?? c.targets[0]}];`)
+    .map((c) => `measure q[${c.targets[0]}] -> c${c.params.cbit ?? c.targets[0]}[0];`)
     .sort();
   const got = (code.match(/^measure .*$/gm) ?? []).sort();
   assert.deepEqual(got, want, "measure 문의 인덱스 쌍이 원본과 다르다");
@@ -516,7 +518,8 @@ test("[3] creg 선언과 measure 문의 인덱스 쌍이 정확하다", () => {
 });
 
 test("[3] if 줄이 왕복 전후로 문자열까지 같다", () => {
-  const ifLines = (src) => (src.match(/^if \(c==\d+\) .*$/gm) ?? []);
+  // 조건 있는 회로는 `if (c1==1)`, 고전 비트가 하나면 `if (c==1)` 이다 — 두 모양 모두 센다.
+  const ifLines = (src) => (src.match(/^if \(c\d*==\d+\) .*$/gm) ?? []);
 
   const tele = decodeCircuit(PRESETS.find((p) => p.name === "Quantum teleportation").circuit);
   const first = toQASM(tele.qubitCount, tele.grid, tele.clbitCount).code;

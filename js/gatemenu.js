@@ -5,13 +5,10 @@
 // 한 번 돈다. 그래서 circuit 은 값이 아니라 getCircuit getter 로 받는다.
 // 팝오버 다섯은 컨트롤러 **뒤**에 배선되므로 진입점이 화살표로 감싸 넘긴다(값이면 TDZ).
 import { GATE_INFO } from "./quantum.js";
-import { homeOf, cellAtHome, involvedQubits, isSameGate } from "./circuit.js";
+import { homeOf, cellAtHome, involvedQubits, isSameGate, canCondition, conditionRejection } from "./circuit.js";
 import { gateMatrix, formatComplex, symbolicComplex, gateDescription, decompositionSteps } from "./gatematrix.js";
 import { icon } from "./icons.js";
 import { focusableGateAt } from "./grid.js";
-
-// 고전 조건을 붙일 수 없는 게이트(비유니터리 마커 + 분해가 고정된 상대위상 게이트)
-const NON_CONDITIONABLE = new Set(["MEASURE", "RESET", "BARRIER", "CTRL", "IF", "RCCX", "RC3X"]);
 
 // 주입되는 의존. initGateMenu 전에는 undefined 다.
 let getCircuit, scene, showToast, showTooltip, hideTooltip, standardGateName;
@@ -469,8 +466,9 @@ function openGateMenu(column, home, clientX, clientY) {
       : {
           label: params.cif === undefined ? "Add condition (if)" : "Change / remove condition",
           icon: "clbit", group: 1,
-          enabled: snapshot.clbitCount > 0 && !NON_CONDITIONABLE.has(cell.gate),
-          why: snapshot.clbitCount === 0 ? "There are no classical bits" : `${cell.gate} cannot be conditioned`,
+          // 판정·사유는 circuit.js 의 canCondition 하나다 — 예전엔 이 메뉴가 같은 집합을 따로 적었다.
+          enabled: snapshot.clbitCount > 0 && canCondition(cell.gate),
+          why: snapshot.clbitCount === 0 ? "There are no classical bits" : conditionRejection(cell.gate),
           run: () => openConditionPopover(column, home, snapshot.clbitCount, clientX, clientY),
         },
     // 파괴적 동작은 맨 오른쪽에 구분선으로 분리한다

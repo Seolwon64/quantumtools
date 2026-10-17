@@ -261,9 +261,10 @@ test("QASM: creg + 지정된 고전 비트로의 measure + 조건부 if", () => 
   g[0][2] = cell("MEASURE", [2], [], { cbit: 1 });
   g[1][2] = cell("X", [2], [], { cif: 1 });
   const qasm = toQASM(3, g, 3).code;
-  assert.match(qasm, /creg c\[3\];/);
-  assert.match(qasm, /measure q\[2\] -> c\[1\];/);
-  assert.match(qasm, /if \(c==2\) x q\[2\];/);
+  // 조건이 있고 고전 비트가 2개 이상이라 비트마다 1비트 레지스터다 — `if (c==2)` 는 Qiskit 이 "c 가 정확히 2" 로 읽는다.
+  assert.match(qasm, /creg c0\[1\];\ncreg c1\[1\];\ncreg c2\[1\];/);
+  assert.match(qasm, /measure q\[2\] -> c1\[0\];/);
+  assert.match(qasm, /if \(c1==1\) x q\[2\];/);
 });
 
 test("QASM: 고전 비트가 0이면 creg도 measure 문도 나오지 않고, 그 측정은 표시 줄로 남는다", () => {
@@ -275,18 +276,20 @@ test("QASM: 고전 비트가 0이면 creg도 measure 문도 나오지 않고, �
   // 예전 단언 !/measure/ 는 "measure 가 글자로도 없다" 였다. 이제 표시 줄이 측정을 이름으로 말하므로
   // (대문자 MEASURE 라 그 정규식은 우연히 통과한다) 우연에 기대지 않고 "measure **문**이 없다" 를 본다.
   assert.ok(!/^\s*measure\b/m.test(qasm), qasm);
-  assert.match(qasm, /^\/\/ cannot be represented in OpenQASM 2\.0: MEASURE on q\[0\]/m, "측정이 표시 줄 없이 사라졌다");
+  assert.match(qasm, /^\/\/ this app can't export to QASM: MEASURE on q\[0\]/m, "측정이 표시 줄 없이 사라졌다");
   assert.match(qasm, /h q\[0\];/);
 });
 
-test("Qiskit: c_if와 measure 대상 비트", () => {
+test("Qiskit: if_test 와 measure 대상 비트", () => {
   const g = emptyGrid(3);
   g[0][2] = cell("MEASURE", [2], [], { cbit: 1 });
   g[1][2] = cell("X", [2], [], { cif: 1 });
   const code = toQiskit(3, g, 3).code;
   assert.match(code, /QuantumCircuit\(3, 3\)/);
   assert.match(code, /qc\.measure\(2, 1\)/);
-  assert.match(code, /qc\.x\(2\)\.c_if\(qc\.cregs\[0\], 2\)/);
+  // Qiskit 2.0 에서 c_if 가 없어졌다 — if_test 는 비트 하나를 받는다.
+  assert.match(code, /^with qc\.if_test\(\(qc\.clbits\[1\], 1\)\):\n {4}qc\.x\(2\)$/m);
+  assert.doesNotMatch(code, /c_if/);
 });
 
 // ---------- 재생 루프 예외 격리 (앱이 멈추던 버그) ----------
