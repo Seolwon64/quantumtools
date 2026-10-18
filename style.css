@@ -360,11 +360,9 @@ html, body {
   border-radius: var(--radius-2);
 }
 
-/* 커서·전환·hover/active 배경·포커스 링·비활성은 아래 "인터랙티브 상태" 블록이 다른 버튼과
-   함께 정한다(.code-entry, .github-link 가 그 목록에 있다) — 여기서는 hover 글자만 진하게. */
-.header-action:hover {
-  color: var(--text-title);
-}
+/* 커서·전환·hover/active 배경과 글자·포커스 링·비활성은 아래 "인터랙티브 상태" 블록이 다른 버튼과
+   함께 정한다(.code-entry, .github-link 가 그 목록에 있다). 글자 강조는 예전에 여기 :hover 에만 있어, 키보드
+   Space 로 누르는 동안(hover 없는 :active) 글자가 본문색으로 남아 4.12 였다 — 블록의 글자 강조로 옮겼다. */
 
 /* 코드 밴드로 들어가는 유일한 입구(옛 햄버거 자리). */
 .code-entry {
@@ -665,41 +663,6 @@ html, body {
   display: none;
 }
 
-/* Export 메뉴 + 토스트 */
-.export-menu {
-  position: fixed;
-  z-index: 55;
-  background: var(--card-bg);
-  border-radius: var(--radius-3);
-  padding: var(--space-2);
-  box-shadow: var(--shadow-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 190px;
-}
-
-.export-menu.hidden {
-  display: none;
-}
-
-.export-menu-item {
-  border: none;
-  background: transparent;
-  text-align: left;
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-title);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-}
-
-.export-menu-item:hover {
-  background: var(--primary-dim);
-  color: var(--primary);
-}
-
 /* 프리셋 드롭다운 (이름 + 한 줄 설명) */
 .presets-menu {
   position: fixed;
@@ -743,11 +706,15 @@ html, body {
   font-weight: 600;
   color: var(--text-title);
 }
-.preset-item:hover {
+/* 옅은 액센트 hover — 글자는 --accent-11(5.35). --primary(--accent-9)는 이 배경 위 4.31 로 글자에 못 쓴다.
+   누름(:active, 키보드 Space 포함)도 같은 색이고 축소만 더한다(인터랙티브 상태 블록). */
+.preset-item:hover,
+.preset-item:active {
   background: var(--primary-dim);
-  color: var(--primary);
+  color: var(--accent-11);
 }
 
+/* 토스트 */
 .toast {
   position: fixed;
   z-index: 70;
@@ -860,16 +827,12 @@ html, body {
   cursor: pointer;
 }
 
-.icon-btn:hover {
-  background: var(--bg);
-}
-
+/* hover·누름은 인터랙티브 상태 블록이 정한다. 여기 있던 :hover{--bg} 는 활성 버튼에선 그 블록에 져 죽어 있었고,
+   네이티브 disabled 만 :disabled:hover 로 되돌려 사유가 있는 비활성(.is-disabled — 코드 밴드 Copy·Apply)은 hover 에
+   반응했다. 둘 다 지웠다. */
 .icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
-}
-.icon-btn:disabled:hover {
-  background: transparent;
 }
 
 .tool-icon-btn {
@@ -1392,17 +1355,20 @@ html, body {
   cursor: pointer;
 }
 .gate-menu-item svg { pointer-events: none; }
+/* 옅은 액센트 — 예제 항목과 같은 쌍. .active 는 방향키로 고른 항목이다 */
 .gate-menu-item:hover:not(.is-disabled),
+.gate-menu-item:active:not(.is-disabled),
 .gate-menu-item.active:not(.is-disabled) {
   background: var(--primary-dim);
-  color: var(--primary);
+  color: var(--accent-11);
 }
 .gate-menu-item:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
-/* 파괴적 동작(Delete)은 색으로도 구분한다 */
+/* 파괴적 동작(Delete)은 색으로도 구분한다 — 누르는 동안에도(예전엔 중립 누름 규칙이 회색으로 덮었다) */
 .gate-menu-item.is-danger:hover:not(.is-disabled),
+.gate-menu-item.is-danger:active:not(.is-disabled),
 .gate-menu-item.is-danger.active:not(.is-disabled) {
   background: var(--danger-bg);
   color: var(--danger-fg);
@@ -1479,21 +1445,15 @@ html, body {
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
-.round-btn:hover:not(:disabled) {
-  background: var(--gray-5);
-}
-
-.round-btn:active:not(:disabled) {
-  transform: scale(0.92);
-}
+/* hover·누름은 인터랙티브 상태 블록이 정한다. 여기 있던 :hover:not(:disabled){--gray-5}·:active:not(:disabled){0.92}·
+   재생(.round-btn-primary)의 :hover:not(:disabled){--accent-10} 는 활성 버튼에선 그 블록에 져 죽어 있었고,
+   :not(:disabled) 가 .is-disabled 를 거르지 못해 사유가 있는 비활성 재생 버튼에서만 살아 hover 에 칠해지고 누르면
+   0.92 로 줄었다(실측) — 비활성은 반응하지 않는다는 규칙 위반이다. 같은 특이도의 두 hover 는 규칙 순서로만 갈리기도 했다.
+   모두 지웠다. */
 
 .round-btn-primary {
   background: var(--primary);
   color: var(--gray-1);
-}
-
-.round-btn-primary:hover:not(:disabled) {
-  background: var(--accent-10);
 }
 
 .round-btn:disabled {
@@ -1513,14 +1473,9 @@ html, body {
   white-space: nowrap;
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-
-.pill-btn-primary:hover {
-  background: var(--accent-10);
-}
-
-.pill-btn-primary:active {
-  transform: scale(0.94);
-}
+/* hover·누름은 인터랙티브 상태 블록이 정한다. 여기 있던 :hover{--accent-10}·:active{0.94} 는 그 블록에 져 활성에선
+   죽어 있었고, 네이티브 disabled 알약(팝오버 Apply)에서만 살아 hover 에 칠해지고 누르면 0.94 로 줄었다 — Chrome 은
+   disabled 버튼에도 실제 포인터 누름에 :active 를 건다(실측). 지웠다. */
 
 .playback-status {
   margin-left: var(--space-1);
@@ -1691,9 +1646,11 @@ html, body {
   cursor: pointer;
   transition: background-color var(--dur) var(--ease);
 }
-.prob-showall-btn:hover {
+/* 옅은 액센트 — 예제 항목과 같은 쌍(--accent-3 위 --accent-11). */
+.prob-showall-btn:hover,
+.prob-showall-btn:active {
   background: var(--primary-dim);
-  color: var(--primary);
+  color: var(--accent-11);
 }
 
 /* 측정 샘플링 컨트롤 (shots 입력 + Run + Reset) */
@@ -1747,9 +1704,10 @@ html, body {
   cursor: pointer;
   transition: background-color var(--dur) var(--ease);
 }
-.prob-reset-btn:hover {
+.prob-reset-btn:hover,
+.prob-reset-btn:active {
   background: var(--primary-dim);
-  color: var(--primary);
+  color: var(--accent-11);
 }
 .prob-reset-btn.hidden {
   display: none;
@@ -2112,13 +2070,13 @@ html, body {
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
-.view-reset-btn:hover {
-  background: var(--primary-dim);
-  color: var(--primary);
-}
-
+/* 옅은 액센트 — 예제 항목과 같은 쌍. 누름 축소는 인터랙티브 상태 블록(0.98). 여기 있던 scale(0.9) rotate(-45deg)
+   는 그 블록의 중립 누름 규칙에 져 죽어 있었는데, 중립 목록에서 이 버튼을 빼면 같은 특이도로 되살아나 보이는
+   동작이 바뀐다 — 지웠다(되살릴지는 docs/backlog.md 디자인 재작성). */
+.view-reset-btn:hover,
 .view-reset-btn:active {
-  transform: scale(0.9) rotate(-45deg);
+  background: var(--primary-dim);
+  color: var(--accent-11);
 }
 
 /* Sphere footer: 왼쪽 Bloch/Q-sphere 토글, 오른쪽 얽힘 경고 */
@@ -2409,10 +2367,7 @@ html, body {
   cursor: pointer;
   transition: background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-
-.qpick-btn:active {
-  transform: scale(0.94);
-}
+/* hover·누름은 인터랙티브 상태 블록이 정한다(여기 있던 :active{0.94} 는 그 블록의 0.98 에 늘 져 죽어 있었다). */
 
 .qpick-btn.selected {
   background: var(--primary);
@@ -2468,7 +2423,7 @@ html, body {
    전환은 background-color와 transform만 — `all`을 쓰면 예상 못 한 속성까지 애니메이션된다. */
 .code-entry, .github-link, .icon-btn, .tool-icon-btn, .stepper-btn,
 .round-btn, .pill-btn-primary, .segmented-btn, .prob-run-btn, .prob-reset-btn,
-.prob-showall-btn, .export-menu-item, .preset-item, .gate-menu-item,
+.prob-showall-btn, .preset-item, .gate-menu-item,
 .qpick-btn, .view-reset-btn, .gate-chip, .placed-gate, .ctrl-dot, .prob-hide-toggle,
 .state-hide-toggle {
   cursor: pointer;
@@ -2479,54 +2434,81 @@ html, body {
 /* .active 를 :not() 으로 빼는 이유: :not() 3개가 특이도를 (0,5,0)으로 올려
    아래의 .segmented-btn.active:hover(0,3,0)를 이겨버린다. 그러면 활성 탭이
    hover 시 파란 배경을 잃고 흰 글자만 남아 라벨이 사라진다(대비 1.03).
-   같은 이유로 .is-danger(Delete)도 뺀다 — 파괴적 동작의 빨강 신호가 회색으로 덮인다. */
+   같은 이유로 자기 색을 가진 요소는 이 목록에 아예 넣지 않는다 — 확률 패널 Run·선택된 qpick 이 남아 있어 hover
+   1.13·누름 1.2 로 글자가 사라졌고, 예제·게이트 메뉴·Reset·Show all·뷰 리셋의 옅은 액센트 hover 와 Delete 의 누름
+   빨강은 배경만 회색으로 덮여 있었다(실측). 그런 요소는 아래 "자기 톤" 규칙이 맡는다.
+   한 클래스를 자기 색 변형과 함께 쓰는 둘(.round-btn ↔ .round-btn-primary, .qpick-btn ↔ .selected)은 명시적으로
+   뺀다 — 재생 버튼은 같은 특이도의 자기 규칙이 뒤에 와서 버텼을 뿐이다(순서에 기대지 않는다). 새로 더한 제외는
+   :where() 로 감싸 특이도를 더 올리지 않는다. 기존 :not() 사슬을 낮추는 일은 docs/backlog.md. */
 .code-entry:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.round-btn:where(:not(.round-btn-primary)):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .segmented-btn:not(.active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.prob-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.prob-showall-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.gate-menu-item:not(.is-danger):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
 .code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
-.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
+.qpick-btn:where(:not(.selected)):not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover {
   background-color: var(--gray-4);
 }
 
-/* --- active: 한 단계 더 + 눌리는 촉감(scale) --- */
+/* --- active: 한 단계 더 + 눌리는 촉감(scale) ---
+   축소는 앱 전체가 0.98 하나를 쓴다. 토큰이 없어 값을 그대로 적는다 — 36px 버튼이 0.7px 줄어드는 정도라 누른 촉감은
+   주되 글자가 흔들려 보이지 않는다. 아래 자기 톤 누름도 같은 값이다. */
 .code-entry:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .github-link:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .icon-btn:not(.is-on):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .tool-icon-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .stepper-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.round-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.round-btn:where(:not(.round-btn-primary)):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .segmented-btn:not(.active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.prob-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.prob-showall-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.export-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.preset-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.gate-menu-item:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
 .code-tab:not(.is-active):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.qpick-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.view-reset-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
-.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
+.qpick-btn:where(:not(.selected)):not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
   background-color: var(--gray-5);
   transform: scale(0.98);
 }
-/* 자기 색을 가진 요소는 중립으로 덮지 않고 자기 톤 안에서 반응한다 */
-.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover, .round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover { background-color: var(--accent-10); }
-.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active, .round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
+
+/* --- 중립 글자 강조: hover·누름에서 글자를 --text-title 로 ---
+   본문 글자(--text-body)는 hover 배경(--gray-4) 위 4.34, 누름(--gray-5) 위 4.12 로 4.5 에 못 미친다(실측).
+   :active 를 :hover 와 따로 잡는다 — 키보드 Space·터치는 hover 없이 :active 만 건다(Code 입구가 그 상태에서 4.12).
+   선택 상태는 뺀다: 그 글자는 자기 배경 위 색(흰 글자)이라 덮으면 라벨이 사라진다. 제외를 :where() 에 넣어 특이도가
+   (0,2,0) 그대로다 — :not() 을 쌓아 특이도를 올린 것이 바로 위 버그의 원인이었다. 이 요소들의 기본 글자 규칙은
+   모두 (0,1,0)이다. 괄호 밖의 줄바꿈은 자손 결합자가 되므로 줄은 괄호 안에서만 바꾼다.
+   .icon-btn 의 흐린 글자는 넣지 않았다(docs/backlog.md 대비 ②). */
+:is(.code-entry, .github-link, .segmented-btn, .code-tab, .qpick-btn, .qubit-select):is(:hover, :active):where(
+  :not(.active, .is-active, .selected, [aria-pressed='true'], [aria-selected='true'])
+):where(
+  :not(:disabled, .is-disabled, [aria-disabled='true'])
+) {
+  color: var(--text-title);
+}
+
+/* --- 자기 색을 가진 요소는 중립으로 덮지 않고 자기 톤 안에서 반응한다 --- */
+/* 채운 액센트: hover 한 단계(--accent-10, 5.93) · 누름 한 단계 더(--accent-11, 5.89) + 축소 */
+.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover,
+.qpick-btn.selected:not(:disabled):not(.is-disabled):not([aria-disabled='true']):hover { background-color: var(--accent-10); }
+.pill-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.round-btn-primary:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.prob-run-btn:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active,
+.qpick-btn.selected:not(:disabled):not(.is-disabled):not([aria-disabled='true']):active {
   background-color: var(--accent-11);
   transform: scale(0.98);
 }
-.gate-chip:hover { background-color: var(--chip-hover); }
-.gate-chip:active { transform: scale(0.98); }
+/* 옅은 액센트(예제·게이트 메뉴·Reset·Show all·뷰 리셋): 배경·글자는 각 컴포넌트 규칙이 :hover·:active 에 같은 쌍
+   (--accent-3 위 --accent-11)으로 주고, 누름은 축소만 더한다 — 액센트 램프에 --accent-3 보다 진하면서 그 위 글자가
+   4.5 를 넘는 단계가 없다(--accent-6 위 4.07). Delete 는 게이트 메뉴 절의 위험 색이 누름까지 맡는다. */
+:is(.preset-item, .gate-menu-item, .prob-reset-btn, .prob-showall-btn, .view-reset-btn):where(
+  :not(:disabled, .is-disabled, [aria-disabled='true'])
+):active {
+  transform: scale(0.98);
+}
+/* 사용 불가 칩(data-ready="false" — 큐비트가 모자라거나 아직 없는 게이트)은 반응하지 않는다. 드래그만 막고
+   .is-disabled·aria-disabled 가 아니라 공통 비활성 제외에 걸리지 않으므로 여기서 뺀다 — 예전엔 hover 에 --chip-hover
+   로 칠해지고 누르면 0.98 로 줄었다(scripts/contrast-survey.js 전수 측정, 42칸). */
+.gate-chip:where(:not([data-ready='false'])):hover { background-color: var(--chip-hover); }
+.gate-chip:where(:not([data-ready='false'])):active { transform: scale(0.98); }
 /* 네이티브 select 는 눌림 상태를 브라우저가 그리므로 hover 만 맞춘다(scale 을 주면
    열린 드롭다운 목록이 따라 움직여 어긋나 보인다). */
 .qubit-select:hover { background-color: var(--gray-4); }
@@ -2544,7 +2526,7 @@ html, body {
 .tool-icon-btn:focus-visible, .stepper-btn:focus-visible, .round-btn:focus-visible,
 .pill-btn-primary:focus-visible, .segmented-btn:focus-visible, .prob-run-btn:focus-visible,
 .prob-reset-btn:focus-visible, .prob-showall-btn:focus-visible,
-.export-menu-item:focus-visible, .preset-item:focus-visible, .gate-menu-item:focus-visible,
+.preset-item:focus-visible, .gate-menu-item:focus-visible,
 .inspect-toggle:focus-visible,
 .code-tab:focus-visible,
 .qpick-btn:focus-visible, .view-reset-btn:focus-visible, .gate-chip:focus-visible,
@@ -2575,13 +2557,19 @@ html, body {
 
 /* --- [4] 커서: 드래그 가능한 요소 --- */
 .gate-chip { cursor: grab; }
-.gate-chip:active { cursor: grabbing; }
+/* 사용 불가 칩은 누르는 동안에도 [data-ready="false"] 규칙의 not-allowed 를 지킨다 — 같은 특이도의 이 규칙이 뒤에 있어
+   예전엔 누르는 동안 grabbing 으로 바뀌었다. */
+.gate-chip:where(:not([data-ready='false'])):active { cursor: grabbing; }
 
-/* 모션 최소화 선호 시 눌림 효과는 끈다(전환 자체는 위 미디어쿼리가 처리) */
+/* 모션 최소화 선호 시 자기 톤 누름의 축소는 끈다(전환 자체는 위 전역 미디어쿼리가 처리).
+   !important 인 이유: 자기 톤 누름 규칙은 비활성 제외 :not() 사슬로 (0,5,0)~(0,6,0) 이라, (0,2,0) 인 이 선택자로는
+   .pill-btn-primary·.round-btn-primary 의 축소가 그대로 남아 있었다. 전역 규칙과 같은 방식으로 특이도와 무관하게 끈다. */
 @media (prefers-reduced-motion: reduce) {
   .gate-chip:active, .placed-gate:active, .ctrl-dot:active,
-  .pill-btn-primary:active, .round-btn-primary:active,
-  .segmented-btn.active:active { transform: none; }
+  .pill-btn-primary:active, .round-btn-primary:active, .prob-run-btn:active, .qpick-btn.selected:active,
+  .segmented-btn.active:active, .inspect-toggle.is-on:active,
+  .preset-item:active, .gate-menu-item:active, .prob-reset-btn:active, .prob-showall-btn:active,
+  .view-reset-btn:active { transform: none !important; }
 }
 
 
