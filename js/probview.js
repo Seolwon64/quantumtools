@@ -196,7 +196,6 @@ const SVGNS = "http://www.w3.org/2000/svg";
 const CHART = {
   get grid() { return token("--gray-6"); },
   get axis() { return token("--gray-7"); },
-  get tick() { return token("--gray-10"); },
   get label() { return token("--gray-11"); },
   get theorySolid() { return token("--accent-9"); },
   get theoryLight() { return token("--accent-6"); },

@@ -153,11 +153,28 @@ function variants(compound) {
 const RULES = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => {
   const decls = new Map([...m[2].matchAll(/([\w-]+)\s*:\s*([^;]+)/g)].map((d) => [d[1], d[2].trim()]));
   return {
-    selectors: splitTop(m[1].trim()).map((text) => ({ text, variants: variants(lastCompound(text)) })),
+    selectors: splitTop(m[1].trim()).map((text) => ({ text: text.replace(/\s+/g, " "), variants: variants(lastCompound(text)) })),
     background: decls.get("background-color") ?? decls.get("background"),
     color: decls.get("color"),
+    decls,
   };
 }).filter((r) => !r.selectors.some((s) => s.text.startsWith("@") || s.text === ":root"));
+
+/** design-spec 의 한 절(`## N. 제목`)을 잘라 돌려준다. */
+function specSection(title) {
+  const start = SPEC.search(new RegExp(`^## \\d+\\. ${title}`, "m"));
+  assert.ok(start >= 0, `design-spec 에 "${title}" 절이 없다`);
+  const end = SPEC.slice(start + 1).search(/^## /m);
+  return SPEC.slice(start, end < 0 ? undefined : start + 1 + end);
+}
+/** "인터랙티브 상태" 절의 상태별 토큰 쌍 표. */
+const PAIR_ROWS = [...specSection("인터랙티브 상태").matchAll(/^\|\s*([^|]+?)\s*\|\s*`(--[\w-]+)`\s*\|\s*`(--[\w-]+)`\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*$/gm)]
+  .map(([, state, fg, bg, min, shown]) => ({ state, fg, bg, min: Number(min), shown }));
+/** "패널의 시각적 위계" 절의 흐린 글자색 허용 목록 — (선택자 → 토큰). */
+const FAINT_ALLOW = [...specSection("패널의 시각적 위계").matchAll(/^\s*\|\s*`([^`]+)`\s*\|\s*`(--[\w-]+)`\s*\|\s*([^|]+?)\s*\|\s*$/gm)]
+  .map(([, selector, token, why]) => ({ selector: selector.replace(/\s+/g, " "), token, why }));
+const SELECTED = [".active", ".is-active", ".selected", ".is-on", "[aria-pressed=true]", "[aria-selected=true]"];
+const DISABLED = [":disabled", ".is-disabled", "[aria-disabled=true]"];
 
 const GRAY = new Set(Array.from({ length: 12 }, (_, k) => tokenValue(`--gray-${k + 1}`)));
 const INTERACTION = new Set(["hover", "active"]);
@@ -218,17 +235,95 @@ function sameElement(n, o) {
 
 // ── 테스트 ───────────────────────────────────────────────────────────────────
 test("버튼 상태가 쓰는 글자·배경 토큰 쌍은 design-spec 의 최소 대비를 넘고, 표에 적힌 대비가 실제 값이다", () => {
-  const start = SPEC.search(/^## \d+\. 인터랙티브 상태/m);
-  assert.ok(start >= 0, 'design-spec 에 "인터랙티브 상태" 절이 없다');
-  const end = SPEC.slice(start + 1).search(/^## /m);
-  const section = SPEC.slice(start, end < 0 ? undefined : start + 1 + end);
-  const rows = [...section.matchAll(/^\|\s*([^|]+?)\s*\|\s*`(--[\w-]+)`\s*\|\s*`(--[\w-]+)`\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*$/gm)];
-  assert.ok(rows.length > 0, "상태별 토큰 쌍 표를 읽지 못했다 — 표 형식이 바뀌었으면 이 추출을 고친다");
-  for (const [, state, fg, bg, min, shown] of rows) {
+  assert.ok(PAIR_ROWS.length > 0, "상태별 토큰 쌍 표를 읽지 못했다 — 표 형식이 바뀌었으면 이 추출을 고친다");
+  for (const { state, fg, bg, min, shown } of PAIR_ROWS) {
     const ratio = contrast(tokenValue(fg), tokenValue(bg));
-    assert.ok(ratio >= Number(min), `${state}: ${fg} on ${bg} = ${ratio.toFixed(2)} < ${min}`);
+    assert.ok(ratio >= min, `${state}: ${fg} on ${bg} = ${ratio.toFixed(2)} < ${min}`);
     assert.equal(ratio.toFixed(2), shown, `${state}: 표에는 ${shown} 인데 실제 ${fg} on ${bg} = ${ratio.toFixed(2)} — 표를 고친다`);
   }
+});
+
+test("글자색은 토큰 쌍 표가 4.5 로 정한 글자 토큰만 쓴다 — 예외는 허용 목록의 (선택자 → 토큰) 쌍뿐", () => {
+  // 흐린 글자색(--text-faint 3.51·--text-label 3.07)이 필수 글자 28규칙에 퍼져 7장면에서 442개가 AA 미달이었다(실측).
+  // 흐린 토큰 이름이 아니라 "허용 토큰 밖 전부" 를 본다 — 흐린 별칭을 새로 만들어도 값으로 잡힌다.
+  // 한계: --gray-1 은 채움 위 글자로만 쓰지만 이 테스트는 배경을 보지 않는다 — 그 구분은 토큰 쌍 표와 브라우저 측정이 맡는다.
+  const allowed = new Set(PAIR_ROWS.filter((r) => r.min >= 4.5).map((r) => tokenValue(r.fg)));
+  assert.ok(allowed.size > 0, "토큰 쌍 표에서 4.5 행을 못 찾았다");
+  assert.ok(FAINT_ALLOW.length > 0, '"패널의 시각적 위계" 절의 허용 목록 표를 읽지 못했다 — 표 형식이 바뀌었으면 추출을 고친다');
+  const problems = [];
+  for (const r of RULES) {
+    for (const prop of ["color", "fill"]) {
+      const value = r.decls.get(prop);
+      const ref = value?.match(/^var\((--[\w-]+)\)$/);
+      if (!ref) continue; // inherit·none·currentColor
+      if (TOKENS.has(ref[1]) && allowed.has(tokenValue(ref[1]))) continue;
+      for (const s of r.selectors) {
+        if (FAINT_ALLOW.some((a) => a.selector === s.text && a.token === ref[1])) continue;
+        problems.push(`${s.text} { ${prop}: ${value} }`);
+      }
+    }
+  }
+  assert.deepEqual(problems, [], `허용 토큰도 허용 목록 쌍도 아닌 글자색: ${problems.join(" · ")}`);
+});
+
+test("중립 hover·누름 배경을 받는 글자 버튼은 글자도 --text-title 로 올린다 — 본문색은 hover 위 4.34·누름 위 4.12", () => {
+  // 글자 있는 아이콘 버튼(Examples·Clear all·Copy…)이 중립 배경만 받고 글자는 흐림이라 hover 3.18·누름 3.02 였다(②).
+  // 매칭: 중립 배경 변형 N 마다 그 요소의 기본 글자색을 푼다 — N 의 요소 클래스(와 한 요소에 붙는 보조 클래스)로 만들 수 있고
+  // N 이 빼지 않는, 상태 없는 색 규칙 중 가장 구체적인 것. 그 규칙이 허용 목록 쌍이면 둘로 갈린다: 그 규칙의 덧붙은 클래스가
+  // N 의 요소에 **늘** 붙어 있으면(마크업의 클래스 목록으로 본다) N 의 요소 전부가 그 색이라 건너뛰고, 아니면 그 클래스가 아이콘
+  // 전용 몫의 표시라 그것 없는 다음 규칙이 글자 몫의 기본색이다. 기본색이 --gray-12 면 건너뛴다. 아니면 요소 클래스 집합이
+  // N 과 **같은** --text-title 글자 변형이 N 의 상태(hover·active)를 모두 덮고, 그 제외가 N 의 제외 ∪ 선택 상태 ∪ 비활성 ∪
+  // 아이콘 전용 표시 안에 들어야 한다. 별도 규칙도 :is() 목록 안도 같은 해석(variants)이라 똑같이 잡힌다.
+  const plain = RULES.flatMap((r) => (r.color ? r.selectors.flatMap((s) => s.variants
+    .filter((v) => v.pseudo.size === 0 && v.not.size === 0 && v.classes.size > 0)
+    .map((v) => ({ text: s.text, v, color: r.color }))) : []));
+  const listsWith = (classes) => LISTS.filter((l) => [...classes].every((c) => l.has(c)));
+  const isAllowed = (p) => FAINT_ALLOW.some((a) => a.selector === p.text && p.color === `var(${a.token})`);
+  const problems = [];
+  for (const n of NEUTRAL.filter((x) => !x.neutralText)) {
+    const pool = new Set([...n.v.classes, ...listsWith(n.v.classes).flatMap((l) => [...l])]);
+    const cands = plain.filter((p) => [...p.v.classes].every((c) => pool.has(c)) && ![...p.v.classes].some((c) => n.v.not.has(c)))
+      .sort((a, b) => b.v.classes.size - a.v.classes.size);
+    const iconMarks = [];
+    let skip = false;
+    for (const p of cands.filter(isAllowed)) {
+      const extra = [...p.v.classes].filter((c) => !n.v.classes.has(c));
+      const lists = listsWith(n.v.classes);
+      if (extra.length === 0 || (lists.length > 0 && lists.every((l) => extra.every((c) => l.has(c))))) skip = true;
+      else iconMarks.push(...extra);
+    }
+    if (skip) continue;
+    const own = cands.find((p) => !isAllowed(p) && ![...p.v.classes].some((c) => iconMarks.includes(c)));
+    if (!own) continue;
+    const ref = own.color.match(/^var\((--[\w-]+)\)$/)?.[1];
+    if (ref && TOKENS.has(ref) && tokenValue(ref) === tokenValue("--gray-12")) continue;
+    const okNot = new Set([...n.v.not, ...SELECTED, ...DISABLED, ...iconMarks]);
+    const covered = new Set(NEUTRAL.filter((t) => t.neutralText
+      && t.v.classes.size === n.v.classes.size && [...n.v.classes].every((c) => t.v.classes.has(c))
+      && [...t.v.not].every((x) => okNot.has(x)))
+      .flatMap((t) => [...t.v.pseudo].filter((p) => INTERACTION.has(p))));
+    const need = [...n.v.pseudo].filter((p) => INTERACTION.has(p) && !covered.has(p));
+    if (need.length) problems.push(`${[...n.v.classes].join("")}(기본 ${own.color}) — ${need.join("·")} 에서 글자를 --text-title 로 올리는 규칙이 없다`);
+  }
+  assert.deepEqual([...new Set(problems)], [], `글자 강조가 빠진 중립 버튼: ${[...new Set(problems)].join(" · ")}`);
+});
+
+test("입력 경계와 대각 0 은 정한 토큰을 쓴다 — 경계는 바깥 면 대비 3:1 을 넘는 첫 단계, 대각 0 은 본문색이면 4.47", () => {
+  // 입력란은 테두리 없이 필드·패널 차이 1.03 이 경계의 전부였고(코드 편집기 --gray-6 1.22), 대각 강조(--accent-3) 위 0 은
+  // 본문색이면 4.47 로 모자란다(실측). 값의 대비는 토큰 쌍 표가, 규칙이 그 토큰을 쓰는지는 여기서 본다.
+  const last = (selector, ...props) => {
+    let value;
+    for (const r of RULES) if (r.selectors.some((s) => s.text === selector)) for (const p of props) if (r.decls.has(p)) value = r.decls.get(p);
+    return value;
+  };
+  const problems = [];
+  for (const sel of [".shots-input", ".qubit-select", ".code-editor"]) {
+    const border = last(sel, "border", "border-color");
+    if (!/var\(--gray-9\)/.test(border ?? "")) problems.push(`${sel} 의 테두리가 --gray-9 가 아니다(${border ?? "없음"})`);
+  }
+  const diag = last(".mx-cell.mx-diag.mx-zero", "color");
+  if (diag !== "var(--text-title)") problems.push(`.mx-cell.mx-diag.mx-zero 의 글자가 --text-title 이 아니다(${diag ?? "규칙 없음"})`);
+  assert.deepEqual(problems, [], problems.join(" · "));
 });
 
 test("자기 색을 가진 요소는 중립 hover·누름 규칙에 덮이지 않는다 — 규칙 순서·특이도와 무관하게", () => {

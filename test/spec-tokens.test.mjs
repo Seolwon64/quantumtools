@@ -51,6 +51,19 @@ test("design-spec 이 이름으로 말하는 CSS 변수는 style.css(또는 JS �
     `명세가 말하는데 정의가 없다: ${missing.join(", ")} — 지운 이름이면 ~~\`이름\`~~ 로 표시하라`);
 });
 
+test("참조하는 CSS 변수는 모두 정의돼 있다 — 정의되지 않은 var() 는 조용히 초기값이 된다", () => {
+  // 토큰을 지울 때(--text-label) 남은 참조가 있으면 그 글자는 경고 없이 상속색·검정으로 떨어진다 — 문법 검사도 테스트도
+  // 모른다. CSS·index.html 의 var(--x), JS 문자열의 var(--x) 와 token()/tokenHex()/tokenPx() 인자를 모은다.
+  const HTML = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const refs = new Set([
+    ...[...`${CSS}\n${HTML}\n${JS}`.matchAll(new RegExp(`var\\(\\s*(${NAME.source})`, "g"))].map((m) => m[1]),
+    ...[...JS.matchAll(new RegExp(`token(?:Hex|Px)?\\(\\s*["'\`](${NAME.source})["'\`]`, "g"))].map((m) => m[1]),
+  ]);
+  assert.ok(refs.size > 0, "var() 참조를 하나도 못 찾았다 — 추출이 망가졌다");
+  const undefinedRefs = [...refs].filter((n) => !isDefined(n));
+  assert.deepEqual(undefinedRefs, [], `정의 없이 참조한다: ${undefinedRefs.join(", ")}`);
+});
+
 test("취소선으로 '지금 없다'고 표시한 이름은 정말 없다 — 되살린 토큰에 낡은 표시가 남지 않는다", () => {
   const revived = [...new Set(struckNames)].filter((n) => isDefined(n));
   assert.deepEqual(revived, [], `취소선인데 정의돼 있다: ${revived.join(", ")}`);
