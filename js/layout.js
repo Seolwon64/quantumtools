@@ -16,6 +16,7 @@
 // 있어 Node 가 임포트할 수 있고(test/layout.test.mjs 가 그 자체로 검사다), main.js 의 DOM const
 // 를 참조하지 않으므로 initResizableLayout 이 그 const 들보다 먼저 돌아도 TDZ 가 없다.
 import { tokenPx } from "./tokens.js";
+import { onFontFacesLoaded } from "./fontload.js";
 
 // v4(열 누적 경계 edge1/edge2 + 행 비율 row)와 값 모양도 의미도 다르다 — 행이 비율이 아니라
 // 체인 기본값으로부터의 px 오프셋이 됐다. 키를 올려 구버전을 아예 읽지 않는다(열 저장값도
@@ -286,7 +287,8 @@ export function initResizableLayout() {
   }
   // 첫 렌더는 웹폰트 전에 돌 수 있다(대체 글꼴로 잰 크롬). 폰트가 오면 툴바 크기가 바뀌어
   // 대개 위 관찰이 잡지만, 높이가 우연히 같아도 다시 재도록 명시적으로 한 번 더 부른다.
-  document.fonts?.ready.then(() => relayout());
+  // 분할 면은 나중에 따로 올 수 있어 ready 한 번이 아니라 면이 도착할 때마다다(fontload.js).
+  onFontFacesLoaded(() => relayout());
 
   function save() {
     try {

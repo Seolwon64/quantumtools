@@ -1,45 +1,84 @@
 /* ---------- 타이포그래피 ----------
-   Geist Sans / Geist Mono (Vercel, SIL OFL) — 서드파티 요청 없이 레포에서 자체 호스팅한다.
-   **가변 폰트 1개씩**을 쓴다: 정적 400/500/600 5개(234KB)보다 가변 2개(138KB)가 더 작고,
-   가변이라 게이트 블록에 필요한 weight 550도 쓸 수 있다.
-   font-display: swap — 폰트가 늦게 와도 글자가 보이지 않는 구간이 없게. */
+   IBM Plex Sans · IBM Plex Mono (IBM, SIL OFL, 예약 글꼴 이름 "Plex") — 레포에서 자체 호스팅한다. 출처·해시는 fonts/SOURCES.md.
+   **IBM 이 배포한 가변 분할 파일을 바이트 그대로** 쓴다. 가변이라 배치 게이트의 550 을 그대로 쓰고(정적 파일이면 600 으로
+   떨어진다), 분할이라 첫 화면은 쓰는 범위만 받는다 — 첫 화면 woff2 전송 157,356 B(Geist 때 143,894 B, 완전 가변 둘이면 315 KB).
+   범위는 IBM CSS 의 unicode-range 그대로다. Latin2·Latin3·Cyrillic 면은 넣지 않는다 — UI 는 영어고 그 글자는 QASM 주석에만
+   나오며, 거기서는 시스템 고정폭으로 그려져도 된다. local() 은 쓰지 않는다 — 사용자 컴퓨터에 깔린 다른 판 Plex 가 끼어들면
+   글자 폭이 바뀌어 토큰 근거가 흔들린다.
+   **Plex 의 굵기 축은 100~700 이다**(Geist 는 900). 700 을 넘는 값은 700 으로 그려지므로 위계는 700 이하에서 만든다.
+   font-display: swap — 폰트가 늦게 와도 글자가 보이지 않는 구간이 없게. 늦게 온 면은 js/fontload.js 가 다시 재게 한다
+   (분할 면은 그 범위의 글자가 처음 나올 때 받는다 — 게이트 행렬의 √ 가 Mono Pi 를 1.7초 뒤에 불렀다, 실측). */
 @font-face {
-  font-family: "Geist";
-  src: url("fonts/Geist-Variable.woff2") format("woff2-variations");
-  font-weight: 100 900;
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSansVar-Roman-Latin1.woff2") format("woff2");
+  font-weight: 100 700;
+  font-stretch: 85% 100%;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000, U+000D, U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014,
+                 U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
 }
 @font-face {
-  font-family: "Geist Mono";
-  src: url("fonts/GeistMono-Variable.woff2") format("woff2-variations");
-  font-weight: 100 900;
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSansVar-Roman-Greek.woff2") format("woff2");
+  font-weight: 100 700;
+  font-stretch: 85% 100%;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+037E, U+0386-038A, U+038C, U+038E-03A1, U+03A3-03CE;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSansVar-Roman-Pi.woff2") format("woff2");
+  font-weight: 100 700;
+  font-stretch: 85% 100%;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0E3F, U+2000-200D, U+2015, U+2028-2029, U+202F, U+2032-2033, U+2070, U+2074-2079, U+2080-2089, U+2113,
+                 U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA, U+21B0-21B3, U+21B6-21B7,
+                 U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+221A, U+221E, U+222B, U+2248, U+2260,
+                 U+2264-2265, U+25CA, U+2713, U+274C, U+2B0E-2B11, U+ECE0, U+EFCC, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/IBMPlexMonoVar-Roman-Latin1.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A,
+                 U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/IBMPlexMonoVar-Roman-Pi.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+03C0, U+0E3F, U+2000-200D, U+2010-2012, U+2015, U+2028-2029, U+202F, U+2032-2033, U+203E, U+205F, U+2070,
+                 U+2074-2079, U+2080-2089, U+2113, U+2116, U+2126, U+212E, U+2150-2151, U+2153-215E, U+2190-2199, U+21A9-21AA,
+                 U+21B0-21B3, U+21B6-21B7, U+21BA-21BB, U+21C4, U+21C6, U+2202, U+2206, U+220F, U+2211, U+2215, U+2219-221A,
+                 U+221E, U+222B, U+2236, U+2248, U+2260, U+2264-2265, U+2400-2421, U+2500-259F, U+25CA, U+2713, U+274C,
+                 U+2B0E-2B11, U+3000, U+FEFF, U+FFFD;
 }
 
-/* Geist는 이 앱이 쓰는 수학/기호 글리프를 갖고 있지 않다(실측: ⟨ ⟩ ψ ρ θ φ Φ ⊕ ⋮ ▾ ⟲ ⚠ ⏮ ⏸).
-   폰트 스택에 그대로 두면 그 글자만 시스템 폴백으로 튀어 보이므로, Noto Sans Math /
-   Noto Sans Symbols 2(둘 다 OFL)를 **필요한 코드포인트만 서브셋**해 채운다(합계 3KB).
-   unicode-range로 범위를 못박아 Geist가 가진 글자는 절대 이 폰트가 가져가지 않는다. */
+/* ⟨ ⟩ ⊕ ⋮ — Plex Sans 에도 Plex Mono 에도 없는 넷(cmap 실측). IBM Plex Math 1.1.0 에서 이 넷만 잘라 이름을 "QT Math" 로
+   바꾼 파일이다 — OFL 은 고친 판이 예약 이름 "Plex" 를 쓰지 못하게 해서 이 면의 family 에도 Plex 를 쓰지 않는다(만드는 법은
+   design-spec "타이포그래피"). unicode-range 로 범위를 못박아 본문 폰트가 가진 글자는 가져가지 않는다.
+   굵기 서술자를 두지 않는다 — Regular 하나뿐이라 굵은 자리에서 브라우저가 굵게 합성하는데, 3배 확대 비교에서 그게 옆의 굵은
+   Plex 글자와 가장 비슷했다(합성을 끄면 눈에 띄게 가늘다). font-display 를 빼면 Chrome 은 최대 3초 동안 이 글자를 숨긴다. */
 @font-face {
   font-family: "QT Math";
-  src: url("fonts/NotoSansMath-subset.woff2") format("woff2");
+  src: url("fonts/qt-math.woff2") format("woff2");
   font-display: swap;
-  unicode-range: U+27E8, U+27E9, U+03C8, U+03C1, U+03B8, U+03C6, U+03A6,
-                 U+2295, U+22EE, U+25BE, U+27F2;
-}
-@font-face {
-  font-family: "QT Math";
-  src: url("fonts/NotoSansSymbols2-subset.woff2") format("woff2");
-  font-display: swap;
-  unicode-range: U+26A0, U+23EE, U+23F8;
+  unicode-range: U+27E8, U+27E9, U+2295, U+22EE;
 }
 
 :root {
-  /* 폰트 스택 — "QT Math"는 Geist 뒤에 두어 **빠진 글리프만** 채우게 한다 */
-  --font-sans: "Geist", "QT Math", system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", "QT Math", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* 폰트 스택 — "QT Math" 는 뒤에 두어 **빠진 글리프만** 채우게 한다. 등폭 스택의 Plex Sans 는 Plex Mono 에 없는 그리스
+     (ρ ψ θ φ Φ λ)를 그린다 — Plex Math 의 그리스는 Plex Sans 와 외곽선·폭이 달라(실측) 서브셋에 넣지 않았다.
+     캔버스 글자(scene.js)는 이 토큰을 그릴 때마다 token() 으로 읽는다 — 이름을 JS 에 다시 적지 않는다. */
+  --font-sans: "IBM Plex Sans", "QT Math", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "IBM Plex Sans", "QT Math", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* 간격 스케일 — 4px 배수. padding/margin/gap은 **이 값들만** 쓴다.
      예외는 셋뿐이고 전부 주석을 남긴다: ① 1px 테두리 ② 3D 캔버스 내부 좌표 계산
@@ -82,32 +121,44 @@
      px 로 줄어 1280 에서 217px 까지 떨어져 상태벡터가 잘렸다.
      최소·최대는 CSS 트랙과 layout.js 의 드래그 클램프가 **같이** 읽는다 — 드래그 쪽만
      비율로 자르면 CSS 가 멈춘 너머에 핸들이 안 움직이는 죽은 구간이 생긴다.
-     폭은 텍스트 Range 기준 실측(rect 소수)이다.
+     폭은 텍스트 Range 기준 실측(rect 소수)이고 **정수로 올린다**. IBM Plex 로 바꾸며 1536×740 · 저장 키 지운 상태에서 다시
+     쟀다(Geist 측정값으로 옛 토큰이 다시 나오는지 먼저 확인했다 — 3열 최대만 안 나왔다, 아래).
 
-     1열 최소 192 — 밀도행렬 칸 `0.35−0.35i` 가 잘리지 않는 폭. 팔레트 칩은 줄바꿈한다.
+     1열 최소 192 — 1열을 최소로 끈 상태에서 밀도행렬 칸 `0.35−0.35i` 의 여유가 0 인 폭. 그 칸은 Mono 라
+       Geist·Plex 가 같다(글자 60px). 팔레트 칩은 줄바꿈한다.
      1열 최대 537 — 두 후보 중 큰 쪽: 팔레트 "Pauli & Clifford" 9개가 한 줄 458 /
-       게이트 정보 8×8 행렬(CCX·CSWAP, 자연 폭 480 + 크롬 42) 537. 행렬이 가로 스크롤 없이
-       다 보이는 선이 더 넓은 쪽이라 그걸 잡는다.
-     2열 최소 257 — 두 툴바가 항목 단위로 줄바꿈한 뒤 **가장 넓은 한 묶음** + 패널 여백·테두리 34.
-       그 묶음은 궤적 회로의 샘플링 줄(샷 입력 + "Resample statistics") 222.5 다. 일반 회로의
-       샷·Run·Reset 은 190, 재생 줄은 상태 글자("12 / 12 steps")가 접히며 238 까지 버틴다.
-       222.5 + 34 = 256.5 → 257. 늘어난 툴바 높이는 layout.js 가 크롬으로 잰다.
-     3열 최소 264 — 상태벡터 6큐비트 복소 최장 항 |000000⟩ (두 구 모드 공통 — 구 패널은
-       드롭다운과 접히는 하단 줄로 이 아래까지 줄어든다).
-     3열 최대 448 — 설명 문단 한 줄 **영문 80자**(평균 글자 폭 4.68px + 크롬 73).
+       게이트 정보 8×8 행렬(CCX·CSWAP) 자연 폭 + 크롬 42 + 정보가 세로로 스크롤할 때의 스크롤바 15.
+       행렬이 가로 스크롤 없이 다 보이는 선이 더 넓은 쪽이라 그걸 잡는다. Plex 에서 행 라벨의 ⟩(QT Math)가
+       좁아져 자연 폭이 480.1 → 479.25 가 됐고 479.25 + 57 = 536.25 → 537, 여유 +0.75px 다(Geist 때는
+       537.1 을 537 로 내려 −0.1px 를 받아들였었다).
+     2열 최소 250 — 두 툴바가 항목 단위로 줄바꿈한 뒤 **가장 넓은 한 묶음** + 패널 여백·테두리 34(실측).
+       그 묶음은 궤적 회로의 샘플링 줄(샷 입력 + "Resample statistics") 215.52 다(Geist 222.45 → 257).
+       일반 회로의 샷·Run·Reset 과 재생 줄은 그보다 좁다. 215.52 + 34 = 249.52 → 250.
+       늘어난 툴바 높이는 layout.js 가 크롬으로 잰다.
+     3열 최소 262 — 상태벡터 6큐비트 복소 최장 항 |000000⟩ 이 잘리지 않는 폭(= 3열 폭 − 그 행의 여유) 261.87.
+       Mono 숫자는 폭이 같고 ⟩ 만 좁아졌다(Geist 263.16 → 264). 두 구 모드 공통 — 구 패널은 드롭다운과
+       접히는 하단 줄로 이 아래까지 줄어든다.
+     3열 최대 440 — 설명 문단 한 줄 **영문 80자**: 80 × 평균 글자 폭 + 크롬 73(문단 상자 밖 58 + 상태벡터가
+       스크롤할 때의 세로 스크롤바 15). 평균 글자 폭의 측정법 — 텔레포테이션 예제의 `.deferred-note-text`
+       (INSPECT_NOTE 글 207자, 10px 500)의 Range 사각형 너비 합 ÷ 207(공백 포함, 줄 끝에서 접혀 폭이 0 인
+       공백 2개도 글자 수에 넣는다), 1536×740. Plex 4.576 → 80 × 4.576 + 73 = 439.08 → 440.
+       옛 값 448 의 근거 4.68 은 같은 글·크기·굵기·폰트 파일로 재현되지 않는다(이 측정법으로 Geist 4.657 → 446)
+       — 측정법이 적혀 있지 않았다. 결과로도 확인했다: 440 에서 그 문단은 Geist·448 과 같은 자리에서 줄을 바꾼다
+       (스크롤바 없을 때 83/83/39자, 있을 때 79/73/53자 — 단어 단위로 접혀 한 줄은 76~83자가 된다).
        Q-sphere 는 최대 결정에서 뺀다: 라벨이 월드 크기 스프라이트(sizeAttenuation 기본 true)라
        지름을 키우면 라벨도 같은 비율로 커져 **겹침 비율이 지름과 무관하다.** 6큐비트 64라벨을
        장면 카메라로 투영해 잰 값: 정사각 414px 과 1000px 모두 49개가 겹쳐 안 겹침 23.4%
-       (기준 90%)로 같고, 글자 높이만 10.4 → 25.2px 로 지름에 비례해 커졌다.
+       (기준 90%)로 같고, 글자 높이만 10.4 → 25.2px 로 지름에 비례해 커졌다(Geist 때, 잉크 폭을 잰 값으로 어림한 측정 —
+       IBM Plex 로 바꾼 뒤 그린 잉크로 다시 잰 겹침은 다섯 뷰포트 모두 50개, design-spec "알려진 한계").
        지름은 판독(글자 px)만 바꾸고 겹침을 풀지 못하므로 "쓸모 있는 최대"를 정하지 못한다.
 
-     합 검산: 192 + 257 + 264 = 713 ≤ 1366 뷰포트의 트랙 몫 1294 — 가장 좁은 검증 화면에서도
+     합 검산: 192 + 250 + 262 = 704 ≤ 1366 뷰포트의 트랙 몫 1294 — 가장 좁은 검증 화면에서도
      세 최소가 함께 들어가 페이지가 가로로 넘치지 않는다. */
   --col-1-min: 192px;
   --col-1-max: 537px;
-  --col-2-min: 257px;
-  --col-3-min: 264px;
-  --col-3-max: 448px;
+  --col-2-min: 250px;
+  --col-3-min: 262px;
+  --col-3-max: 440px;
   /* 1·3열의 기본 비율 — 세 열 트랙 몫(그리드 폭 − 간격 둘)의 백분율. 2열은 나머지라 비율이 없다.
      **단위 없는 수여야 한다.** 트랙 식이 calc() 안에서 길이에 곱하므로, "18fr" 처럼 단위를
      붙이면 calc 가 무효가 되고 grid-template-columns 선언 **전체가** 버려져 패널 여섯이 한
@@ -909,7 +960,7 @@ html, body {
 .gate-info.hidden { display: none; }
 .gate-info-title {
   font-size: var(--text-base);
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-title);
 }
 .gate-info-row { line-height: 1.45; }
@@ -982,7 +1033,7 @@ html, body {
 /* 대각 성분을 옅은 배경으로 구분해 구조가 눈에 들어오게 한다 */
 .mx-cell.mx-diag {
   background: var(--primary-dim);
-  font-weight: 800;
+  font-weight: 700;
 }
 .mx-cell.mx-zero { color: var(--text-body); }
 /* 대각 강조(--accent-3) 위에서는 본문색이 4.47 로 모자라 값과 같은 --text-title 로 올리고, 값(800)과는 굵기로 가른다 */
@@ -1077,8 +1128,11 @@ html, body {
   font-weight: 700;
   color: var(--danger-fg);
 }
+/* 메모 위계 = 머리말(<b>, bolder → 700) + 설명문 500. Geist 때는 900 대 800 이었는데 Plex 는 700 이 끝이라 둘이 같아졌다.
+   궤적 메모는 머리말(--accent-11)과 설명문(--primary)이 둘 다 파랑 계열이라 굵기가 거의 유일한 구분이다 — 600 은 차이가
+   약했고 500 이 또렷했다(같은 배율 비교). */
 .deferred-now {
-  font-weight: 800;
+  font-weight: 500;
   color: var(--primary);
 }
 .deferred-note-text {
@@ -1240,7 +1294,7 @@ html, body {
   border: 1px solid var(--text-faint);
   color: var(--text-body);
   font-size: var(--text-xs);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 13px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -1935,7 +1989,7 @@ html, body {
   text-align: center;
 }
 .dm-cell.dm-diag {
-  font-weight: 800;
+  font-weight: 700;
 }
 .dm-metrics {
   display: flex;

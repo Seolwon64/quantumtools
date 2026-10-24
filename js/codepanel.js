@@ -14,6 +14,7 @@
 import { toQASM, toQiskit, lossesOnApply, circuitSignature } from "./export.js";
 import { parseQASM, normalizeCircuit } from "./qasm.js";
 import { bandStartsOpen } from "./layout.js";
+import { onFontFacesLoaded } from "./fontload.js";
 
 // v1 은 드로어 폭(%) 하나였다. 이제 값의 뜻이 밴드 펼침·높이(px)·탭으로 바뀌어 키를 올리고
 // 구버전은 읽지 않는다.
@@ -516,7 +517,8 @@ export function initCodePanel({ circuit, layout, els, showToast }) {
       renderGutter();
     });
   }).observe(text);
-  document.fonts?.ready.then(() => renderGutter());
+  // 줄바꿈 위치는 글자 폭이 정한다 — 면이 도착할 때마다 다시 잰다(분할 면은 나중에 따로 온다, fontload.js)
+  onFontFacesLoaded(() => renderGutter());
 
   // ---------- 충돌 ----------
   // 충돌 줄은 접힌 밴드가 0px 이 아닌 유일한 경우다. 나타나고 사라질 때 밴드 높이가 바뀌므로

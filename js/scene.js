@@ -3,13 +3,16 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { tokenHex, token } from "./tokens.js";
+import { onFontFacesLoaded } from "./fontload.js";
+import { drawFittedLabel } from "./labelfit.js";
 
-// style.css의 --font-sans와 반드시 일치시켜야 한다. 다르면 캔버스 텍스트가 DOM 폰트와 다른
-// 대체 글꼴로 그려져 ⟩, π 같은 글리프가 어긋나 보인다("깨져 보임").
-// "QT Math"는 Geist가 갖고 있지 않은 ⟨ ⟩ 등을 채우는 서브셋 폰트다(style.css 참조).
-const FONT_STACK = '"Geist", "QT Math", system-ui, -apple-system, sans-serif';
+// 캔버스 글자의 폰트 스택은 style.css 의 --font-sans 를 **그릴 때마다** 읽는다. 예전에는 같은 스택을 여기에 문자열로
+// 다시 적어 두었는데(두 곳 정의), 폰트를 바꿀 때 한쪽만 고치면 캔버스만 대체 글꼴로 그려져 ⟩·π 가 어긋나 보인다.
+// 모듈 로드 시점에 읽어 두지 않는다 — 스타일시트가 아직 붙기 전일 수 있다(tokens.js).
+const fontStack = () => token("--font-sans");
 
-// 폰트 로딩 후 다시 그려야 할 캔버스 라벨 스프라이트들(아래 document.fonts.ready 참조)
+// 폰트가 도착한 뒤 다시 그려야 할 캔버스 라벨 스프라이트들(아래 onFontFacesLoaded). 장면에서 빼는 자리(clearGroup·
+// 크로스페이드 정리)가 여기서도 지운다 — 남겨 두면 버린 스프라이트를 계속 다시 그리고 붙잡아 둔다.
 const LABEL_SPRITES = new Set();
 
 const SPHERE_RADIUS = 1;
@@ -76,7 +79,7 @@ function makeAxisMesh(direction, length = 2.4, radius = 0.008) {
 function drawLabelCanvas(ctx, size, text) {
   ctx.clearRect(0, 0, size, size);
   const fontSize = text.length > 3 ? 34 : 56;
-  ctx.font = `600 ${fontSize}px ${FONT_STACK}`;
+  ctx.font = `600 ${fontSize}px ${fontStack()}`;
   ctx.fillStyle = LABEL_COLOR;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -115,37 +118,56 @@ function updateLabelSprite(sprite, text) {
   texture.needsUpdate = true;
 }
 
-// 캔버스 텍스트는 한 번 래스터화되면 끝이라, 웹폰트가 나중에 도착해도 스스로 갱신되지 않는다
-// (DOM은 자동 리플로우되지만 캔버스는 아니다). 폰트가 준비되면 라벨을 다시 그린다.
-if (typeof document !== "undefined" && document.fonts?.ready) {
-  document.fonts.ready.then(() => {
-    for (const sprite of LABEL_SPRITES) {
-      if (sprite.userData.text !== undefined) updateLabelSprite(sprite, sprite.userData.text);
-    }
-  });
-}
-
 // Q-sphere 마커 라벨("|0000⟩ π" 등)처럼 가로로 긴 문자열 전용. 정사각 캔버스를
 // 비균일 스케일로 늘리면 글자가 찌그러져 "깨진" 것처럼 보이므로, 캔버스 자체를
 // 실제 필요한 가로세로 비율로 만들고 스프라이트는 그 비율 그대로 균일하게 스케일한다.
-const WIDE_LABEL_W = 320;
+// 폭 352 · 월드 폭 0.66 — 320 · 0.6 에서 IBM Plex 로 바꾸자 6큐비트 위상 라벨 20개가 캔버스 밖으로 잘렸다(Plex 숫자는 늘
+// 600 단위라 1 이 많은 라벨이 넓다, 실측). 비율을 같이 키워 글자 크기는 그대로다. 그래도 넘치는 라벨은 그 라벨만 줄인다(drawFittedLabel).
+const WIDE_LABEL_W = 352;
 const WIDE_LABEL_H = 120;
-function makeWideLabelSprite(text, worldWidth = 0.6) {
+const WIDE_LABEL_PX = 44;
+const WIDE_LABEL_WORLD_W = 0.66;
+
+function drawWideLabel(sprite) {
+  const { ctx, texture, text } = sprite.userData;
+  const stack = fontStack();
+  ctx.fillStyle = LABEL_COLOR;
+  // 잉크를 매번 새로 잰다 — 대체 글꼴로 잰 배율을 남기면 폰트가 도착한 뒤에도 그 크기로 그린다
+  const { fontPx } = drawFittedLabel(ctx, {
+    text,
+    width: WIDE_LABEL_W,
+    height: WIDE_LABEL_H,
+    basePx: WIDE_LABEL_PX,
+    font: (px) => `600 ${px}px ${stack}`,
+  });
+  sprite.userData.fontPx = fontPx;
+  texture.needsUpdate = true;
+}
+
+function makeWideLabelSprite(text, worldWidth = WIDE_LABEL_WORLD_W) {
   const canvas = document.createElement("canvas");
   canvas.width = WIDE_LABEL_W;
   canvas.height = WIDE_LABEL_H;
-  const ctx = canvas.getContext("2d");
-  ctx.font = `600 44px ${FONT_STACK}`;
-  ctx.fillStyle = LABEL_COLOR;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, WIDE_LABEL_W / 2, WIDE_LABEL_H / 2);
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(worldWidth, worldWidth * (WIDE_LABEL_H / WIDE_LABEL_W), 1);
+  Object.assign(sprite.userData, { canvas, ctx: canvas.getContext("2d"), texture, text, wide: true });
+  drawWideLabel(sprite);
+  LABEL_SPRITES.add(sprite);
   return sprite;
 }
+
+// 캔버스 텍스트는 한 번 래스터화되면 끝이라, 웹폰트가 나중에 도착해도 스스로 갱신되지 않는다
+// (DOM은 자동 리플로우되지만 캔버스는 아니다). 면이 도착할 때마다 라벨을 다시 그린다 — 같은 캔버스·텍스처를 다시 쓰므로
+// (needsUpdate) 텍스처가 늘지 않는다. 예전에는 fonts.ready 한 번만 들었고 Q-sphere 라벨은 목록에 없어, 폰트가 늦게 오면
+// 첫 라벨이 대체 글꼴로 남았다(실측).
+onFontFacesLoaded(() => {
+  for (const sprite of LABEL_SPRITES) {
+    if (sprite.userData.wide) drawWideLabel(sprite);
+    else if (sprite.userData.text !== undefined) updateLabelSprite(sprite, sprite.userData.text);
+  }
+});
 
 export function createBlochScene(container) {
   const scene = new THREE.Scene();
@@ -529,6 +551,7 @@ export function createBlochScene(container) {
       if (child.isLine) child.geometry?.dispose?.();
       child.material?.map?.dispose?.();
       child.material?.dispose?.();
+      LABEL_SPRITES.delete(child);
     }
   }
 
@@ -613,7 +636,7 @@ export function createBlochScene(container) {
       for (const on of oldNodes) on.material.opacity = on.base * (1 - t);
       for (const nn of newNodes) nn.material.opacity = nn.base * t;
       if (t < 1) { qsCrossfadeRAF = requestAnimationFrame(step); return; }
-      for (const on of oldNodes) { on.group.remove(on.obj); on.obj.geometry?.dispose?.(); on.material.dispose?.(); }
+      for (const on of oldNodes) { on.group.remove(on.obj); on.obj.geometry?.dispose?.(); on.material.dispose?.(); LABEL_SPRITES.delete(on.obj); }
       for (const nn of newNodes) nn.material.opacity = nn.base;
       qsCrossfadeRAF = null;
     };

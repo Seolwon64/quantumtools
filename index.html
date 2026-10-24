@@ -4,10 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Quantum Tools</title>
-<!-- 본문에 바로 쓰이는 두 폰트는 미리 받아 FOUT 구간을 줄인다(수학 서브셋은 용량이 작고
-     unicode-range로 필요할 때만 받으므로 preload하지 않는다). -->
-<link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<!-- 첫 화면이 늘 쓰는 면만 미리 받아 FOUT 구간을 줄인다 — Sans 의 Latin1·Greek(패널 제목 "Reduced ρ")·Pi(칩 √X),
+     Mono Latin1, QT Math(상태 라벨 |0000⟩ 의 ⟩). Mono Pi 는 게이트 행렬의 √ 처럼 열어야 나오는 글자라 넣지 않는다 —
+     늦게 오면 js/fontload.js 가 다시 잰다. 경로는 상대 경로 fonts/… 그대로 둔다(GitHub Pages 는 /quantumtools/ 아래다). -->
+<link rel="preload" href="fonts/IBMPlexSansVar-Roman-Latin1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexSansVar-Roman-Greek.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexSansVar-Roman-Pi.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/IBMPlexMonoVar-Roman-Latin1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/qt-math.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css" />
 <script type="importmap">
 {
