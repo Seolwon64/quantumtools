@@ -7,7 +7,8 @@ Q-sphere·확률 차트·축소 밀도행렬로 보여 주고, QASM(OpenQASM 2.0
 - **빌드 도구 없음, 런타임 의존성 0.** `package.json` 에 `dependencies`·`devDependencies` 가 없고, 브라우저가 `js/*.js` 를
   ES 모듈로 직접 로드한다. 번들러나 npm 패키지를 전제한 제안은 하지 않는다.
 - **Three.js 는 CDN importmap** — `index.html` 이 `three`·`three/addons/` 를 `https://unpkg.com/three@0.160.0/` 에 매핑한다.
-  버전은 두 항목을 같이 올린다. 폰트는 `fonts/` 에 자체 호스팅한다 — 무엇을 쓰는지는 `style.css` 의 `@font-face`.
+  버전은 두 항목을 같이 올린다. 폰트는 `fonts/` 에 자체 호스팅한다 — 무엇을 쓰는지는 `style.css` 의 `@font-face`, 출처 · 해시는
+  `fonts/SOURCES.md`. 폰트 파일을 잘라 쓰면 이름을 바꾼다(OFL 예약 이름 "Plex" — `docs/design-spec.md` §6).
 - **상태는 컨트롤러 하나가 갖는다.** 프레임워크가 없다. `circuit.js` 의 `createCircuitController({ onChange, onAnimateStep,
   onStepPause, initial })` 가 회로를 소유하고 콜백으로 알리며, `main.js` 가 그 콜백에서 DOM 을 갱신한다.
 - **지속성은 `localStorage` 네 키** — `bloch-composer-v1`(회로), `bloch-layout-v5`(열 비율·행 오프셋), `bloch-code-panel-v2`
