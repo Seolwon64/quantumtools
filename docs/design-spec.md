@@ -463,6 +463,13 @@ Lucide(lucide.dev, ISC) 한 세트로 통일한다. 예전에는 이모지 문�
   슬라이더가 실제로 가진 값(`valueAsNumber`)이 연 직후와 달라진 것이다. 미리보기가 없어 슬라이더를 끌어도 회로는 Apply
   전까지 그대로고, Esc·Cancel 은 닫기만 한다 — 되돌릴 것이 없다. 보이는 값이 정수로 반올림됐다는 표시가 없는 것은
   `docs/backlog.md` 낮음.
+- **측정 칩의 메뉴에는 고전 비트 항목이 둘이다** — 기록 비트(Set classical bit, 아이콘 `binary`)와 조건(Add condition (if) /
+  Change / remove condition, 아이콘 `split`). 다른 게이트는 조건 항목 하나다(같은 `split`). 아이콘만 보이는 바라 두 항목의 모양이
+  달라야 한다. 두 팝오버의 버튼은 같은 `c[0]` `c[1]` … 이라 제목이 그 앞에 붙는 말로 둘을 가른다: 기록은 "Write result to", 측정의
+  조건은 "Run only if"(힌트 "Measure only when the chosen bit is 1"). 다른 게이트의 조건 팝오버는 "Conditional (if)" 그대로다
+  (`popover.js` `openMeasureBitPopover`·`openConditionPopover`).
+- **적재 알림은 기존 토스트 한 줄이다**(`main.js` 시작 알림, 문구는 `circuit.js` `loadNoticeText`). 새 UI 를 두지 않는다. 문장이
+  길어 8초 둔다(`showToast(message, ms)` — 기본 1.8초는 짧은 확인 문구용). 1536 이하에서는 두 줄이 된다(`docs/backlog.md` 낮음).
 - **숨기는 방법은 이유로 고른다.** 세 경우가 반대처럼 보이지만 근거가 다르다.
   - 전환이 있는 요소는 `display:none` 을 쓰지 않는다 — transition 이 실행되지 않아 정지 화면으로는
     똑같아 보이는 채 전환이 통째로 죽는다(회귀 교훈 절의 슬라이드 패널). 닫힘은 `visibility: hidden`.
@@ -488,6 +495,13 @@ Lucide(lucide.dev, ISC) 한 세트로 통일한다. 예전에는 이모지 문�
 
 연결선·제어점·기호·배지·스텝 인디케이터의 좌표는 **함수 하나에서만** 나온다.
 실제 배치된 셀의 `getBoundingClientRect()`를 읽으므로 CSS를 어떻게 바꿔도 어긋날 수 없다.
+
+**고전 이중선은 비트 참조마다 하나다**(`grid.js` `buildCircuitGrid`). 측정의 기록 비트와 게이트의 조건 비트마다 출발 칸 중심에서
+고전 행까지 곧게 내리고, 한 열에 여럿이면 15px 씩 좌우로 벌린다. **조건 붙은 측정은 선이 둘이다** — 읽는 선(조건)이 왼쪽(먼저
+판정한다), 쓰는 선(기록)이 오른쪽이다. 둘은 배지로 가른다: 읽는 쪽은 `.cl-bit-cond`(테두리 · 글자 `--primary`), 쓰는 쪽은 기본
+배지이고, 배지 툴팁이 다르다("Measured only when c[k] is 1" / "Measurement result is written to c[k]"). 선 모양은 같아 같은 비트를
+읽고 쓰면 "0 0" 이 색만 다르다 — 색 말고 단서를 둘지는 `docs/backlog.md` 디자인 재작성 과제. 선이 같은 열 아래 칩을 지나가는
+문제는 `docs/backlog.md` 중간(조건부 측정의 두 선도 같은 방식으로 지난다).
 
 **왜 이렇게까지 하는가:** 예전에는 CSS 치수를 상수로 손수 옮겨 적었다. 간격 시스템을
 도입하며 padding과 gap이 바뀌었는데 **상수가 갱신되지 않아 연결선이 어긋났다.** 값을

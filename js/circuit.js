@@ -40,12 +40,17 @@ function controlRejection(cell) {
   return null;
 }
 
-// 고전 조건(params.cif)을 붙일 수 없는 게이트 — 측정·리셋·배리어·제어점·if 도구는 게이트가 아니고, RCCX/RC3X 는 분해가 고정됐다.
-const NON_CONDITIONABLE = new Set([...NON_CONTROLLABLE, ...FIXED_MULTI, "IF"]);
+// 고전 조건(params.cif)을 붙일 수 없는 게이트 — 배리어·제어점·if 도구는 상태를 바꾸는 연산이 아니고, RCCX/RC3X 는 분해가 고정됐다
+// (지연 변환이 조건을 제어로 바꾸는데 이 둘은 제어를 받지 않는다. UI 로 붙인 적도 없다 — 예전 가져오기·링크로만 들어왔다).
+// 측정·리셋은 처음(2026-07-31)부터 여기 있었다. 그때 앱은 지연 측정만으로 돌아 조건을 "그 비트를 쓴 큐비트에 거는 양자 제어"로
+// 바꿨고, 측정·리셋에는 제어를 걸 수 없었다. 2026-08-08(Inspect)부터 조건이 하나라도 있는 회로는 늘 궤적(trajectory.js)으로 돌아
+// 측정·리셋을 실제로 하고 기록된 비트로 조건을 판정한다 — 그 뒤로 이 금지는 저장 회로의 조건부 측정·리셋을 적재 때 말없이 지우는
+// 일만 했다(2026-10-30 풀었다). 지연 변환(classical.js resolveDeferred)은 지금도 그런 셀을 표현하지 못해 명시적으로 거절한다.
+const NON_CONDITIONABLE = new Set(["BARRIER", "CTRL", ...FIXED_MULTI, "IF"]);
 
 /**
- * 이 게이트에 조건을 붙일 수 있는가. **판정은 이 함수 하나다** — setCondition·isValidPlacement·게이트 메뉴·QASM 가져오기·공유 링크가
- * 같이 쓴다. 예전엔 메뉴가 같은 집합을 따로 적었고, 가져오기와 공유 링크는 아무 게이트에나 조건을 받았다. 그렇게 들어온
+ * 이 게이트에 조건을 붙일 수 있는가. **판정은 이 함수 하나다** — setCondition·적재 정규화·게이트 메뉴·QASM 가져오기가 같이 쓴다.
+ * 예전엔 메뉴가 같은 집합을 따로 적었고, 가져오기와 공유 링크는 아무 게이트에나 조건을 받았다. 그렇게 들어온
  * `if (c==1) reset q[1];` 은 셀에 조건이 남는데 내보내기가 조건을 빼고 `reset q[1];` 로 써서, 다음 Apply 에서 조건 없는 리셋이 됐다(실측).
  */
 export function canCondition(gate) {
@@ -135,22 +140,99 @@ export function migrateCell(cell, homeRow) {
   }
 }
 
-function isValidPlacement(cell, qubitCount) {
+// 셀을 이 회로에 둘 수 없는 사유(둘 수 있으면 null). 적재 정규화가 빠진 칸을 사유와 함께 알리려고 문장으로 돌려준다 —
+// 예전엔 true/false 뿐이라 저장 회로의 칸이 적재 때 말없이 사라졌다.
+function placementProblem(cell, qubitCount) {
   const info = GATE_INFO[cell.gate];
-  if (!info || !info.ready) return false;
+  if (!info || !info.ready) return `unknown gate ${JSON.stringify(cell.gate ?? null)}`;
   const targets = cell.targets ?? [];
   const controls = cell.controls ?? [];
-  if (targets.length === 0) return false;
+  if (targets.length === 0) return `${cell.gate} has no target qubit`;
   const all = [...targets, ...controls];
-  if (new Set(all).size !== all.length) return false;
-  if (all.some((q) => q < 0 || q >= qubitCount)) return false;
-  if (NON_CONTROLLABLE.has(cell.gate) && controls.length > 0) return false; // [4]
-  if (FIXED_MULTI.has(cell.gate) && controls.length > 0) return false; // RCCX/RC3X는 controls를 안 씀
-  if (targets.length !== (TARGET_COUNT[cell.gate] ?? 1)) return false;
-  // 저장 회로·loadCircuit 도 같은 규칙으로 거른다 — 컨트롤러가 조건 붙은 측정·리셋을 갖지 않으면, 앱이 내보낸 텍스트를 앱의
-  // 가져오기가 거부하는 경우가 생기지 않는다. 예전 파서로 가져와 저장한 그런 셀은 다른 무효 셀처럼 적재 때 빠진다(docs/backlog.md).
-  if (cell.params?.cif !== undefined && !canCondition(cell.gate)) return false;
-  return true;
+  if (new Set(all).size !== all.length) return `${cell.gate} uses the same qubit twice`;
+  const outside = all.find((q) => q < 0 || q >= qubitCount);
+  if (outside !== undefined) return `${cell.gate} uses q[${outside}], but the circuit has ${qubitCount} qubits`;
+  if (controls.length > 0) {
+    const rejection = controlRejection(cell); // [4] 측정류 · RCCX/RC3X 는 controls 를 안 쓴다
+    if (rejection) return rejection;
+  }
+  const want = TARGET_COUNT[cell.gate] ?? 1;
+  if (targets.length !== want) return `${cell.gate} needs ${want} target qubit${want === 1 ? "" : "s"}`;
+  // 조건을 붙일 수 없는 게이트의 조건은 적재 정규화가 먼저 뗀다(normalizeLoaded). 여기 닿는 것은 loadCircuit·큐비트 수 변경 —
+  // 가져오기와 프리셋은 그런 셀을 만들지 않는다.
+  if (cell.params?.cif !== undefined && !canCondition(cell.gate)) return conditionRejection(cell.gate);
+  return null;
+}
+
+function isValidPlacement(cell, qubitCount) {
+  return placementProblem(cell, qubitCount) === null;
+}
+
+/**
+ * 저장값(`bloch-composer-v1`)이나 공유 링크에서 온 회로를 컨트롤러가 가질 수 있는 모양으로 고친다. **고친 것은 빠짐없이
+ * notices 로 돌려준다** — 예전엔 무효 칸을 말없이 버리고 곧바로 저장해, 예전 판이 받아 둔 조건부 리셋 같은 칸이 되돌릴 수 없게
+ * 사라졌다(docs/quantum-spec.md §9).
+ *  - 조건을 붙일 수 없는 게이트(배리어·RCCX/RC3X)의 조건은 **떼고** 게이트는 남긴다(kind "condition").
+ *  - 그래도 둘 수 없는 칸은 사유와 함께 뺀다(kind "dropped"). 해독이 이미 건너뛴 칸(stored.dropped)도 함께 싣는다.
+ * @returns {{qubitCount, clbitCount, grid, notices: Array<{kind, column, gate, bit?, reason?}>}} column 은 1부터(화면의 열), 모르면 null.
+ */
+export function normalizeLoaded(stored) {
+  const qubitCount = stored.qubitCount;
+  // 고전 비트 수가 없는 구버전 저장/URL은 큐비트 수와 같게 연다(기존 링크 무손상)
+  const clbitCount = typeof stored.clbitCount === "number"
+    ? Math.max(0, Math.min(MAX_QUBITS, stored.clbitCount))
+    : qubitCount;
+  const grid = emptyGrid(qubitCount);
+  const notices = [...(stored.dropped ?? [])].map((d) => ({ kind: "dropped", column: d.column ?? null, gate: d.gate ?? null, reason: d.reason }));
+  for (let col = 0; col < stored.grid.length; col++) {
+    const row = stored.grid[col];
+    if (!Array.isArray(row)) continue;
+    for (let q = 0; q < row.length; q++) {
+      const raw = row[q];
+      if (!raw) continue;
+      const cell = migrateCell(raw, q); // 구버전 셀도 canonical로 변환
+      if (col >= MAX_COLUMNS || q >= qubitCount) {
+        const where = col >= MAX_COLUMNS ? `beyond column ${MAX_COLUMNS}` : `on q[${q}], but the circuit has ${qubitCount} qubits`;
+        notices.push({ kind: "dropped", column: col + 1, gate: cell.gate ?? null, reason: `${cell.gate ?? "a gate"} is stored ${where}` });
+        continue;
+      }
+      const cif = cell.params.cif;
+      if (cif !== undefined && GATE_INFO[cell.gate] && !canCondition(cell.gate)) {
+        delete cell.params.cif;
+        notices.push({ kind: "condition", column: col + 1, gate: cell.gate, bit: cif });
+      }
+      const problem = placementProblem(cell, qubitCount);
+      if (problem) {
+        notices.push({ kind: "dropped", column: col + 1, gate: cell.gate ?? null, reason: problem });
+        continue;
+      }
+      grid[col][cell.targets[0]] = cell;
+    }
+  }
+  return { qubitCount, clbitCount, grid, notices };
+}
+
+/** 적재 notices → 토스트 한 줄. 길면 앞의 둘만 적고 나머지는 수로 줄인다 — 토스트는 한 줄짜리 알약이다. */
+export function loadNoticeText(notices) {
+  // 화면과 같은 말로 적는다. 게이트는 팔레트 툴팁 · aria-label 의 이름(desc 머리 — "Barrier — …" → "Barrier", 괄호 별칭은 뺀다:
+  // "RCCX (Margolus)" → 칩 글자와 같은 "RCCX"). 칩 글자는 이름이 아닐 수 있다(배리어는 ⋮). 처음엔 내부 이름(BARRIER)을 썼다.
+  // 비트는 팝오버 버튼 · 배지 툴팁의 c[k] 와 배지 툴팁 문장("only when c[0] is 1"), 열은 1부터 — Inspect 스텝 번호와 같다.
+  const name = (gate) => GATE_INFO[gate]?.desc?.split(" — ")[0].replace(/ \(.*\)$/, "") ?? String(gate);
+  const list = (items, describe) => {
+    const shown = items.slice(0, 2).map(describe);
+    const more = items.length - shown.length;
+    return shown.join(", ") + (more > 0 ? ` and ${more} more` : "");
+  };
+  const parts = [];
+  const stripped = notices.filter((n) => n.kind === "condition");
+  const dropped = notices.filter((n) => n.kind === "dropped");
+  if (stripped.length) {
+    parts.push(`removed the condition from ${list(stripped, (n) => `${name(n.gate)} in column ${n.column} (only when c[${n.bit}] is 1)`)}`);
+  }
+  if (dropped.length) {
+    parts.push(`left out ${list(dropped, (n) => (n.column ? `column ${n.column}: ${n.reason}` : n.reason))}`);
+  }
+  return `Opened with changes — ${parts.join("; ")}. The original stays saved until you edit.`;
 }
 
 // 순수 시뮬레이션: 그리드의 처음 `steps` 칼럼을 적용한 상태벡터를 반환한다.
@@ -211,29 +293,19 @@ function usedColumnCount(grid) {
 }
 
 // onChange(snapshot), onAnimateStep(fromBloch, toBloch) => Promise<void>
-// initial: 공유 URL에서 디코딩한 {qubitCount, grid}(이미 canonical) — 있으면 localStorage보다 우선.
+// initial: 공유 URL에서 디코딩한 {qubitCount, clbitCount, grid, dropped} — 있으면 localStorage보다 우선. 어느 쪽이든 normalizeLoaded 를 거친다.
 export function createCircuitController({ onChange, onAnimateStep, onStepPause, initial }) {
   let qubitCount = DEFAULT_QUBITS;
   let clbitCount = DEFAULT_QUBITS; // 고전 비트 수 — 큐비트 수와 독립, 기본은 같게
   let grid = emptyGrid(qubitCount);
 
   const stored = initial ?? loadStored();
-  if (stored) {
-    qubitCount = stored.qubitCount;
-    // 고전 비트 수가 없는 구버전 저장/URL은 큐비트 수와 같게 연다(기존 링크 무손상)
-    clbitCount = typeof stored.clbitCount === "number"
-      ? Math.max(0, Math.min(MAX_QUBITS, stored.clbitCount))
-      : qubitCount;
-    grid = emptyGrid(qubitCount);
-    for (let col = 0; col < Math.min(MAX_COLUMNS, stored.grid.length); col++) {
-      for (let q = 0; q < qubitCount; q++) {
-        const raw = stored.grid[col]?.[q];
-        if (!raw) continue;
-        const cell = migrateCell(raw, q); // 구버전 셀도 canonical로 변환
-        if (isValidPlacement(cell, qubitCount)) grid[col][cell.targets[0]] = cell;
-      }
-    }
-  }
+  let loadNotices = [];
+  if (stored) ({ qubitCount, clbitCount, grid, notices: loadNotices } = normalizeLoaded(stored));
+  // 적재 때 고친 것이 있으면 **첫 편집까지 원본을 남긴다** — 저장값을 덮어쓰지 않고(notify 가 save 를 건너뛴다), main.js 는 공유
+  // 링크의 해시를 지우지 않는다. 고친 결과(조건을 뗀 배리어 등)는 원본과 뜻이 다르다. 예전엔 생성 끝의 notify 가 곧바로 저장해,
+  // 열어 보기만 해도 원본이 되돌릴 수 없게 사라졌다. 끄는 자리는 pushUndo 하나다 — 회로를 바꾸는 API 는 모두 그것을 거친다.
+  let preservingSource = loadNotices.length > 0;
 
   // 칼럼 안에서 q를 점유 중인 placement의 홈(타깃) 행을 찾는다 (없으면 -1)
   function occupantTarget(column, q) {
@@ -316,6 +388,8 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
       canRemoveClbit: clbitCount > 0,
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
+      loadNotices, // 적재 때 고친 것(normalizeLoaded) — 생성 뒤로 바뀌지 않는다
+      preservingSource, // 첫 편집 전이라 원본(저장값·공유 링크 해시)을 남기는 중인가
       bloch: qubitBlochVector(state, selectedQubit),
       probabilities: basisProbabilities(state, qubitCount),
       state, // DM 뷰가 선택 큐비트의 축소 밀도행렬을 계산할 원본 상태벡터
@@ -325,7 +399,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   // 렌더(onChange)에서 터진 예외가 컨트롤러 상태를 오염시키거나 재생 루프를 죽이지 못하게 막는다.
   function notify() {
     try {
-      save(qubitCount, clbitCount, grid);
+      if (!preservingSource) save(qubitCount, clbitCount, grid);
       onChange(snapshot());
     } catch (err) {
       console.error("Render failed:", err);
@@ -372,7 +446,9 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
     return { qubitCount, clbitCount, grid: cloneGrid(grid) };
   }
   // 회로 변경 직전에 호출: 현재 상태를 undo 스택에 넣고 redo 스택을 비운다(새 분기).
+  // 첫 편집이므로 원본 보존도 여기서 끝낸다 — 이어지는 notify 가 고친 회로를 저장한다(위 preservingSource).
   function pushUndo() {
+    preservingSource = false;
     undoStack.push(captureState());
     if (undoStack.length > MAX_HISTORY) undoStack.shift(); // 오래된 것부터 버림
     redoStack.length = 0;
@@ -528,7 +604,7 @@ export function createCircuitController({ onChange, onAnimateStep, onStepPause, 
   }
 
   // 게이트에 고전 조건(c[bit]==1일 때만 적용)을 붙이거나(bit=숫자) 뗀다(bit=null).
-  // 시뮬레이션에서는 지연 측정 변환으로 양자 제어가 된다.
+  // 조건이 하나라도 있는 회로는 궤적으로 계산한다(trajectory.js needsTrajectorySampling) — 측정·리셋의 조건도 그래서 정확하다.
   function setCondition(column, qubit, bit) {
     if (isAnimating || isPlaying) return { ok: false, reason: "Busy" };
     const home = occupantTarget(column, qubit);

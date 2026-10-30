@@ -38,6 +38,18 @@ export function resolveDeferred(qubitCount, clbitCount, grid) {
       const targets = cell.targets ?? [];
       const params = cell.params ?? {};
 
+      // 0) 조건 붙은 측정·리셋은 이 변환으로 표현할 수 없다. 아래 2) 가 제어를 붙이면 측정은 "제어 붙은 no-op" 이 되어 조건이
+      //    조용히 사라지고(기록도 늘 일어난 것으로 센다), 리셋은 엔진이 거부한다. 앱은 조건이 하나라도 있으면 궤적으로 계산해
+      //    여기 닿지 않는다(circuit.js NON_CONDITIONABLE 주석) — simulate() 처럼 판정 없이 부르는 호출자를 위해 사유로 거절한다.
+      if (params.cif !== undefined && (cell.gate === "MEASURE" || cell.gate === "RESET")) {
+        return {
+          grid: null,
+          error:
+            `The ${cell.gate === "MEASURE" ? "Measure" : "Reset"} at column ${col + 1} is conditioned on c[${params.cif}]. ` +
+            `Deferred measurement can't represent a conditioned measure or reset — this circuit needs trajectory simulation.`,
+        };
+      }
+
       // 1) 측정된 큐비트를 이후에 "타깃"으로 쓰거나 RESET하면 변환이 성립하지 않는다.
       //    앱 경로에서는 이런 회로(측정 뒤 연산·RESET)를 needsTrajectorySampling 이 먼저 궤적으로
       //    보내므로 여기 닿지 않는다. 그래도 지우지 않는다 — 이 함수는 판정과 독립된 순수 함수이고,

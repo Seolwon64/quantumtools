@@ -449,10 +449,10 @@ export function parseQASM(text) {
       if (q >= qubitCount) return fail(line, `qubit index ${q} is out of range`);
       // 레지스터마다 폭을 본다 — 이어 붙인 번호만 보면 a[2] 가 옆 레지스터 b[0] 으로 넘어간다.
       if (ref.index >= reg.size) return fail(line, `classical bit index ${ref.index} is out of range (${ref.name} has ${reg.size})`);
-      if (cif !== undefined) return fail(line, conditionRejection("MEASURE"));
       const cbit = reg.offset + ref.index;
+      // 조건 붙은 measure 도 "그 비트를 쓸 수 있는" 문장으로 센다 — 다음 여러 비트 조건이 다른 비트가 0 이라고 믿으면 안 된다.
       if (!writtenAt.has(cbit)) writtenAt.set(cbit, line);
-      ops.push({ line, name: "measure", args: [q], params: [], cbit });
+      ops.push({ line, name: "measure", args: [q], params: [], cbit, cif });
       continue;
     }
     if (/^measure\b/.test(text)) return fail(line, "malformed measure (expected: measure q[i] -> c[j])");
@@ -485,9 +485,10 @@ export function parseQASM(text) {
     }
 
     if (SPECIAL_QASM.has(name)) {
-      // 앱은 reset·barrier 에 조건을 붙이지 않는다(canCondition). 받으면 셀에 조건이 남는데 화면 메뉴로는 지울 수도 없다.
-      if (cif !== undefined) return fail(line, conditionRejection(name.toUpperCase()));
-      ops.push({ line, name, args, params });
+      // reset 의 조건은 받는다(능동 리셋 — 궤적이 정확히 돈다). barrier 는 canCondition 이 거부한다 — OpenQASM 2.0 의 if 뒤에는
+      // qop 만 오고, 받으면 셀에 조건이 남는데 화면 메뉴로는 지울 수도 없다.
+      if (cif !== undefined && !canCondition(name.toUpperCase())) return fail(line, conditionRejection(name.toUpperCase()));
+      ops.push({ line, name, args, params, cif });
       continue;
     }
 
@@ -522,9 +523,10 @@ export function parseQASM(text) {
     let cell;
     if (o.name === "measure") {
       cell = { gate: "MEASURE", targets: [o.args[0]], controls: [], params: { cbit: o.cbit } };
+      if (o.cif !== undefined) cell.params.cif = o.cif;
     } else if (o.name === "reset") {
       if (o.args.length !== 1) return fail(o.line, "reset expects one qubit");
-      cell = { gate: "RESET", targets: [o.args[0]], controls: [], params: {} };
+      cell = { gate: "RESET", targets: [o.args[0]], controls: [], params: o.cif === undefined ? {} : { cif: o.cif } };
     } else if (o.name === "barrier") {
       // barrier q; (레지스터 전체)는 첫 큐비트에 놓는다 — 이 앱의 배리어는 열 표시용이다.
       const t = o.args.length && o.args[0] >= 0 ? o.args[0] : 0;

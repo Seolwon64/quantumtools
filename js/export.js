@@ -1,7 +1,7 @@
 // 회로 공유/내보내기: URL 해시 인코딩(base64url), OpenQASM 2.0 / Qiskit 코드 생성, Apply 가 지울 게이트 판정.
 // 셀은 canonical { gate, targets, controls, params } 구조. 구버전(v:1) URL도 계속 열린다.
 import { GATE_INFO } from "./quantum.js";
-import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell, canCondition, conditionRejection } from "./circuit.js";
+import { MIN_QUBITS, MAX_QUBITS, MAX_COLUMNS, migrateCell } from "./circuit.js";
 import { opFor, normalizeCircuit } from "./qasm.js";
 
 function b64urlEncode(str) {
@@ -56,24 +56,40 @@ export function circuitSignature(snapshot) {
 }
 
 /**
- * 공유 URL 해시 → 회로. **실패는 늘 null 이다**(계약 — 프리셋·테스트 20곳이 이것만 본다).
- * 조건을 붙일 수 없는 게이트(측정·리셋 등)에 조건이 있으면 링크 전체를 거부한다. 받으면 셀에 조건이 남는데 내보내기가 그 조건을
- * 쓸 수 없고 화면 메뉴로도 지울 수 없다. 거부 사유는 반환값이 아니라 `onReject(reason)` 으로 준다 — QASM 가져오기와 같은 문장이다.
- * 그 밖의 해독 실패(형식 오류)는 사유 없이 null 이다.
+ * 공유 URL 해시 → 회로. **실패는 늘 null 이다**(계약 — 프리셋·테스트 20곳이 이것만 본다). 실패는 형식 오류뿐이다.
+ * 칸 하나를 읽지 못해도 링크 전체를 버리지 않는다 — 그 칸만 건너뛰고 `dropped: [{ column, gate, reason }]` 으로 알린다(column 은 1부터,
+ * 모르면 null). 컨트롤러의 적재 정규화(circuit.js normalizeLoaded)가 이것을 화면 알림에 합친다. 예전엔 그런 칸을 말없이 건너뛰었고,
+ * 조건을 붙일 수 없는 게이트에 조건이 있으면 링크 전체를 거부했다(그때는 측정·리셋도 그 게이트였다). 이제 조건 규칙은 해독이
+ * 아니라 정규화가 본다 — 배리어·RCCX 의 조건은 떼고 게이트는 남긴다. 기존 링크를 깨뜨리지 않는 것이 계약이다(quantum-spec §9).
  */
-export function decodeCircuit(encoded, onReject) {
+export function decodeCircuit(encoded) {
   try {
     const data = JSON.parse(b64urlDecode(encoded));
     if (typeof data.n !== "number" || !Array.isArray(data.p)) return null;
     if (data.n < MIN_QUBITS || data.n > MAX_QUBITS) return null;
     const grid = emptyGrid(data.n);
+    const dropped = [];
+    const columnOf = (c) => (Number.isInteger(c) ? c + 1 : null);
+    // 같은 칸에 둘이 오면 뒤의 것이 앞의 것을 덮는다 — 예전엔 그것도 말없이 일어났다.
+    const put = (col, home, cell) => {
+      if (grid[col][home]) dropped.push({ column: col + 1, gate: grid[col][home].gate, reason: `${grid[col][home].gate} shares a cell with ${cell.gate}` });
+      grid[col][home] = cell;
+    };
 
     if (data.v === 2) {
       for (const p of data.p) {
-        if (!Array.isArray(p.tg) || !GATE_INFO[p.g]) continue;
+        if (!p || typeof p !== "object") { dropped.push({ column: null, gate: null, reason: "an unreadable entry" }); continue; }
+        if (!GATE_INFO[p.g]) { dropped.push({ column: columnOf(p.c), gate: null, reason: `unknown gate ${JSON.stringify(p.g ?? null)}` }); continue; }
+        if (!Array.isArray(p.tg)) { dropped.push({ column: columnOf(p.c), gate: p.g, reason: `${p.g} has no target qubits` }); continue; }
         const home = p.tg[0];
-        if (typeof p.c !== "number" || p.c < 0 || p.c >= MAX_COLUMNS) continue;
-        if (typeof home !== "number" || home < 0 || home >= data.n) continue;
+        if (typeof p.c !== "number" || p.c < 0 || p.c >= MAX_COLUMNS) {
+          dropped.push({ column: null, gate: p.g, reason: `${p.g} is outside columns 1–${MAX_COLUMNS}` });
+          continue;
+        }
+        if (typeof home !== "number" || home < 0 || home >= data.n) {
+          dropped.push({ column: p.c + 1, gate: p.g, reason: `${p.g} uses q[${home}], but the circuit has ${data.n} qubits` });
+          continue;
+        }
         const params = {};
         if (p.p) {
           if (typeof p.p.t === "number") params.theta = p.p.t;
@@ -82,22 +98,26 @@ export function decodeCircuit(encoded, onReject) {
           if (typeof p.p.cb === "number") params.cbit = p.p.cb;
           if (typeof p.p.ci === "number") params.cif = p.p.ci;
         }
-        if (params.cif !== undefined && !canCondition(p.g)) {
-          onReject?.(conditionRejection(p.g));
-          return null;
-        }
-        grid[p.c][home] = {
+        put(p.c, home, {
           gate: p.g,
           targets: p.tg,
           controls: Array.isArray(p.x) ? p.x : [],
           params,
-        };
+        });
       }
     } else if (data.v === 1) {
       // 구버전 포맷: { c, q, g, t/f/l, x:controls, r:partner } → canonical 마이그레이션
       for (const p of data.p) {
-        if (typeof p.c !== "number" || typeof p.q !== "number" || !GATE_INFO[p.g]) continue;
-        if (p.c < 0 || p.c >= MAX_COLUMNS || p.q < 0 || p.q >= data.n) continue;
+        if (!p || typeof p !== "object") { dropped.push({ column: null, gate: null, reason: "an unreadable entry" }); continue; }
+        if (!GATE_INFO[p.g]) { dropped.push({ column: columnOf(p.c), gate: null, reason: `unknown gate ${JSON.stringify(p.g ?? null)}` }); continue; }
+        if (typeof p.c !== "number" || p.c < 0 || p.c >= MAX_COLUMNS) {
+          dropped.push({ column: null, gate: p.g, reason: `${p.g} is outside columns 1–${MAX_COLUMNS}` });
+          continue;
+        }
+        if (typeof p.q !== "number" || p.q < 0 || p.q >= data.n) {
+          dropped.push({ column: p.c + 1, gate: p.g, reason: `${p.g} uses q[${p.q}], but the circuit has ${data.n} qubits` });
+          continue;
+        }
         const oldCell = { gate: p.g };
         if (typeof p.t === "number") oldCell.theta = p.t;
         if (typeof p.f === "number") oldCell.phi = p.f;
@@ -107,7 +127,8 @@ export function decodeCircuit(encoded, onReject) {
         // canonical 홈 = targets[0] (RCCX/RC3X는 첫 컨트롤이 홈이라 p.q와 다를 수 있음)
         const cell = migrateCell(oldCell, p.q);
         const home = cell.targets[0];
-        if (home >= 0 && home < data.n) grid[p.c][home] = cell;
+        if (home >= 0 && home < data.n) put(p.c, home, cell);
+        else dropped.push({ column: p.c + 1, gate: p.g, reason: `${p.g} uses q[${home}], but the circuit has ${data.n} qubits` });
       }
     } else {
       return null;
@@ -116,16 +137,16 @@ export function decodeCircuit(encoded, onReject) {
     const clbitCount = typeof data.c === "number"
       ? Math.max(0, Math.min(MAX_QUBITS, data.c))
       : data.n;
-    return { qubitCount: data.n, clbitCount, grid };
+    return { qubitCount: data.n, clbitCount, grid, dropped };
   } catch {
     return null;
   }
 }
 
-/** `#c=…` 해시 → 회로, 아니면 null. 거부 사유는 decodeCircuit 처럼 onReject 로 준다. 해시가 링크인지는 호출부가 `#c=` 로 본다. */
-export function parseShareHash(hash, onReject) {
+/** `#c=…` 해시 → 회로, 아니면 null. 해시가 링크인지는 호출부가 `#c=` 로 본다. */
+export function parseShareHash(hash) {
   const match = /^#c=([A-Za-z0-9_-]+)$/.exec(hash);
-  return match ? decodeCircuit(match[1], onReject) : null;
+  return match ? decodeCircuit(match[1]) : null;
 }
 
 export function buildShareUrl(qubitCount, grid, clbitCount) {
@@ -261,8 +282,8 @@ export function toQASM(qubitCount, rawGrid, clbitCount = qubitCount) {
       warnings.push(lost.warning);
       return;
     }
-    // 측정·리셋의 조건도 push 를 탄다 — 예전엔 조건을 조용히 빼고 썼다. 컨트롤러는 그런 셀을 갖지 않지만(canCondition) 이 함수는 순수
-    // 함수라 받은 그리드를 그대로 쓴다. 배리어는 조건을 쓰지 않는다 — OpenQASM 2.0 의 if 뒤에는 qop 만 오고, 배리어는 상태를 바꾸지 않는다.
+    // 측정·리셋의 조건도 push 를 탄다 — 예전엔 조건을 조용히 빼고 썼다. 배리어는 조건을 쓰지 않는다 — OpenQASM 2.0 의 if 뒤에는
+    // qop 만 오고, 배리어는 상태를 바꾸지 않는다(컨트롤러는 배리어에 조건을 두지 않는다 — circuit.js canCondition).
     if (gate === "MEASURE") {
       push(`measure ${q(targets[0])} -> ${layout.bit(params.cbit ?? targets[0])};`, params);
       return;

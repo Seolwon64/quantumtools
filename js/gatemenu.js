@@ -386,7 +386,8 @@ const MENU_ICONS = {
   expand: "unfold-horizontal",     // Expand definition — 한 게이트가 여러 열로 펼쳐진다
   ctrlAdd: "circle-plus",          // Add control
   ctrlRemove: "circle-minus",      // Remove control
-  clbit: "binary",                 // Set classical bit / Add condition (if)
+  clbit: "binary",                 // Set classical bit (Measure 가 쓰는 비트)
+  condition: "split",              // Add condition (if) — Measure 에서는 위와 나란히 서므로 모양이 달라야 한다
   trash: "trash-2",                // Delete
 };
 
@@ -456,21 +457,22 @@ function openGateMenu(column, home, clientX, clientY) {
         else openRemoveControlPopover(column, controls, clientX, clientY);
       },
     },
-    // 고전 레지스터: Measure는 기록 대상 비트를, 그 밖의 게이트는 조건 비트를 고른다.
-    cell.gate === "MEASURE"
-      ? {
+    // 고전 레지스터: Measure 는 기록 대상 비트를 고르고, 조건을 붙일 수 있는 게이트는(Measure 포함) 조건 비트를 고른다.
+    ...(cell.gate === "MEASURE"
+      ? [{
           label: "Set classical bit", icon: "clbit", group: 1, enabled: snapshot.clbitCount > 0,
           why: "There are no classical bits",
           run: () => openMeasureBitPopover(column, home, snapshot.clbitCount, clientX, clientY),
-        }
-      : {
-          label: params.cif === undefined ? "Add condition (if)" : "Change / remove condition",
-          icon: "clbit", group: 1,
-          // 판정·사유는 circuit.js 의 canCondition 하나다 — 예전엔 이 메뉴가 같은 집합을 따로 적었다.
-          enabled: snapshot.clbitCount > 0 && canCondition(cell.gate),
-          why: snapshot.clbitCount === 0 ? "There are no classical bits" : conditionRejection(cell.gate),
-          run: () => openConditionPopover(column, home, snapshot.clbitCount, clientX, clientY),
-        },
+        }]
+      : []),
+    {
+      label: params.cif === undefined ? "Add condition (if)" : "Change / remove condition",
+      icon: "condition", group: 1,
+      // 판정·사유는 circuit.js 의 canCondition 하나다 — 예전엔 이 메뉴가 같은 집합을 따로 적었다.
+      enabled: snapshot.clbitCount > 0 && canCondition(cell.gate),
+      why: snapshot.clbitCount === 0 ? "There are no classical bits" : conditionRejection(cell.gate),
+      run: () => openConditionPopover(column, home, snapshot.clbitCount, clientX, clientY),
+    },
     // 파괴적 동작은 맨 오른쪽에 구분선으로 분리한다
     { label: "Delete", icon: "trash", group: 2, danger: true, run: () => { getCircuit().removeGate(column, home); selectedGate = null; } }, // 정보는 렌더가 닫는다(Delete 키 주석)
   ];

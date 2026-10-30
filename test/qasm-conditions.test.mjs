@@ -370,8 +370,9 @@ test("Qiskit 코드는 조건을 if_test 로 쓰고 c_if 를 쓰지 않는다 �
   assert.deepEqual(warnings, []);
 });
 
-test("조건 붙은 측정·리셋은 내보내기에서 조건을 잃지 않고, 가져오기·공유 링크는 같은 사유로 거부한다", () => {
-  // 컨트롤러는 이런 셀을 만들지 않는다(canCondition). 내보내기는 순수 함수라 받은 그리드를 그대로 써야 한다 — 예전엔 조건을 조용히 뺐다.
+test("조건 붙은 측정·리셋은 내보내기에서 조건을 잃지 않고 가져오기·공유 링크가 조건째 받는다 — 배리어·RCCX 의 조건은 가져오기가 같은 사유로 거부한다", () => {
+  // 예전 내보내기는 측정·리셋의 조건을 조용히 뺐다. 2026-10-30 까지는 가져오기·링크가 이 둘의 조건을 거부했다(그때는 canCondition 이
+  // 막았다 — circuit.js NON_CONDITIONABLE 주석). 이제 궤적이 정확히 돌리므로 받는다.
   const g = grid(2, [
     [0, cell("H", [0])], [1, cell("MEASURE", [0], [], { cbit: 0 })],
     [2, cell("RESET", [1], [], { cif: 0 })], [3, cell("MEASURE", [1], [], { cbit: 1, cif: 0 })],
@@ -383,24 +384,29 @@ test("조건 붙은 측정·리셋은 내보내기에서 조건을 잃지 않고
   assert.match(py, /^with qc\.if_test\(\(qc\.clbits\[0\], 1\)\):\n {4}qc\.reset\(1\)$/m, `Qiskit 이 리셋의 조건을 뺐다\n${py}`);
   assert.match(py, /^with qc\.if_test\(\(qc\.clbits\[0\], 1\)\):\n {4}qc\.measure\(1, 1\)$/m, `Qiskit 이 측정의 조건을 뺐다\n${py}`);
 
-  // 가져오기는 거부한다 — 앱은 이 셋에 조건을 붙이지 않고, 받으면 화면 메뉴로 지울 수도 없다.
+  // 가져오기: 측정·리셋의 조건은 셀에 남는다. 배리어·RCCX 는 거부한다 — 앱이 이 둘에 조건을 두지 않고(canCondition), 받으면 화면
+  // 메뉴로 지울 수도 없다. 가져오기는 사용자가 바로 고칠 수 있는 텍스트라 정규화(조건 떼기) 대신 실패가 맞다.
   const head = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\ncreg c[1];\nh q[0];\nmeasure q[0] -> c[0];\n';
-  for (const [stmt, gate] of [["reset q[1];", "RESET"], ["measure q[1] -> c[0];", "MEASURE"], ["barrier q[1];", "BARRIER"], ["rccx q[0],q[1],q[2];", "RCCX"]]) {
+  for (const [stmt, gate, params] of [["reset q[1];", "RESET", { cif: 0 }], ["measure q[1] -> c[0];", "MEASURE", { cbit: 0, cif: 0 }]]) {
+    const r = parseQASM(`${head}if (c==1) ${stmt}\n`);
+    assert.equal(r.ok, true, `if (c==1) ${stmt} 를 거부했다 — ${r.message}`);
+    const got = r.grid.flat().filter((c) => c?.gate === gate && c.targets[0] === 1);
+    assert.equal(got.length, 1, `${gate} q[1] 이 없다`);
+    assert.deepEqual(got[0].params, params, `${gate} 의 조건이 셀에 남지 않았다`);
+  }
+  for (const [stmt, gate] of [["barrier q[1];", "BARRIER"], ["rccx q[0],q[1],q[2];", "RCCX"]]) {
     const r = parseQASM(`${head}if (c==1) ${stmt}\n`);
     assert.equal(r.ok, false, `if (c==1) ${stmt} 를 받았다`);
     assert.equal(r.message, `Line 7: ${conditionRejection(gate)}`);
   }
 
-  // 공유 링크도 같은 사유다. 반환 계약(실패 = null)은 그대로고, 사유는 콜백으로 온다.
+  // 공유 링크도 조건째 연다(기존 링크를 깨뜨리지 않는다 — quantum-spec §9). 형식이 깨진 링크만 null 이다(계약).
   const link = encodeCircuit(2, grid(2, [[0, cell("MEASURE", [0], [], { cbit: 0 })], [1, cell("RESET", [1], [], { cif: 0 })]]), 1);
-  const reasons = [];
-  assert.equal(decodeCircuit(link, (r) => reasons.push(r)), null);
-  assert.deepEqual(reasons, [conditionRejection("RESET")]);
-  assert.equal(decodeCircuit(link), null, "콜백 없이도 null 이어야 한다");
-  // 형식이 깨진 링크는 사유 없이 null 이다 — 호출부가 일반 문구를 띄운다.
-  const none = [];
-  assert.equal(decodeCircuit("%%%", (r) => none.push(r)), null);
-  assert.deepEqual(none, []);
+  const dec = decodeCircuit(link);
+  assert.ok(dec, "조건 붙은 리셋이 든 링크를 열지 못했다");
+  assert.deepEqual(dec.grid[1][1]?.params, { cif: 0 }, "링크의 리셋이 조건을 잃었다");
+  assert.deepEqual(dec.dropped, []);
+  assert.equal(decodeCircuit("%%%"), null);
 });
 
 test("조건을 붙일 수 있는지는 한 함수가 정한다 — setCondition·저장 회로 적재·메뉴가 같은 답을 낸다", () => {
@@ -415,13 +421,17 @@ test("조건을 붙일 수 있는지는 한 함수가 정한다 — setCondition
     assert.equal(r.ok, canCondition(gate), `${gate}: setCondition ${r.ok} 인데 canCondition ${canCondition(gate)}`);
     if (!r.ok) assert.equal(r.reason, conditionRejection(gate));
   }
-  // 저장 회로에 조건 붙은 리셋이 있으면 적재 때 빠진다(무효 셀 정책 — docs/backlog.md). 컨트롤러가 그런 셀을 갖지 않아야
-  // 앱이 내보낸 텍스트를 앱의 가져오기가 거부하는 일이 없다.
+  // 저장 회로 적재도 같은 답이다 — 조건을 붙일 수 있는 리셋은 조건째 싣고, 붙일 수 없는 배리어는 조건만 뗀다. 예전엔 조건 붙은
+  // 리셋이 적재 때 말없이 빠졌다(2026-10-30 고침). 컨트롤러와 가져오기가 같은 함수를 보므로 앱이 내보낸 텍스트를 앱이 거부하지 않는다.
   const stored = createCircuitController({
     onChange: () => {}, onAnimateStep: async () => {},
-    initial: { qubitCount: 2, clbitCount: 1, grid: grid(2, [[0, cell("MEASURE", [0], [], { cbit: 0 })], [1, cell("RESET", [1], [], { cif: 0 })]]) },
+    initial: { qubitCount: 2, clbitCount: 1, grid: grid(2, [
+      [0, cell("MEASURE", [0], [], { cbit: 0 })], [1, cell("RESET", [1], [], { cif: 0 })], [2, cell("BARRIER", [0], [], { cif: 0 })],
+    ]) },
   }).getSnapshot();
-  assert.equal(stored.grid.flat().filter((c) => c?.gate === "RESET").length, 0, "조건 붙은 리셋이 컨트롤러에 실렸다");
+  assert.deepEqual(stored.grid[1][1]?.params, { cif: 0 }, "조건 붙은 리셋이 조건째 실리지 않았다");
+  assert.equal(stored.grid[2][0]?.gate, "BARRIER", "조건 붙은 배리어가 빠졌다");
+  assert.equal(stored.grid[2][0].params.cif, undefined, "배리어의 조건이 남았다");
   // 메뉴는 같은 함수를 쓴다(gatemenu.js 는 DOM 모듈이라 소스로 본다) — 예전엔 같은 집합을 따로 적었다.
   const menu = readFileSync(new URL("../js/gatemenu.js", import.meta.url), "utf8");
   assert.match(menu, /canCondition\(cell\.gate\)/, "게이트 메뉴가 canCondition 을 쓰지 않는다");

@@ -2,7 +2,7 @@
 import { createBlochScene } from "./scene.js";
 import { icon, hydrateIcons } from "./icons.js";
 import { initCodePanel } from "./codepanel.js";
-import { createCircuitController } from "./circuit.js";
+import { createCircuitController, loadNoticeText } from "./circuit.js";
 import { GATE_INFO } from "./quantum.js";
 import { probDisplay, endianLabelText, fmt2, amplitudeParts, amplitudeShowsAsZero } from "./probmodel.js";
 import { reducedDensityInfo } from "./density.js";
@@ -568,6 +568,7 @@ function renderStateFormula(snapshot) {
 // ---------- 메인 렌더 ----------
 
 function render(snapshot) {
+  syncShareHash(snapshot);
   // 표시 분포가 바뀌면(회로 편집/스텝/큐비트수) 이전 샘플링 결과는 무효화한다.
   invalidateStaleSample(snapshot);
 
@@ -671,19 +672,21 @@ function setPlaybackDisabled(btn, plainDisabled, reason) {
 
 buildPalette();
 
-// 공유 URL(#c=...)이 있으면 저장된 회로보다 우선 적용하고, 이후 편집이
-// 오래된 해시로 되돌아가지 않도록 주소창에서 해시를 제거한다.
-// 열지 못한 링크는 알린다(토스트는 showToast 가 정의된 뒤에 띄운다 — 아래 shareLinkProblem). 예전엔 조용히 저장 회로를 열어,
-// 받은 링크 대신 다른 회로를 보고 있다는 것을 알 수 없었다. 조건 규칙 위반은 그 사유(QASM 가져오기와 같은 문장), 그 밖은 일반 문구다.
-let shareRejection = null;
-const sharedCircuit = parseShareHash(location.hash, (reason) => { shareRejection = reason; });
-if (sharedCircuit) {
+// 공유 URL(#c=...)이 있으면 저장된 회로보다 우선 적용하고, 이후 편집이 오래된 해시로 되돌아가지 않도록 주소창에서 해시를
+// 제거한다. **제거는 컨트롤러가 원본 보존을 끝낸 뒤다**(render 의 syncShareHash) — 적재 때 고친 것이 있는 링크는 첫 편집까지
+// 해시를 남겨, 다시 열면 원본이 그대로 열린다. 고친 것이 없으면 생성 도중의 첫 render 에서 바로 지운다(예전과 같다).
+// 열지 못한 링크는 알린다(토스트는 showToast 가 정의된 뒤에 띄운다 — 아래 startup 토스트). 예전엔 조용히 저장 회로를 열어,
+// 받은 링크 대신 다른 회로를 보고 있다는 것을 알 수 없었다. 해독 실패는 이제 형식 오류뿐이다(칸 하나의 문제는 링크를 막지 않는다).
+const sharedCircuit = parseShareHash(location.hash);
+let shareHashPending = Boolean(sharedCircuit);
+const shareLinkProblem = location.hash.startsWith("#c=") && !sharedCircuit
+  ? "This link couldn't be opened — showing your saved circuit."
+  : null;
+function syncShareHash(snapshot) {
+  if (!shareHashPending || snapshot.preservingSource) return;
+  shareHashPending = false;
   history.replaceState(null, "", location.pathname + location.search);
 }
-const shareLinkProblem = location.hash.startsWith("#c=") && !sharedCircuit
-  ? (shareRejection ? `This link wasn't opened: ${shareRejection}. Showing your saved circuit.`
-    : "This link couldn't be opened — showing your saved circuit.")
-  : null;
 
 // 게이트 메뉴도 컨트롤러보다 **먼저** 배선한다 — render 가 invalidateSelection ·
 // renderGateInfo · markSelection 을 부르고, 그 render 가 컨트롤러 생성 도중에 이미 돈다.
@@ -872,15 +875,22 @@ const shareBtn = document.getElementById("share-btn");
 const toastEl = document.getElementById("toast");
 let toastTimer = null;
 
-function showToast(message) {
+// ms: 문장이 길면 오래 둔다(기본 1.8초는 짧은 확인 문구에 맞춘 값이다).
+function showToast(message, ms = 1800) {
   toastEl.textContent = message;
   toastEl.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), ms);
 }
 
-// 열지 못한 공유 링크 — toastEl 이 위에서 만들어진 뒤라야 띄울 수 있다(그 전에 부르면 TDZ).
-if (shareLinkProblem) showToast(shareLinkProblem);
+// 시작 알림 — 열지 못한 공유 링크, 적재 때 고친 것(circuit.js normalizeLoaded). toastEl 이 위에서 만들어진 뒤라야 띄울 수 있다
+// (그 전에 부르면 TDZ). 고친 것은 원본이 남아 있는 동안 열 때마다 알린다 — 화면의 회로가 저장된 원본과 다르다는 사실이 그동안
+// 계속 참이다(quantum-spec §9).
+{
+  const notices = circuit.getSnapshot().loadNotices;
+  const startup = [shareLinkProblem, notices.length ? loadNoticeText(notices) : null].filter(Boolean);
+  if (startup.length) showToast(startup.join(" "), notices.length ? 8000 : 1800);
+}
 
 async function copyText(text, label) {
   try {

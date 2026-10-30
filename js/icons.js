@@ -52,6 +52,8 @@ const PATHS = {
   "circle-minus": '<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>',
   binary:
     '<rect x="14" y="14" width="4" height="6" rx="2"/><rect x="6" y="4" width="4" height="6" rx="2"/><path d="M6 20h4"/><path d="M14 10h4"/><path d="M6 14h2v6"/><path d="M14 4h2v6"/>',
+  // 조건(if) — 측정 메뉴에 "기록 비트"(binary)와 나란히 서므로 다른 모양이어야 한다(lucide-static 0.460.0 split.svg).
+  split: '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
   "trash-2":
     '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
 

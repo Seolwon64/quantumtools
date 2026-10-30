@@ -315,6 +315,8 @@ function buildCircuitGrid(snapshot) {
 
   // 고전 와이어로 가는 이중선: Measure의 기록(cbit) / 조건부 연산의 조건(cif).
   // 한 열에 여러 개가 내려올 수 있으므로(예: 텔레포테이션의 두 측정) 좌우로 벌려 겹치지 않게 한다.
+  // 조건 붙은 Measure 는 선이 **둘**이다 — 읽는 선(조건, 왼쪽 — 먼저 판정한다)과 쓰는 선(기록). 예전엔 Measure 면 기록만 그려
+  // 조건이 화면에 없었다(그때는 Measure 에 조건을 붙일 수 없었다). 두 선은 배지로 가른다(.cl-bit-cond 가 읽는 쪽).
   if (snapshot.clbitCount > 0) {
     const clAnchor = cellAt(0, clRow, snapshot.qubitCount);
     const clY = clAnchor ? gridCenter(clAnchor, gridRect).y : 0;
@@ -324,11 +326,10 @@ function buildCircuitGrid(snapshot) {
         const cell = snapshot.grid[col]?.[t];
         if (!cell) continue;
         const p = cell.params ?? {};
-        const bit = cell.gate === "MEASURE" ? p.cbit : p.cif;
-        if (bit === undefined) continue;
         const isMeasure = cell.gate === "MEASURE";
         const fromQ = isMeasure ? cell.targets[0] : Math.max(...involvedQubits(cell));
-        links.push({ bit, isMeasure, fromQ });
+        if (p.cif !== undefined) links.push({ bit: p.cif, isMeasure: false, fromQ, gate: cell.gate });
+        if (isMeasure && p.cbit !== undefined) links.push({ bit: p.cbit, isMeasure: true, fromQ, gate: cell.gate });
       }
       if (!links.length) continue;
       const colAnchor = cellAt(col, 0, snapshot.qubitCount);
@@ -352,7 +353,7 @@ function buildCircuitGrid(snapshot) {
         badge.style.top = `${clY}px`;
         badge.title = l.isMeasure
           ? `Measurement result is written to c[${l.bit}]`
-          : `Applied only when c[${l.bit}] is 1`;
+          : l.gate === "MEASURE" ? `Measured only when c[${l.bit}] is 1` : `Applied only when c[${l.bit}] is 1`;
         circuitGrid.appendChild(badge);
       });
     }

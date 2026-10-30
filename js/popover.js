@@ -348,13 +348,17 @@ function openBitPopover({ title, hint, count, current, clientX, clientY, onPick,
   row.querySelector(".qpick-btn")?.focus();
 }
 
+// 측정에는 고전 비트 고르기가 둘이다(쓰는 비트 · 조건 비트). 버튼이 같은 c[0] c[1] … 이라 제목이 그 앞에 붙는 말이 되게 해
+// 둘을 가른다 — "Write result to c[1]" / "Run only if c[1] = 1". 다른 게이트는 고르기가 하나라 예전 제목 그대로다.
 function openConditionPopover(column, qubit, clbitCount, clientX, clientY) {
   const snap = circuit.getSnapshot();
   const home = homeOf(snap, column, qubit);
-  const current = home === -1 ? undefined : snap.grid[column][home]?.params?.cif;
+  const cell = home === -1 ? null : snap.grid[column][home];
+  const current = cell?.params?.cif;
+  const isMeasure = cell?.gate === "MEASURE";
   openBitPopover({
-    title: "Conditional (if)",
-    hint: "Apply this gate only when the bit is 1",
+    title: isMeasure ? "Run only if" : "Conditional (if)",
+    hint: isMeasure ? "Measure only when the chosen bit is 1" : "Apply this gate only when the bit is 1",
     count: clbitCount,
     current,
     clientX, clientY,
@@ -368,8 +372,8 @@ function openMeasureBitPopover(column, qubit, clbitCount, clientX, clientY) {
   const home = homeOf(snap, column, qubit);
   const current = home === -1 ? undefined : snap.grid[column][home]?.params?.cbit;
   openBitPopover({
-    title: "Measure → classical bit",
-    hint: "Where to write the measurement result",
+    title: "Write result to",
+    hint: "Which classical bit receives the outcome",
     count: clbitCount,
     current,
     clientX, clientY,
