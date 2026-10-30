@@ -58,6 +58,20 @@ test("끝까지 맞지 않는 측정이라도 maxTries 번에서 멈춘다 — �
   assert.ok(Number.isFinite(r.fontPx));
 });
 
+test("돌려준 크기는 마지막으로 잰 크기다 — 상한에 닿아 멈춰도(drawFittedLabel 이 그릴 때 font 를 다시 정하지 않아도 되는 근거)", () => {
+  const cases = [
+    () => ({ left: 500, right: 500 }), // 끝까지 안 맞는다 — 상한에 닿는다
+    (px) => ({ left: 4 * px, right: 4 * px }), // 비례 — 한 번에 맞는다
+    (px) => ({ left: 3 * px + 60, right: 3 * px + 60 }), // 비례 아님 — 여러 번
+    () => ({ left: 100, right: 100 }), // 넘치지 않는다
+  ];
+  for (const f of cases) for (const maxTries of [0, 1, 4]) {
+    const calls = [];
+    const r = fitLabel({ measure: (px) => { calls.push(px); return f(px); }, width: 352, basePx: 44, maxTries });
+    assert.equal(r.fontPx, calls.at(-1), `maxTries ${maxTries}: 돌려준 ${r.fontPx} ≠ 마지막으로 잰 ${calls.at(-1)}`);
+  }
+});
+
 // 2D 컨텍스트 흉내: 실제 캔버스처럼 measureText 의 잉크 거리가 **지금 상태의 기준점**에서 잰 값이다.
 // - 가로: actualBoundingBoxLeft/Right 는 textAlign 의 기준점에서 잰다. start·end 는 direction 에 따라 뒤집힌다(rtl 이면 start = 오른쪽).
 //   글자 한 줄 = advance 안에 왼쪽 여백(bearing) 뒤 잉크.

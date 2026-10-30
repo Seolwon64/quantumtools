@@ -5,14 +5,15 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { tokenHex, token } from "./tokens.js";
 import { onFontFacesLoaded } from "./fontload.js";
 import { drawFittedLabel } from "./labelfit.js";
+import { resourcesToDispose, createFadeLedger } from "./qsretire.js";
 
 // 캔버스 글자의 폰트 스택은 style.css 의 --font-sans 를 **그릴 때마다** 읽는다. 예전에는 같은 스택을 여기에 문자열로
 // 다시 적어 두었는데(두 곳 정의), 폰트를 바꿀 때 한쪽만 고치면 캔버스만 대체 글꼴로 그려져 ⟩·π 가 어긋나 보인다.
 // 모듈 로드 시점에 읽어 두지 않는다 — 스타일시트가 아직 붙기 전일 수 있다(tokens.js).
 const fontStack = () => token("--font-sans");
 
-// 폰트가 도착한 뒤 다시 그려야 할 캔버스 라벨 스프라이트들(아래 onFontFacesLoaded). 장면에서 빼는 자리(clearGroup·
-// 크로스페이드 정리)가 여기서도 지운다 — 남겨 두면 버린 스프라이트를 계속 다시 그리고 붙잡아 둔다.
+// 폰트가 도착한 뒤 다시 그려야 할 캔버스 라벨 스프라이트들(아래 onFontFacesLoaded). 장면에서 빼는 자리(retire)가
+// 여기서도 지운다 — 남겨 두면 버린 스프라이트를 계속 다시 그리고 붙잡아 둔다.
 const LABEL_SPRITES = new Set();
 
 const SPHERE_RADIUS = 1;
@@ -496,11 +497,8 @@ export function createBlochScene(container) {
   function rebuildQSphereRings(qubitCount) {
     if (qubitCount === qsphereRingQubitCount) return;
     qsphereRingQubitCount = qubitCount;
-    for (const child of qsphereRingsGroup.children.slice()) {
-      qsphereRingsGroup.remove(child);
-      child.geometry.dispose();
-      child.material.dispose();
-    }
+    // 링끼리 머티리얼 하나를 쓴다 — 예전에는 링마다 같은 머티리얼을 되풀이해 버렸다. retire 가 한 번만 버린다.
+    retire(qsphereRingsGroup.children.slice());
     const ringMat = new THREE.LineBasicMaterial({ color: tokenHex("--gray-9"), transparent: true, opacity: 0.45 });
     const SEGMENTS = 64;
     for (let w = 1; w < qubitCount; w++) {
@@ -512,7 +510,9 @@ export function createBlochScene(container) {
         const a = (2 * Math.PI * s) / SEGMENTS;
         points.push(new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a)));
       }
-      qsphereRingsGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMat));
+      const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ringMat);
+      ring.userData.ownsGeometry = true;
+      qsphereRingsGroup.add(ring);
     }
   }
 
@@ -542,17 +542,23 @@ export function createBlochScene(container) {
     return `${(a / Math.PI).toFixed(2)}π`;
   }
 
-  function clearGroup(group) {
-    for (const child of group.children.slice()) {
-      group.remove(child);
-      // Line(stem)만 개별 지오메트리를 갖는다. 마커는 qsphereMarkerGeo를 공유하고,
-      // Sprite(라벨)는 three.js가 내부적으로 공유하는 싱글턴 지오메트리를 쓰므로
-      // 절대 dispose하면 안 된다 (다른 모든 스프라이트가 함께 깨진다).
-      if (child.isLine) child.geometry?.dispose?.();
-      child.material?.map?.dispose?.();
-      child.material?.dispose?.();
-      LABEL_SPRITES.delete(child);
+  // Q-sphere 노드를 장면에서 빼고 쓰던 GPU 자원을 버린다 — 버리는 길(clearGroup · 크로스페이드 끝 · 링 다시 짓기)은 모두 이것을
+  // 쓴다. 무엇을 버릴지는 resourcesToDispose 가 고른다: 지오메트리는 노드가 가진다고 표시한 것(스템 · 링)만 — 마커는
+  // qsphereMarkerGeo 를, 라벨은 three.js 의 공유 스프라이트 사각형을 쓴다. 예전 크로스페이드 끝 정리는 이 둘을 버리고(다음 프레임에
+  // 다시 올렸다) 라벨 텍스처는 버리지 않아 재생마다 라벨 수만큼 GPU 텍스처가 남았다(실측 — js/qsretire.js 머리 주석).
+  function retire(objects) {
+    for (const obj of objects) {
+      obj.parent?.remove(obj);
+      LABEL_SPRITES.delete(obj);
     }
+    const { geometries, materials, textures } = resourcesToDispose(objects);
+    for (const g of geometries) g.dispose();
+    for (const t of textures) t.dispose();
+    for (const m of materials) m.dispose();
+  }
+
+  function clearGroup(group) {
+    retire(group.children.slice());
   }
 
   // 확률 분포에 대한 Q-sphere 노드(마커·스템·라벨)를 그룹에 추가한다(그룹을 비우지 않음).
@@ -581,8 +587,10 @@ export function createBlochScene(container) {
 
         const stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), pos]);
         const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 });
-        qspherePhaseGroup.add(new THREE.Line(stemGeo, stemMat));
-        nodes.push({ material: stemMat, base: 0.8 });
+        const stem = new THREE.Line(stemGeo, stemMat);
+        stem.userData.ownsGeometry = true; // 스템마다 지오메트리를 새로 만든다 — 버릴 때 함께 버린다
+        qspherePhaseGroup.add(stem);
+        nodes.push({ material: stemMat, base: 0.8, obj: stem });
 
         const radius = 0.035 + 0.09 * Math.sqrt(entry.probability / 100);
         // 광택 구슬: 환경맵/조명을 받아 유리 구 안에서 빛나는 노드처럼 보이게 한다.
@@ -593,29 +601,40 @@ export function createBlochScene(container) {
         marker.position.copy(pos);
         marker.scale.setScalar(radius);
         qsphereStateGroup.add(marker);
-        nodes.push({ material: markerMat, base: 1 });
+        nodes.push({ material: markerMat, base: 1, obj: marker });
 
         const label = makeWideLabelSprite(`|${entry.label}⟩ ${formatPhase(phaseRad)}`);
         label.position.copy(pos).multiplyScalar(1.18);
         qsphereStateGroup.add(label);
-        nodes.push({ material: label.material, base: label.material.opacity });
+        nodes.push({ material: label.material, base: label.material.opacity, obj: label });
       });
     }
     return nodes;
   }
 
+  // [3] 스텝 전환: 위치·색 보간 없이 짧은 크로스페이드. 이전 노드는 제자리에서 투명해지고,
+  // 새 노드는 제자리에서 나타난다. slerp/hue 보간 없음.
+  // 사라져 가는 노드는 페이드가 **끝난 뒤에만** 한 번 버린다(qsFade 장부). 끝나기 전에 그룹을 통째로 비우는 갱신(setQSphereData —
+  // 일시정지 · 모드 전환 · 회로 편집이 페이드 200ms 안에 오면)이 오면 그쪽이 버리고 장부를 무효로 해, 남은 끝 정리가 같은 노드를 한
+  // 번 더 버리지 않는다.
+  let qsCrossfadeRAF = null;
+  const qsFade = createFadeLedger();
+  function stopCrossfade() {
+    if (qsCrossfadeRAF) { cancelAnimationFrame(qsCrossfadeRAF); qsCrossfadeRAF = null; }
+  }
+
   function setQSphereData(probabilities, qubitCount) {
+    stopCrossfade();
+    qsFade.cancel(); // 진행 중인 페이드의 old · new 는 아래 clearGroup 이 버린다
     clearGroup(qsphereStateGroup);
     clearGroup(qspherePhaseGroup);
     rebuildQSphereRings(qubitCount);
     addQSphereNodes(probabilities, qubitCount);
   }
 
-  // [3] 스텝 전환: 위치·색 보간 없이 짧은 크로스페이드. 이전 노드는 제자리에서 투명해지고,
-  // 새 노드는 제자리에서 나타난다. slerp/hue 보간 없음.
-  let qsCrossfadeRAF = null;
   function crossfadeQSphere(toProbs, qubitCount, duration) {
-    if (qsCrossfadeRAF) { cancelAnimationFrame(qsCrossfadeRAF); qsCrossfadeRAF = null; }
+    // 앞 페이드가 끝나지 못했으면 그 끝 정리는 돌지 않는다 — 앞 페이드의 두 쪽은 아래에서 old 로 다시 잡히고, 장부도 이어받는다
+    stopCrossfade();
     if (duration <= 0) { setQSphereData(toProbs, qubitCount); return; }
     // 현재 노드를 old로 캡처
     const oldNodes = [];
@@ -624,19 +643,20 @@ export function createBlochScene(container) {
         const mat = child.material;
         if (mat && mat.opacity !== undefined) {
           mat.transparent = true;
-          oldNodes.push({ material: mat, base: mat.opacity, obj: child, group: g });
+          oldNodes.push({ material: mat, base: mat.opacity, obj: child });
         }
       }
     }
     const newNodes = addQSphereNodes(toProbs, qubitCount); // 그룹에 추가(비우지 않음)
     for (const nn of newNodes) nn.material.opacity = 0;
+    const token = qsFade.begin({ outgoing: oldNodes.map((on) => on.obj), incoming: newNodes.map((nn) => nn.obj) });
     const start = performance.now();
     const step = (now) => {
       const t = Math.min(1, (now - start) / duration);
       for (const on of oldNodes) on.material.opacity = on.base * (1 - t);
       for (const nn of newNodes) nn.material.opacity = nn.base * t;
       if (t < 1) { qsCrossfadeRAF = requestAnimationFrame(step); return; }
-      for (const on of oldNodes) { on.group.remove(on.obj); on.obj.geometry?.dispose?.(); on.material.dispose?.(); LABEL_SPRITES.delete(on.obj); }
+      retire(qsFade.settle(token));
       for (const nn of newNodes) nn.material.opacity = nn.base;
       qsCrossfadeRAF = null;
     };

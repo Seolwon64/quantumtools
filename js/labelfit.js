@@ -56,6 +56,9 @@ export function drawFittedLabel(ctx, { text, width, height, basePx, font, margin
     },
   });
   ctx.clearRect(0, 0, width, height);
+  // 지금은 같은 값을 다시 넣는 줄이다 — fitLabel 은 모든 경로(상한에 닿아 멈출 때 포함)에서 마지막으로 잰 크기를 돌려주므로 ctx.font 는
+  // 이미 font(fit.fontPx) 다(실측 12조합, labelfit 테스트 「돌려준 크기는 마지막으로 잰 크기다」). 그래서 이 줄을 빼는 변이는 결과가 같아
+  // 테스트로 잡을 수 없다. 그래도 남긴다 — fitLabel 이 바뀌어 그 성질이 깨지면 그린 크기와 돌려준 크기가 갈라진다.
   ctx.font = font(fit.fontPx);
   ctx.fillText(text, width / 2 + fit.dx, height / 2);
   return fit;
