@@ -7,10 +7,15 @@
 // 등록해야 하고, stepIndicatorX 로 그 위치를 정하기 때문이다(분해 계획서 위험 6번).
 // 팝오버 셋은 컨트롤러 **뒤**에 배선되므로 진입점이 화살표로 감싸 넘긴다(값이면 TDZ).
 import { GATE_INFO } from "./quantum.js";
-import { MAX_COLUMNS, involvedQubits } from "./circuit.js";
+import { MAX_COLUMNS } from "./circuit.js";
+import { columnRoles, columnLinks, columnSpans, planGrid, drawGrid, offsetPolyline } from "./wireroute.js";
+import { tokenPx } from "./tokens.js";
+import { onFontFacesLoaded } from "./fontload.js";
 
 // 주입되는 의존. initGrid 전에는 undefined 다.
 let getCircuit, scene, circuitGrid;
+// 지금 셀을 지은 스냅샷 — 폰트가 도착하면 이것으로 연결선 단계만 다시 한다(layoutWires).
+let builtSnapshot = null;
 let GATE_CATEGORY, MEASURE_SVG, showTransientTip, attachGateHover;
 let attachIndicator, stepIndicatorX, openMenuForCell, clearSelection;
 // 팝오버 셋은 옮긴 블록이 이 이름 그대로 부르므로 같은 이름의 모듈 변수로 받는다.
@@ -139,6 +144,9 @@ export function initGrid({ getCircuit: gc, scene: sc, gateCategory: gcat,
     openMenuForCell(Number(cell.dataset.col), Number(cell.dataset.qubit), e.clientX, e.clientY);
   });
 
+  // 셀은 다시 짓지 않는다 — 포커스 · 열 강조 · 호버가 그대로 남는다. 이유는 layoutWires.
+  onFontFacesLoaded(() => { if (builtSnapshot) layoutWires(builtSnapshot); });
+
   return { buildCircuitGrid };
 }
 
@@ -169,6 +177,159 @@ function cellAt(col, row, qubitCount) {
   return circuitGrid.querySelector(`.clbit-row .grid-cell[data-col="${col}"]`);
 }
 
+// ---------- 연결선(wireroute.js 가 경로를 정하고, 여기서는 재고 그리기만 한다) ----------
+
+/** 연결선 치수 — style.css 토큰. 렌더마다 읽는다(로드 시점엔 스타일시트가 아직 없을 수 있다). */
+function wireTokens() {
+  return {
+    lineWidth: tokenPx("--cl-line"), qLineWidth: tokenPx("--q-line"), clearance: tokenPx("--cl-clearance"),
+    hop: tokenPx("--cl-hop"), arrow: tokenPx("--cl-arrow"), badge: tokenPx("--cl-badge"), spread: tokenPx("--cl-lane"),
+  };
+}
+
+/**
+ * 연결선을 그릴 열들을 DOM 에서 잰다 — wireroute.js 의 measured 모양. 좌표는 전부 실측이다(셀 · 칩 · 점의
+ * getBoundingClientRect, 통로는 셀 사각형 − computed padding). plan 이 있으면 넓힌 열의 통로 x 를 안쪽부터 낸다.
+ */
+function measureWires(snapshot, gridRect, plan) {
+  const n = snapshot.qubitCount;
+  const rel = (r) => ({ left: r.left - gridRect.left, right: r.right - gridRect.left, top: r.top - gridRect.top, bottom: r.bottom - gridRect.top });
+  const clAnchor = snapshot.clbitCount > 0 ? cellAt(0, n, n) : null;
+  const clY = clAnchor ? gridCenter(clAnchor, gridRect).y : 0;
+  const columns = [];
+  for (let col = 0; col < MAX_COLUMNS; col++) {
+    const colCells = snapshot.grid[col];
+    const links = clAnchor ? columnLinks(n, col, colCells) : [];
+    const spanList = columnSpans(n, col, colCells);
+    if (!links.length && !spanList.length) continue;
+    const anchor = cellAt(col, 0, n);
+    if (!anchor) continue;
+    const a = rel(anchor.getBoundingClientRect());
+    const cs = getComputedStyle(anchor);
+    const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+    // 칩은 padding 안쪽(원래 --grid-cell) 가운데에 놓인다 — 넓힌 열에서 셀 중심이 아니라 그 안쪽의 중심이다.
+    const centerX = Math.round(a.left + padL + (a.right - a.left - padL - padR) / 2);
+    const rowCells = [];
+    for (let q = 0; q < n; q++) rowCells.push({ row: q, rect: rel(cellAt(col, q, n).getBoundingClientRect()) });
+    const elements = [];
+    for (const [q, role] of columnRoles(n, colCells)) {
+      const el = cellAt(col, q, n)?.querySelector(".placed-gate, .ctrl-dot");
+      if (!el) continue;
+      let glyphHalf;
+      if (role.kind === "symbol") {
+        // ⊕ · × 는 배경이 없어 상자 크기가 아니라 글리프가 보인다 — 글자 폭의 절반을 글리프 반지름으로 쓴다.
+        // 연결선이 기대는 값 중 폰트를 따르는 것은 이것 하나다 — 그래서 폰트가 도착하면 다시 잰다(layoutWires).
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        glyphHalf = range.getBoundingClientRect().width / 2;
+      }
+      elements.push({ id: `e${col}:${q}`, owner: `${col}:${role.home}`, row: q, kind: role.kind, rect: rel(el.getBoundingClientRect()), glyphHalf });
+    }
+    const spans = spanList.map((s) => ({
+      ...s, top: gridCenter(cellAt(col, s.minQ, n), gridRect).y, bottom: gridCenter(cellAt(col, s.maxQ, n), gridRect).y,
+    }));
+    const L = plan?.get(col) ?? { left: 0, right: 0 };
+    const lanes = {
+      left: Array.from({ length: L.left }, (_, i) => Math.round(a.left + padL - (i + 0.5) * (padL / L.left))),
+      right: Array.from({ length: L.right }, (_, i) => Math.round(a.right - padR + (i + 0.5) * (padR / L.right))),
+    };
+    columns.push({ col, centerX, rowCells, elements, links, spans, lanes });
+  }
+  return { clY, columns };
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const BADGE_TITLE = {
+  write: (b) => `Measurement result is written to c[${b}]`,
+  read: (b, gate) => (gate === "MEASURE" ? `Measured only when c[${b}] is 1` : `Applied only when c[${b}] is 1`),
+};
+
+/**
+ * drawGrid 의 결과를 DOM 에 그린다. 양자 제어선은 조각마다 .gate-connector 하나(끊긴 틈이 없으면 예전과 같은 하나),
+ * 고전 선은 SVG 한 겹(.cl-lines)에 이중선 두 줄 + 화살표, 배지는 고전 와이어 위 통로 x 에.
+ */
+function drawWires(drawn, tok) {
+  // 인디케이터 앞에 넣는다 — 처음 지을 때는 아직 없어 끝에 붙고, 다시 그릴 때도 같은 순서가 된다(같은 z-index 끼리는 DOM 순서).
+  const before = circuitGrid.querySelector(".step-indicator");
+  const append = (node) => circuitGrid.insertBefore(node, before);
+  const half = tok.qLineWidth / 2;
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("class", "cl-lines");
+  svg.setAttribute("width", String(circuitGrid.scrollWidth));
+  svg.setAttribute("height", String(circuitGrid.scrollHeight));
+  svg.setAttribute("aria-hidden", "true");
+  const d = tok.lineWidth / 2 - 0.5; // 1px 획 두 줄의 중심 — 예전 div 의 좌우 1px 테두리 자리
+  const pts = (list) => list.map((p) => `${p.x},${p.y}`).join(" ");
+  for (const column of drawn.columns) {
+    for (const q of column.quantum) {
+      for (const piece of q.pieces) {
+        const line = document.createElement("div");
+        line.className = "gate-connector";
+        line.style.left = `${q.x - half}px`; // 폭 2px(짝수)이라 정수 좌표에서 이미 선명하다
+        line.style.top = `${piece.top}px`;
+        line.style.height = `${piece.bottom - piece.top}px`;
+        append(line);
+      }
+    }
+    for (const c of column.classical) {
+      for (const side of offsetPolyline(c.points, d)) {
+        const pl = document.createElementNS(SVGNS, "polyline");
+        pl.setAttribute("class", "cl-stroke");
+        pl.setAttribute("points", pts(side));
+        svg.appendChild(pl);
+      }
+      const arrow = document.createElementNS(SVGNS, "polygon");
+      arrow.setAttribute("class", "cl-arrow");
+      arrow.setAttribute("points", pts(c.arrow.points));
+      svg.appendChild(arrow);
+      const badge = document.createElement("div");
+      badge.className = "cl-bit-badge" + (c.kind === "read" ? " cl-bit-cond" : "");
+      badge.textContent = String(c.bit);
+      badge.style.left = `${c.badge.x}px`;
+      badge.style.top = `${c.badge.y}px`;
+      badge.title = BADGE_TITLE[c.kind](c.bit, c.gate);
+      append(badge);
+    }
+  }
+  if (svg.childNodes.length) append(svg);
+}
+
+/**
+ * 연결선 단계 — 셀은 그대로 두고 통로 · 양자 제어선 조각 · 고전 선 SVG · 배지만 그린다. 지난 그림과 통로를 먼저 걷어 처음 지을
+ * 때와 같은 길을 탄다. buildCircuitGrid 가 셀을 붙인 뒤 부르고, **폰트 면이 도착할 때마다 다시 부른다**(initGrid):
+ * ⊕ · × 에 닿는 읽는 선의 ▲ 끝이 렌더 때 잰 글리프 폭(measureWires 의 glyphHalf)에 기대기 때문이다. 수학 폰트가 늦게 오면
+ * 대체 글꼴로 잰 자리에 남아, 도착 뒤 ▲ 끝이 캐시된 경우보다 0.36px 위에서 멈췄다(R8, 1536, 2026-11-01 실측). 통로 수는
+ * 칩 상자로만 정해 글리프와 무관하지만, 같은 길을 타게 계획부터 다시 한다.
+ * 반환: 측정에 쓴 격자 사각형(통로로 넓힌 뒤).
+ */
+function layoutWires(snapshot) {
+  for (const el of circuitGrid.querySelectorAll(".gate-connector, .cl-lines, .cl-bit-badge")) el.remove();
+  for (const c of circuitGrid.querySelectorAll(".grid-cell")) {
+    c.style.removeProperty("--lanes-left");
+    c.style.removeProperty("--lanes-right");
+  }
+  // 두 단계다(wireroute.js): ① 곧게 내린 고전 선이 같은 열의 다른 칩 · 점 · 선에 걸리는 열을 찾아 그 열의 모든 셀에 통로 수
+  // (--lanes-left · --lanes-right)를 둔다 — CSS 가 그 열을 레이아웃에서 넓힌다. ② 넓힌 뒤 다시 재서 그린다.
+  // 그래서 강제 리플로는 평소 1회, 통로가 있을 때만 2회다.
+  const tok = wireTokens();
+  let gridRect = circuitGrid.getBoundingClientRect();
+  let measured = measureWires(snapshot, gridRect);
+  const plan = planGrid(measured, tok);
+  const widened = [...plan].filter(([, l]) => l.left + l.right > 0);
+  if (widened.length) {
+    for (const [col, l] of widened) {
+      for (const c of circuitGrid.querySelectorAll(`.grid-cell[data-col="${col}"]`)) {
+        c.style.setProperty("--lanes-left", String(l.left));
+        c.style.setProperty("--lanes-right", String(l.right));
+      }
+    }
+    gridRect = circuitGrid.getBoundingClientRect();
+    measured = measureWires(snapshot, gridRect, plan);
+  }
+  drawWires(drawGrid(measured, plan, tok), tok);
+  return gridRect;
+}
+
 // ---------- 회로 그리드 ----------
 
 function buildCircuitGrid(snapshot) {
@@ -184,27 +345,10 @@ function buildCircuitGrid(snapshot) {
     : focused === circuitGrid ? {} : null;
   circuitGrid.innerHTML = "";
 
-  // 칼럼별 역할 맵: qubit -> { type: "target"|"control", cell, primary }
+  // 칼럼별 역할 맵: qubit -> { type: "target"|"control", cell, home, primary, kind: "box"|"dot"|"symbol" }
   // canonical 셀은 홈 행(targets[0])에만 저장되며, 관여 큐비트는 targets/controls로 표시.
-  const roleMaps = [];
-  for (let col = 0; col < MAX_COLUMNS; col++) {
-    const roles = new Map();
-    for (let t = 0; t < snapshot.qubitCount; t++) {
-      const cell = snapshot.grid[col]?.[t];
-      if (!cell) continue;
-      const decomposed = GATE_INFO[cell.gate]?.kind === "decomposed";
-      cell.targets.forEach((tq, i) => {
-        // RCCX/RC3X: targets의 마지막 = ⊕ 타깃, 앞쪽 = 컨트롤 점으로 그린다.
-        if (decomposed && i < cell.targets.length - 1) {
-          roles.set(tq, { type: "control", cell, primary: false });
-        } else {
-          roles.set(tq, { type: "target", cell, primary: decomposed || i === 0 });
-        }
-      });
-      for (const q of cell.controls ?? []) roles.set(q, { type: "control", cell, primary: false });
-    }
-    roleMaps.push(roles);
-  }
+  // 규칙은 wireroute.js 에 있다 — 연결선 판정(테스트)이 이 격자와 같은 요소 종류를 보게 한 곳에 둔다.
+  const roleMaps = Array.from({ length: MAX_COLUMNS }, (_, col) => columnRoles(snapshot.qubitCount, snapshot.grid[col]));
 
   for (let q = 0; q < snapshot.qubitCount; q++) {
     const row = document.createElement("div");
@@ -226,11 +370,10 @@ function buildCircuitGrid(snapshot) {
       const role = roleMaps[col].get(q);
       if (role) {
         const info = GATE_INFO[role.cell.gate];
-        // controlled-Z는 CZ 표준 표기(•—•)라 타깃도 채운 점으로 그린다.
-        const controlledZ = role.cell.gate === "Z" && (role.cell.controls?.length ?? 0) > 0;
         // 셀의 역할을 DOM에 기록: 드롭 분기(게이트 위 vs 빈 칸)와 제어점 드래그가 참조한다.
         cell.dataset.role = role.type;
-        if (role.type === "control" || (role.type === "target" && controlledZ)) {
+        // 점: 제어, 그리고 controlled-Z 의 타깃(CZ 표준 표기 •—•) — elementKind 가 정한다.
+        if (role.kind === "dot") {
           const dot = document.createElement("div");
           dot.className = "ctrl-dot";
           // tabindex -1: Tab 순서에는 넣지 않고(회로 키보드 탐색은 아직 없다) 코드로만 포커스를
@@ -250,7 +393,7 @@ function buildCircuitGrid(snapshot) {
             chip.textContent = label;
             // ⊕(CNOT/Toffoli 타깃)·×(SWAP)는 박스가 아니라 와이어 위 기호 → 배경 없이 그려
             // 아래 레이어의 연결선이 기호 중심까지 이어져 보이게 한다([1] 표준 표기).
-            if (label === "⊕" || label === "×") chip.classList.add("placed-symbol");
+            if (role.kind === "symbol") chip.classList.add("placed-symbol");
           }
           attachGateHover(chip, role.cell);
           cell.appendChild(chip);
@@ -262,8 +405,7 @@ function buildCircuitGrid(snapshot) {
     circuitGrid.appendChild(row);
   }
 
-  // 고전 레지스터 와이어(이중선). 고전 비트가 0개면 아예 그리지 않는다.
-  const clRow = snapshot.qubitCount; // 큐비트 행들 바로 아래
+  // 고전 레지스터 와이어(이중선). 고전 비트가 0개면 아예 그리지 않는다. 큐비트 행들 바로 아래 행이다(cellAt 의 row = qubitCount).
   if (snapshot.clbitCount > 0) {
     const row = document.createElement("div");
     row.className = "qubit-row clbit-row";
@@ -284,80 +426,9 @@ function buildCircuitGrid(snapshot) {
     circuitGrid.appendChild(row);
   }
 
-  // 여기서부터는 실제 배치된 셀을 측정한다. 위 루프가 모든 행을 append한 뒤이므로
-  // 레이아웃이 확정돼 있다. gridRect는 한 번만 읽어 강제 리플로를 1회로 묶는다.
-  const gridRect = circuitGrid.getBoundingClientRect();
-
-  // 다중 큐비트 게이트의 세로 연결선.
-  // x는 **게이트가 놓인 셀의 실제 중심**이다 — 블록·제어점과 같은 요소에서 나온 값이라
-  // 정의상 어긋날 수 없다(예전엔 상수로 따로 계산해 2px 틀어졌다).
-  for (let col = 0; col < MAX_COLUMNS; col++) {
-    for (let t = 0; t < snapshot.qubitCount; t++) {
-      const cell = snapshot.grid[col]?.[t];
-      if (!cell) continue;
-      const qubits = involvedQubits(cell);
-      if (qubits.length < 2) continue;
-      const minQ = Math.min(...qubits);
-      const maxQ = Math.max(...qubits);
-      const topCell = cellAt(col, minQ, snapshot.qubitCount);
-      const botCell = cellAt(col, maxQ, snapshot.qubitCount);
-      if (!topCell || !botCell) continue;
-      const a = gridCenter(topCell, gridRect);
-      const b = gridCenter(botCell, gridRect);
-      const line = document.createElement("div");
-      line.className = "gate-connector";
-      line.style.left = `${a.x - 1}px`; // 폭 2px(짝수)이라 정수 좌표에서 이미 선명하다
-      line.style.top = `${a.y}px`;
-      line.style.height = `${b.y - a.y}px`;
-      circuitGrid.appendChild(line);
-    }
-  }
-
-  // 고전 와이어로 가는 이중선: Measure의 기록(cbit) / 조건부 연산의 조건(cif).
-  // 한 열에 여러 개가 내려올 수 있으므로(예: 텔레포테이션의 두 측정) 좌우로 벌려 겹치지 않게 한다.
-  // 조건 붙은 Measure 는 선이 **둘**이다 — 읽는 선(조건, 왼쪽 — 먼저 판정한다)과 쓰는 선(기록). 예전엔 Measure 면 기록만 그려
-  // 조건이 화면에 없었다(그때는 Measure 에 조건을 붙일 수 없었다). 두 선은 배지로 가른다(.cl-bit-cond 가 읽는 쪽).
-  if (snapshot.clbitCount > 0) {
-    const clAnchor = cellAt(0, clRow, snapshot.qubitCount);
-    const clY = clAnchor ? gridCenter(clAnchor, gridRect).y : 0;
-    for (let col = 0; col < MAX_COLUMNS; col++) {
-      const links = [];
-      for (let t = 0; t < snapshot.qubitCount; t++) {
-        const cell = snapshot.grid[col]?.[t];
-        if (!cell) continue;
-        const p = cell.params ?? {};
-        const isMeasure = cell.gate === "MEASURE";
-        const fromQ = isMeasure ? cell.targets[0] : Math.max(...involvedQubits(cell));
-        if (p.cif !== undefined) links.push({ bit: p.cif, isMeasure: false, fromQ, gate: cell.gate });
-        if (isMeasure && p.cbit !== undefined) links.push({ bit: p.cbit, isMeasure: true, fromQ, gate: cell.gate });
-      }
-      if (!links.length) continue;
-      const colAnchor = cellAt(col, 0, snapshot.qubitCount);
-      if (!colAnchor) continue;
-      const baseX = gridCenter(colAnchor, gridRect).x;
-      links.forEach((l, i) => {
-        const x = Math.round(baseX + (i - (links.length - 1) / 2) * 15); // 여러 개면 나란히
-        const fromCell = cellAt(col, l.fromQ, snapshot.qubitCount);
-        if (!fromCell) return;
-        const top = gridCenter(fromCell, gridRect).y;
-        const link = document.createElement("div");
-        link.className = "cl-connector";
-        link.style.left = `${x - 2}px`; // 폭 4px(짝수)
-        link.style.top = `${top}px`;
-        link.style.height = `${clY - top}px`;
-        circuitGrid.appendChild(link);
-        const badge = document.createElement("div");
-        badge.className = "cl-bit-badge" + (l.isMeasure ? "" : " cl-bit-cond");
-        badge.textContent = String(l.bit);
-        badge.style.left = `${x}px`;
-        badge.style.top = `${clY}px`;
-        badge.title = l.isMeasure
-          ? `Measurement result is written to c[${l.bit}]`
-          : l.gate === "MEASURE" ? `Measured only when c[${l.bit}] is 1` : `Applied only when c[${l.bit}] is 1`;
-        circuitGrid.appendChild(badge);
-      });
-    }
-  }
+  // 여기서부터는 실제 배치된 셀을 측정한다. 위 루프가 모든 행을 append한 뒤이므로 레이아웃이 확정돼 있다.
+  builtSnapshot = snapshot;
+  const gridRect = layoutWires(snapshot);
 
   // [5] 스텝 인디케이터(현재 재생 위치). innerHTML 재구성으로 매번 새로 만들고 현재 스텝에 둔다.
   const ind = document.createElement("div");

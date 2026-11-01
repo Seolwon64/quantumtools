@@ -317,7 +317,27 @@
   --palette-cat-gap: var(--space-1);     /* 헤더 ↔ 그리드 간격 */
   --palette-section-gap: var(--space-2); /* 섹션 사이 간격 */
 
-
+  /* 회로 격자 치수 — 연결선 경로(js/wireroute.js)가 이 값들에 기대므로 규칙에 숫자로 박지 않고 여기 둔다. 셀 · 칩의 좌표는
+     여전히 DOM 에서 잰다(design-spec §11). JS 가 tokenPx 로 읽는 값은 calc() 를 쓰지 않는다 — 사용자 정의 속성의 계산값은
+     calc 를 풀지 않아 숫자로 읽히지 않는다. 경로가 성립하는 부등식은 test/wireroute.test.mjs 가 이 값으로 고정한다:
+       세로 틈(--grid-cell − --grid-chip) ≥ --cl-line + 2 × --cl-clearance — 꺾는 가로 구간이 위아래 칩에 닿지 않는다.
+       --cl-lane ≥ --cl-badge + --cl-badge-gap — 이웃 통로 · 벌린 직선의 배지가 겹치지 않는다. */
+  --grid-cell: 50px;      /* 셀 한 변 = 행 높이 */
+  --grid-chip: 40px;      /* 놓인 게이트 칩 한 변 */
+  --grid-dot: 14px;       /* 제어점(•) 지름 */
+  --q-line: 2px;          /* 양자 제어선 폭 */
+  --cl-line: 4px;         /* 고전 이중선 폭(바깥 획 사이) */
+  --cl-badge: 15px;       /* 고전 비트 배지 최소 폭 · 높이 */
+  --cl-badge-gap: 3px;    /* 이웃 배지 사이 */
+  --cl-lane: 18px;        /* 통로 간격 · 곧은 선 벌림 = 배지 + 틈 */
+  --cl-clearance: 2px;    /* 판정 여유 — 선이 다른 것과 이만큼 떨어져야 한다 */
+  --cl-hop: var(--space-1); /* 양자 제어선을 끊는 틈(지나는 것 위아래) */
+  --cl-arrow: 7px;        /* 읽기 · 쓰기 화살표 한 변 */
+  --cl-arrow-color: var(--text-body); /* 불투명 — 모양으로 읽기 · 쓰기를 가르는 단서라 선보다 진하다 */
+  /* 고전 이중선 색 — 불투명도 없이 이 색 하나다. 예전엔 --text-body × opacity .55(합성 대비 2.1:1)로 흐려, 칩 뒤를 지나는 선이 물러나
+     보이게 했다. 선이 칩을 지나지 않게 되면서 그 이유가 사라졌다(2026-10-31). 비텍스트 3:1(WCAG 1.4.11)을 카드 · 열 강조 · 드롭 강조
+     위에서 넘는 가장 옅은 단계이고, 양자 제어선(--text-title × .7)보다 옅어 위계가 남는다 — test/wireroute.test.mjs 가 고정한다. */
+  --cl-stroke: var(--gray-10);
 }
 
 /* [2] 등폭(mono)을 쓰는 곳 — **숫자 열이 세로로 정렬되어야 하는 모든 영역**.
@@ -1182,7 +1202,7 @@ html, body {
    - 제어점(•): 채운 점이 선 위에 얹혀 중심에서 시작·종료하는 것처럼 보인다. */
 .gate-connector {
   position: absolute;
-  width: 2px;
+  width: var(--q-line);
   background: var(--text-title);
   opacity: 0.7;
   border-radius: var(--radius-full);
@@ -1212,8 +1232,8 @@ html, body {
 }
 
 .ctrl-dot {
-  width: 14px;
-  height: 14px;
+  width: var(--grid-dot);
+  height: var(--grid-dot);
   border-radius: 50%;
   background: var(--text-title);
   cursor: pointer;
@@ -1223,7 +1243,7 @@ html, body {
   display: flex;
   align-items: center;
   /* 셀(50)과 동일 높이 — 블록은 15~20% 키우되 세로 피치는 조여 4~5큐비트가 세로 스크롤 없이 보이게 한다. */
-  height: 50px;
+  height: var(--grid-cell);
 }
 
 .qubit-label {
@@ -1271,23 +1291,33 @@ html, body {
   letter-spacing: 0.02em;
 }
 
-/* 게이트 ↔ 고전 와이어 연결(이중선). 연결선과 같은 아래 레이어에 둔다. */
-.cl-connector {
+/* 게이트 ↔ 고전 와이어 연결(이중선). 연결선과 같은 아래 레이어에 둔다. 경로가 꺾일 수 있어(교차가 있는 열은 옆 통로로 비켜
+   그린다 — js/wireroute.js) div 테두리가 아니라 SVG 한 겹에 그린다. 이중선 = 경로 양쪽으로 --cl-line 폭만큼 떨어진 1px 두 줄
+   (예전 div 의 좌우 1px 테두리와 같은 모양). 선 색은 --cl-stroke(불투명), 화살표는 그보다 진한 --cl-arrow-color — 모양으로 읽기 ·
+   쓰기를 가르는 단서라 선보다 앞에 읽혀야 한다. */
+.cl-lines {
   position: absolute;
-  width: 4px;
-  border-left: 1px solid var(--text-body);
-  border-right: 1px solid var(--text-body);
-  opacity: 0.55;
+  left: 0;
+  top: 0;
+  overflow: visible;
   pointer-events: none;
   z-index: -1;
+}
+.cl-lines .cl-stroke {
+  fill: none;
+  stroke: var(--cl-stroke);
+  stroke-width: 1px;
+}
+.cl-lines .cl-arrow {
+  fill: var(--cl-arrow-color);
 }
 
 /* 도착점의 기록/조건 대상 비트 번호 */
 .cl-bit-badge {
   position: absolute;
   transform: translate(-50%, -50%);
-  min-width: 15px;
-  height: 15px;
+  min-width: var(--cl-badge);
+  height: var(--cl-badge);
   padding: 0 var(--space-1);
   border-radius: var(--radius-1);
   background: var(--card-bg);
@@ -1305,11 +1335,16 @@ html, body {
   color: var(--primary);
 }
 
+/* --lanes-left · --lanes-right: 고전 선이 같은 열의 다른 칩을 지나가는 열만 grid.js 가 그 열의 모든 셀에 둔다(통로 수).
+   칩은 원래 --grid-cell 안의 가운데에 남고, 통로는 그 좌우 padding 이다 — 레이아웃에서 넓히므로 스텝 인디케이터 · 열 강조 ·
+   드롭 칸이 넓어진 셀을 그대로 따른다. */
 .grid-cell {
   position: relative;
   flex: none;
-  width: 50px;
-  height: 50px;
+  width: calc(var(--grid-cell) + (var(--lanes-left, 0) + var(--lanes-right, 0)) * var(--cl-lane));
+  height: var(--grid-cell);
+  padding-left: calc(var(--lanes-left, 0) * var(--cl-lane));
+  padding-right: calc(var(--lanes-right, 0) * var(--cl-lane));
   margin-right: var(--space-1);
   display: flex;
   align-items: center;
@@ -1326,8 +1361,8 @@ html, body {
 /* [2] 회로 블록: 팔레트보다 15~20% 크게(34→40) + 진한 solid 배경 + 흰 글자로 대비 강화.
    --gate-c 는 카테고리별 회로 전용 색(팔레트와 같은 계열, 더 진함). */
 .placed-gate {
-  width: 40px;
-  height: 40px;
+  width: var(--grid-chip);
+  height: var(--grid-chip);
   border-radius: var(--radius-2);
   display: flex;
   align-items: center;
