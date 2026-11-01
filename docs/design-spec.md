@@ -702,6 +702,9 @@ TDZ에 있어, 순서를 어기면 **모듈 최상위에서 ReferenceError가 �
   Impeccable 턴 끝 훅이 시안용 폰트 이름(Geist 등)을 앱 코드처럼 경고한다. Playwright MCP 는 리포 밖 파일을 `filename` 으로 읽지
   않으므로 파일 내용을 `code` 로 넘긴다(그 폴더의 README). 폰트 면 여럿을 한꺼번에
   받으면 `python -m http.server` 의 대기열(5)이 넘쳐 ETIMEDOUT 이 났다 — 대기열을 늘린 서버(`request_queue_size`)로 띄운다.
+- **Playwright 스크린샷은 웹폰트를 기다린다.** 폰트 도착 전 화면은 CDP `Page.captureScreenshot` 과 충분한 지연(예: 8초)으로 찍는다.
+  늦은 폰트 연결선 작업에서 `page.screenshot` 으로 찍은 도착 전 · 후 그림이 픽셀까지 같았다(실측). 첫 CDP 캡처는 1초 넘게 걸려
+  2.5초 지연으로는 찍는 사이 폰트가 왔다 — 찍은 뒤에도 그 면이 `loading` 인지 확인해 도착 전 측정임을 보증한다.
 
 ## 15. 회귀 교훈 — 지금 없지만 다시 만들 때
 
